@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: backend
+
+grpc:
+  client:
+    ai-server:
+      address: static://34.50.58.227:50051
+      negotiation-type: tls
+      security:
+        trust-cert-collection: file:/home/joha-eun/server.crt
+        authority-override: semojum-ai
