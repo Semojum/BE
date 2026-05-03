@@ -101,14 +101,15 @@ message BrailleResponse {
   ProcessingMeta processing_meta = 4;
 
   // mode a, c
-  string                  image_resolution    = 5;
-  repeated BoundingBox    bounding_box_list   = 6;
+  int32                   image_width         = 5;
+  int32                   image_height        = 6;
+  repeated BoundingBox    bounding_box_list   = 7;
 
   // mode a, b
-  repeated TextElement    text_list           = 7;
+  repeated TextElement    text_list           = 8;
 
   // mode b, c
-  repeated TextElement    braille_text_list   = 8;
+  repeated TextElement    braille_text_list   = 9;
 
-  QualityReport quality_report = 9;
+  QualityReport quality_report = 10;
 }
