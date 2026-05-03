@@ -1,6 +1,8 @@
-package com.semojum.backend.grpc;
+package com.semojum.backend.global.grpc;
 
 import com.google.protobuf.ByteString;
+import com.semojum.backend.grpc.BrailleRequest;
+import com.semojum.backend.grpc.BrailleResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
