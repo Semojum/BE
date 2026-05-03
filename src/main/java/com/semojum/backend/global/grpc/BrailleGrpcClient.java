@@ -1,5 +1,8 @@
-package com.semojum.backend.grpc;
+package com.semojum.backend.global.grpc;
 
+import com.semojum.backend.grpc.BrailleServiceGrpc;
+import com.semojum.backend.grpc.BrailleRequest;
+import com.semojum.backend.grpc.BrailleResponse;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
