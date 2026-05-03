@@ -1,0 +1,8 @@
+grpc:
+  client:
+    ai-server:
+      address: static://34.50.58.227:50051
+      negotiation-type: tls
+      security:
+        trust-cert-collection: file:/Users/joha-eun/semojum/server.crt
+        authority-override: semojum-ai
