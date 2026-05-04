@@ -50,6 +50,19 @@ dependencies {
 
 	// Swagger
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
+
+	// GCS
+	implementation('com.google.cloud:google-cloud-storage:2.40.1') {
+		exclude group: 'io.grpc', module: 'grpc-xds'
+		exclude group: 'io.grpc', module: 'grpc-alts'
+		exclude group: 'io.grpc', module: 'grpc-grpclb'
+	}
+
+	// iText (PDF 페이지 분리)
+	implementation 'com.itextpdf:itext7-core:7.2.5'
+
+	// Redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 }
 
 protobuf {
