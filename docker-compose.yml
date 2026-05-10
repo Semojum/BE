@@ -1,6 +1,6 @@
 services:
   backend:
-    build: .
+    image: zxhwan/semojum-backend:latest
     ports:
       - "8080:8080"
     environment:
