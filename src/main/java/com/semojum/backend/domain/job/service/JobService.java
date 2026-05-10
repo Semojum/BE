@@ -13,6 +13,10 @@ import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.gcs.GcsService;
+import kr.dogfoot.hwplib.object.HWPFile;
+import kr.dogfoot.hwplib.object.bodytext.Section;
+import kr.dogfoot.hwplib.object.bodytext.paragraph.Paragraph;
+import kr.dogfoot.hwplib.reader.HWPReader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -22,7 +26,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,8 +43,10 @@ public class JobService {
     private final GcsService gcsService;
     private final RedisTemplate<String, String> redisTemplate;
 
+    private static final int LINES_PER_PAGE = 30;
+
     @Transactional
-    public JobResponseDto.Create createJob(String email, MultipartFile file, String mode) throws IOException {
+    public JobResponseDto.Create createJob(String email, MultipartFile file, String mode) throws Exception {
 
         // 1. 유저 조회
         User user = userRepository.findByEmail(email)
@@ -67,16 +75,31 @@ public class JobService {
         // 4. job_id 발급
         String jobId = "job_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
 
-        // 5. PDF 페이지별 분리 및 GCS 업로드
-        byte[] pdfBytes = file.getBytes();
         List<Page> pages = new ArrayList<>();
 
-        try (PdfReader reader = new PdfReader(new java.io.ByteArrayInputStream(pdfBytes));
-             PdfDocument pdfDoc = new PdfDocument(reader)) {
+        if (mode.equals("b")) {
+            // 5-b. txt/hwp → 텍스트 추출 후 30줄 단위로 분리하여 GCS 업로드
 
-            int totalPages = pdfDoc.getNumberOfPages();
+            // 텍스트 추출
+            String fullText;
+            if (ext.equals("hwp")) {
+                fullText = extractTextFromHwp(file);
+            } else {
+                fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
+            }
 
-            // 6. Job 엔티티 생성 및 저장
+            // 30줄 단위로 분리
+            String[] lines = fullText.split("\n");
+            List<String> chunks = new ArrayList<>();
+            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
+                int end = Math.min(i + LINES_PER_PAGE, lines.length);
+                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
+            }
+            if (chunks.isEmpty()) chunks.add(fullText);
+
+            int totalPages = chunks.size();
+
+            // 6-b. Job 엔티티 생성 및 저장
             Job job = Job.builder()
                     .id(jobId)
                     .user(user)
@@ -85,22 +108,19 @@ public class JobService {
                     .build();
             jobRepository.saveAndFlush(job);
 
-            // 7. 페이지별 처리
-            for (int i = 1; i <= totalPages; i++) {
-                // 페이지 PDF 추출
-                ByteArrayOutputStream pageOut = new ByteArrayOutputStream();
-                try (PdfDocument pageDoc = new PdfDocument(new PdfWriter(pageOut))) {
-                    pdfDoc.copyPagesTo(i, i, pageDoc);
-                }
+            // 7-b. 청크별 처리
+            for (int i = 0; i < totalPages; i++) {
+                int pageNo = i + 1;
 
-                // GCS 업로드
-                String gcsPath = jobId + "/pages/page-" + i + ".pdf";
-                String fullPath = gcsService.uploadFile(gcsPath, pageOut.toByteArray(), "application/pdf");
+                // GCS 업로드 (txt로 통일)
+                String gcsPath = jobId + "/pages/page-" + pageNo + ".txt";
+                byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
+                String fullPath = gcsService.uploadFile(gcsPath, chunkBytes, "text/plain");
 
                 // Page 엔티티 생성
                 Page page = Page.builder()
                         .job(job)
-                        .pageNo(i)
+                        .pageNo(pageNo)
                         .pdfPath(fullPath)
                         .build();
                 pages.add(page);
@@ -108,18 +128,88 @@ public class JobService {
                 // Redis task_queue에 등록
                 String task = String.format(
                         "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
-                        jobId, i, fullPath, mode
+                        jobId, pageNo, fullPath, mode
                 );
                 redisTemplate.opsForList().leftPush("task_queue", task);
 
                 // Redis 상태 초기화
-                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
+                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
             }
 
-            // 8. Page 일괄 저장
+            // 8-b. Page 일괄 저장
             pageRepository.saveAll(pages);
 
             return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING");
+
+        } else {
+            // 5. PDF 페이지별 분리 및 GCS 업로드
+            byte[] pdfBytes = file.getBytes();
+
+            try (PdfReader reader = new PdfReader(new java.io.ByteArrayInputStream(pdfBytes));
+                 PdfDocument pdfDoc = new PdfDocument(reader)) {
+
+                int totalPages = pdfDoc.getNumberOfPages();
+
+                // 6. Job 엔티티 생성 및 저장
+                Job job = Job.builder()
+                        .id(jobId)
+                        .user(user)
+                        .mode(mode)
+                        .totalPages(totalPages)
+                        .build();
+                jobRepository.saveAndFlush(job);
+
+                // 7. 페이지별 처리
+                for (int i = 1; i <= totalPages; i++) {
+                    // 페이지 PDF 추출
+                    ByteArrayOutputStream pageOut = new ByteArrayOutputStream();
+                    try (PdfDocument pageDoc = new PdfDocument(new PdfWriter(pageOut))) {
+                        pdfDoc.copyPagesTo(i, i, pageDoc);
+                    }
+
+                    // GCS 업로드
+                    String gcsPath = jobId + "/pages/page-" + i + ".pdf";
+                    String fullPath = gcsService.uploadFile(gcsPath, pageOut.toByteArray(), "application/pdf");
+
+                    // Page 엔티티 생성
+                    Page page = Page.builder()
+                            .job(job)
+                            .pageNo(i)
+                            .pdfPath(fullPath)
+                            .build();
+                    pages.add(page);
+
+                    // Redis task_queue에 등록
+                    String task = String.format(
+                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
+                            jobId, i, fullPath, mode
+                    );
+                    redisTemplate.opsForList().leftPush("task_queue", task);
+
+                    // Redis 상태 초기화
+                    redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
+                }
+
+                // 8. Page 일괄 저장
+                pageRepository.saveAll(pages);
+
+                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING");
+            }
         }
+    }
+
+    // HWP 텍스트 추출
+    private String extractTextFromHwp(MultipartFile file) throws Exception {
+        HWPFile hwpFile = HWPReader.fromInputStream(file.getInputStream());
+        StringBuilder sb = new StringBuilder();
+        for (Section section : hwpFile.getBodyText().getSectionList()) {
+            for (int i = 0; i < section.getParagraphCount(); i++) {
+                Paragraph paragraph = section.getParagraph(i);
+                if (paragraph.getNormalString() != null) {
+                    sb.append(paragraph.getNormalString()).append("\n");
+                }
+            }
+        }
+        return sb.toString();
     }
 }
