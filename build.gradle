@@ -61,6 +61,9 @@ dependencies {
 	// iText (PDF 페이지 분리)
 	implementation 'com.itextpdf:itext7-core:7.2.5'
 
+	// hwp
+	implementation 'kr.dogfoot:hwplib:1.1.1'
+
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 }
