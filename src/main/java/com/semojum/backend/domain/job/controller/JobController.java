@@ -23,7 +23,7 @@ public class JobController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestPart("file") MultipartFile file,
             @RequestParam("mode") String mode
-    ) throws IOException {
+    ) throws Exception {
         return ApiResponse.success(jobService.createJob(userDetails.getUsername(), file, mode));
     }
 }
