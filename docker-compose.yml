@@ -1,4 +1,13 @@
 services:
+  envoy:
+    image: envoyproxy/envoy:v1.29-latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      - backend
+
   backend:
     image: zxhwan/semojum-backend:latest
     ports:
