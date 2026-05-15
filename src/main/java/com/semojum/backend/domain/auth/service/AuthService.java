@@ -3,6 +3,7 @@ package com.semojum.backend.domain.auth.service;
 import com.semojum.backend.domain.auth.dto.AuthRequestDto;
 import com.semojum.backend.domain.auth.dto.AuthResponseDto;
 import com.semojum.backend.domain.auth.entity.User;
+import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -22,14 +23,17 @@ public class AuthService {
 
     @Transactional
     public AuthResponseDto.SignUp signUp(AuthRequestDto.SignUp request) {
+        // 이메일 중복 체크
         if (userRepository.existsByEmail(request.email())) {
             throw new CustomException(ErrorCode.AUTH_DUPLICATE_EMAIL);
         }
 
+        // 일반 로그인 유저 생성 (provider = EMAIL)
         User user = User.builder()
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .name(request.name())
+                .provider(AuthProvider.EMAIL)
                 .build();
 
         userRepository.save(user);
@@ -39,15 +43,18 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthResponseDto.Login login(AuthRequestDto.Login request) {
+        // 이메일로 유저 조회
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS));
 
+        // 비밀번호 검증
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
         }
 
-        String accessToken = jwtProvider.generateAccessToken(user.getEmail());
-        String refreshToken = jwtProvider.generateRefreshToken(user.getEmail());
+        // JWT 발급 (subject: UUID)
+        String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
 
         return new AuthResponseDto.Login(accessToken, refreshToken);
     }
