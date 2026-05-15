@@ -46,10 +46,10 @@ public class JobService {
     private static final int LINES_PER_PAGE = 30;
 
     @Transactional
-    public JobResponseDto.Create createJob(String email, MultipartFile file, String mode) throws Exception {
+    public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode) throws Exception {
 
-        // 1. 유저 조회
-        User user = userRepository.findByEmail(email)
+        // UUID로 유저 조회
+        User user = userRepository.findById(UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
         // 2. 모드 검증
