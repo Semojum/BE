@@ -1,6 +1,5 @@
 package com.semojum.backend.global.jwt;
 
-import com.semojum.backend.domain.auth.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,8 +30,8 @@ public class JwtFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
 
         if (token != null && jwtProvider.isValid(token)) {
-            String email = jwtProvider.getEmail(token);
-            UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+            String userId = jwtProvider.getUserId(token);
+            UserDetails userDetails = userDetailsService.loadUserByUsername(userId);
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
             SecurityContextHolder.getContext().setAuthentication(auth);

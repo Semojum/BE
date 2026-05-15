@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.auth.entity;
 
+import com.semojum.backend.domain.auth.enums.AuthProvider;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -20,23 +21,32 @@ public class User {
     @Column(columnDefinition = "uuid", updatable = false)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @Column
     private String password;
 
-    @Column(nullable = false)
+    @Column
     private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AuthProvider provider;
+
+    @Column(name = "provider_uid")
+    private String providerUid;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    public User(String email, String password, String name) {
+    public User(String email, String password, String name, AuthProvider provider, String providerUid) {
         this.email = email;
         this.password = password;
         this.name = name;
+        this.provider = provider;
+        this.providerUid = providerUid;
         this.createdAt = LocalDateTime.now();
     }
 }
