@@ -29,7 +29,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -108,6 +110,9 @@ public class JobService {
                     .build();
             jobRepository.saveAndFlush(job);
 
+            // total_pages Redis에 저장
+            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+
             // 7-b. 청크별 처리
             for (int i = 0; i < totalPages; i++) {
                 int pageNo = i + 1;
@@ -159,6 +164,9 @@ public class JobService {
                         .build();
                 jobRepository.saveAndFlush(job);
 
+                // total_pages Redis에 저장
+                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+
                 // 7. 페이지별 처리
                 for (int i = 1; i <= totalPages; i++) {
                     // 페이지 PDF 추출
@@ -196,6 +204,48 @@ public class JobService {
                 return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING");
             }
         }
+    }
+
+    // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)
+    public JobResponseDto.Status getJobStatus(String jobId) {
+        Map<Object, Object> redisData = redisTemplate.opsForHash().entries("job:" + jobId + ":pages");
+
+        if (redisData.isEmpty()) {
+            throw new CustomException(ErrorCode.JOB_NOT_FOUND);
+        }
+
+        int totalPages = Integer.parseInt((String) redisData.get("total_pages"));
+        int completedPages = 0;
+        int pendingPages = 0;
+        int runningPages = 0;
+        Map<String, String> pages = new HashMap<>();
+
+        for (Map.Entry<Object, Object> entry : redisData.entrySet()) {
+            String key = (String) entry.getKey();
+            String value = (String) entry.getValue();
+
+            if (key.equals("total_pages")) continue;
+
+            pages.put(key, value);
+
+            switch (value) {
+                case "COMPLETED", "NEEDS_REVIEW", "BLOCKED" -> completedPages++;
+                case "RUNNING" -> runningPages++;
+                case "PENDING" -> pendingPages++;
+            }
+        }
+
+        // 전체 job 상태 계산
+        String overallStatus;
+        if (completedPages == totalPages) {
+            overallStatus = "COMPLETED";
+        } else if (runningPages > 0 || completedPages > 0) {
+            overallStatus = "IN_PROGRESS";
+        } else {
+            overallStatus = "PENDING";
+        }
+
+        return new JobResponseDto.Status(jobId, totalPages, completedPages, pendingPages, runningPages, overallStatus, pages);
     }
 
     // HWP 텍스트 추출
