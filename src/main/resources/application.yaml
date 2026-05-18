@@ -36,7 +36,7 @@ gcs:
 grpc:
   client:
     ai-server:
-      address: static://34.50.58.227:50051
+      address: static://136.119.89.254:50051
       negotiation-type: tls
       security:
         trust-cert-collection: ${GRPC_CERT_PATH}
