@@ -18,6 +18,7 @@ public class GcsService {
     @Value("${gcs.bucket-name}")
     private String bucketName;
 
+    // GCS에 파일 업로드
     public String uploadFile(String gcsPath, byte[] fileBytes, String contentType) {
         BlobId blobId = BlobId.of(bucketName, gcsPath);
         BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
@@ -26,5 +27,15 @@ public class GcsService {
         storage.create(blobInfo, fileBytes);
         log.info("GCS 업로드 완료: {}", gcsPath);
         return "gs://" + bucketName + "/" + gcsPath;
+    }
+
+    // GCS에서 파일 다운로드
+    public byte[] downloadFile(String gcsPath) {
+        // gs://semojum-bucket/path 형태에서 path만 추출
+        String objectPath = gcsPath.replace("gs://" + bucketName + "/", "");
+        BlobId blobId = BlobId.of(bucketName, objectPath);
+        byte[] content = storage.readAllBytes(blobId);
+        log.info("GCS 다운로드 완료: {}", objectPath);
+        return content;
     }
 }
