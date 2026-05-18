@@ -26,4 +26,12 @@ public class JobController {
     ) throws Exception {
         return ApiResponse.success(jobService.createJob(userDetails.getUsername(), file, mode));
     }
+
+    // job 상태 확인 API
+    @GetMapping("/{jobId}/status")
+    public ApiResponse<JobResponseDto.Status> getJobStatus(
+            @PathVariable String jobId
+    ) {
+        return ApiResponse.success(jobService.getJobStatus(jobId));
+    }
 }
