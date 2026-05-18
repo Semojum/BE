@@ -4,7 +4,7 @@ grpc:
       address: static://34.50.58.227:50051
       negotiation-type: tls
       security:
-        trust-cert-collection: file:/Users/joha-eun/semojum/server.crt
+        trust-cert-collection: ${GRPC_CERT_PATH}
         authority-override: semojum-ai
 
 spring:
@@ -21,6 +21,13 @@ spring:
             scope:
               - profile_nickname
               - account_email
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            redirect-uri: http://localhost:8080/login/oauth2/code/google
+            scope:
+              - email
+              - profile
         provider:
           kakao:
             authorization-uri: https://kauth.kakao.com/oauth/authorize

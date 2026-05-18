@@ -18,6 +18,9 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
       - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - GRPC_CERT_PATH=${GRPC_CERT_PATH}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       - redis
     volumes:
