@@ -39,5 +39,5 @@ grpc:
       address: static://34.50.58.227:50051
       negotiation-type: tls
       security:
-        trust-cert-collection: file:/home/joha-eun/server.crt
+        trust-cert-collection: ${GRPC_CERT_PATH}
         authority-override: semojum-ai
