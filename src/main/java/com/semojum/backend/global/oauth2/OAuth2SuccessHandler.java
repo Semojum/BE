@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
@@ -27,12 +28,23 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
                                         Authentication authentication) throws IOException {
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
 
-        // 카카오 고유 ID 추출
+        // 어떤 provider인지 확인
+        String registrationId = ((OAuth2AuthenticationToken) authentication).getAuthorizedClientRegistrationId();
+        AuthProvider provider = AuthProvider.valueOf(registrationId.toUpperCase());
+
         Map<String, Object> attributes = oAuth2User.getAttributes();
-        String providerUid = String.valueOf(attributes.get("id"));
+
+        // provider별 고유 ID 추출
+        String providerUid;
+        if (provider == AuthProvider.KAKAO) {
+            providerUid = String.valueOf(attributes.get("id"));
+        } else {
+            // 구글은 sub 필드가 고유 ID
+            providerUid = String.valueOf(attributes.get("sub"));
+        }
 
         // DB에서 유저 조회
-        User user = userRepository.findByProviderAndProviderUid(AuthProvider.KAKAO, providerUid)
+        User user = userRepository.findByProviderAndProviderUid(provider, providerUid)
                 .orElseThrow();
 
         // JWT 발급 (subject: UUID)
