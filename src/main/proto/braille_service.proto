@@ -75,6 +75,12 @@ message ProcessingMeta {
   bool   scan_only            = 4;
 }
 
+message Draft {                          // 단계4 T4-2: 시각 요소 복수 초안 1개
+  string          text      = 1;   // 점역사주 원문
+  repeated string contents  = 2;   // 그 초안의 점자 (점자 줄)
+  string          label     = 3;   // 피커 표시명 (예: "격자형", "위치 중심", "요약")
+}
+
 message TextElement {
   string          id                 = 1;
   string          type               = 2;
@@ -90,6 +96,8 @@ message TextElement {
   TactileGraphic  tactile            = 12;  // image/table 전용
   repeated string contents           = 13;
   repeated RuleTrail rule_trail      = 14;
+  repeated Draft  drafts             = 15;  // 시각 요소 복수 초안 (단계4 T4-2)
+  int32           selected_idx       = 16;  // 기본 선택 (0-based)
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────────────
