@@ -1,8 +1,10 @@
 package com.semojum.backend.global.oauth2;
 
 import com.semojum.backend.domain.auth.entity.User;
+import com.semojum.backend.domain.auth.entity.UserSession;
 import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.auth.repository.UserRepository;
+import com.semojum.backend.domain.auth.repository.UserSessionRepository;
 import com.semojum.backend.global.jwt.JwtProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,6 +16,7 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @Component
@@ -22,6 +25,7 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
 
     private final JwtProvider jwtProvider;
     private final UserRepository userRepository;
+    private final UserSessionRepository userSessionRepository;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
@@ -39,7 +43,6 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         if (provider == AuthProvider.KAKAO) {
             providerUid = String.valueOf(attributes.get("id"));
         } else {
-            // 구글은 sub 필드가 고유 ID
             providerUid = String.valueOf(attributes.get("sub"));
         }
 
@@ -50,6 +53,20 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         // JWT 발급 (subject: UUID)
         String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
         String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
+
+        // 리프레시 토큰 세션 저장
+        String hash = jwtProvider.hashToken(refreshToken);
+        LocalDateTime expiresAt = LocalDateTime.now()
+                .plusSeconds(jwtProvider.getRefreshTokenExpiry() / 1000);
+
+        UserSession session = UserSession.builder()
+                .user(user)
+                .refreshTokenHash(hash)
+                .expiresAt(expiresAt)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        userSessionRepository.save(session);
 
         // 프론트엔드로 토큰 전달 (임시 URL, FE 방식 확정 후 수정 필요)
         String redirectUrl = "http://localhost:3000/oauth2/callback"
