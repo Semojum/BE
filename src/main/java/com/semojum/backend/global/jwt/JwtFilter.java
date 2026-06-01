@@ -29,7 +29,9 @@ public class JwtFilter extends OncePerRequestFilter {
 
     // 인증 없이 통과시킬 경로
     private static final List<String> PERMIT_URLS = List.of(
-            "/api/auth/",
+//            "/api/auth/",
+            "/api/auth/signup",
+            "/api/auth/login",
             "/login/oauth2/",
             "/oauth2/",
             "/swagger-ui",
