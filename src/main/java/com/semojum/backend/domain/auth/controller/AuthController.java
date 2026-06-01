@@ -24,4 +24,15 @@ public class AuthController {
     public ApiResponse<AuthResponseDto.Login> login(@RequestBody @Valid AuthRequestDto.Login request) {
         return ApiResponse.success(authService.login(request));
     }
+
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@RequestBody @Valid AuthRequestDto.Refresh request) {
+        authService.logout(request);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/refresh")
+    public ApiResponse<AuthResponseDto.Refresh> refresh(@RequestBody @Valid AuthRequestDto.Refresh request) {
+        return ApiResponse.success(authService.refresh(request));
+    }
 }
