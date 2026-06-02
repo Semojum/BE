@@ -10,6 +10,8 @@ import com.semojum.backend.domain.auth.repository.UserSessionRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.jwt.JwtProvider;
+import com.semojum.backend.global.oauth2.GoogleOAuthService;
+import com.semojum.backend.global.oauth2.KakaoOAuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,8 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
+    private final GoogleOAuthService googleOAuthService;
+    private final KakaoOAuthService kakaoOAuthService;
 
     @Transactional
     public AuthResponseDto.SignUp signUp(AuthRequestDto.SignUp request) {
@@ -118,6 +122,65 @@ public class AuthService {
         String newAccessToken = jwtProvider.generateAccessToken(userId);
 
         return new AuthResponseDto.Refresh(newAccessToken);
+    }
+
+    @Transactional
+    public AuthResponseDto.Login googleLogin(AuthRequestDto.GoogleLogin request) {
+        com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload payload =
+                googleOAuthService.exchange(request.code(), request.codeVerifier(), request.redirectUri());
+
+        String providerUid = payload.getSubject();
+        String email = payload.getEmail();
+        String name = (String) payload.get("name");
+
+        // 유저 조회 또는 생성
+        User user = userRepository.findByProviderAndProviderUid(AuthProvider.GOOGLE, providerUid)
+                .orElseGet(() -> {
+                    User newUser = User.builder()
+                            .email(email)
+                            .name(name)
+                            .provider(AuthProvider.GOOGLE)
+                            .providerUid(providerUid)
+                            .build();
+                    return userRepository.save(newUser);
+                });
+
+        String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
+        saveSession(user, refreshToken);
+
+        return new AuthResponseDto.Login(accessToken, refreshToken);
+    }
+
+    @Transactional
+    public AuthResponseDto.Login kakaoLogin(AuthRequestDto.KakaoLogin request) {
+        java.util.Map<String, Object> userInfo =
+                kakaoOAuthService.exchange(request.code(), request.codeVerifier(), request.redirectUri());
+
+        String providerUid = String.valueOf(userInfo.get("id"));
+        java.util.Map<String, Object> kakaoAccount = (java.util.Map<String, Object>) userInfo.get("kakao_account");
+        java.util.Map<String, Object> properties = (java.util.Map<String, Object>) userInfo.get("properties");
+
+        String email = kakaoAccount != null ? (String) kakaoAccount.get("email") : null;
+        String name = properties != null ? (String) properties.get("nickname") : null;
+
+        // 유저 조회 또는 생성
+        User user = userRepository.findByProviderAndProviderUid(AuthProvider.KAKAO, providerUid)
+                .orElseGet(() -> {
+                    User newUser = User.builder()
+                            .email(email)
+                            .name(name)
+                            .provider(AuthProvider.KAKAO)
+                            .providerUid(providerUid)
+                            .build();
+                    return userRepository.save(newUser);
+                });
+
+        String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
+        saveSession(user, refreshToken);
+
+        return new AuthResponseDto.Login(accessToken, refreshToken);
     }
 
     // 리프레시 토큰 세션 저장
