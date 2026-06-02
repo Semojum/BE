@@ -19,4 +19,16 @@ public class AuthRequestDto {
     public record Refresh(
             @NotBlank String refreshToken
     ) {}
+
+    public record GoogleLogin(
+            @NotBlank String code,
+            @NotBlank String codeVerifier,
+            @NotBlank String redirectUri
+    ) {}
+
+    public record KakaoLogin(
+            @NotBlank String code,
+            String codeVerifier,
+            @NotBlank String redirectUri
+    ) {}
 }
