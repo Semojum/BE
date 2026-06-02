@@ -35,4 +35,14 @@ public class AuthController {
     public ApiResponse<AuthResponseDto.Refresh> refresh(@RequestBody @Valid AuthRequestDto.Refresh request) {
         return ApiResponse.success(authService.refresh(request));
     }
+
+    @PostMapping("/google")
+    public ApiResponse<AuthResponseDto.Login> googleLogin(@RequestBody @Valid AuthRequestDto.GoogleLogin request) {
+        return ApiResponse.success(authService.googleLogin(request));
+    }
+
+    @PostMapping("/kakao")
+    public ApiResponse<AuthResponseDto.Login> kakaoLogin(@RequestBody @Valid AuthRequestDto.KakaoLogin request) {
+        return ApiResponse.success(authService.kakaoLogin(request));
+    }
 }
