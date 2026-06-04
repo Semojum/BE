@@ -46,6 +46,12 @@ public class PageResult {
     private Double ocrConfidenceAvg;
     private Double lineOverflowRate;
 
+    // ProcessingMeta
+    private Integer processingTimeMs;
+    private Double pdfLayerConfidence;
+    private String routingTierUsed;
+    private Boolean scanOnly;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private String rawResponse;
@@ -56,7 +62,10 @@ public class PageResult {
     @Builder
     public PageResult(Job job, Page page, int pageNumber, String mode, String status,
                       Integer imageWidth, Integer imageHeight,
-                      Double ocrConfidenceAvg, Double lineOverflowRate, String rawResponse) {
+                      Double ocrConfidenceAvg, Double lineOverflowRate,
+                      Integer processingTimeMs, Double pdfLayerConfidence,
+                      String routingTierUsed, Boolean scanOnly,
+                      String rawResponse) {
         this.job = job;
         this.page = page;
         this.pageNumber = pageNumber;
@@ -66,6 +75,10 @@ public class PageResult {
         this.imageHeight = imageHeight;
         this.ocrConfidenceAvg = ocrConfidenceAvg;
         this.lineOverflowRate = lineOverflowRate;
+        this.processingTimeMs = processingTimeMs;
+        this.pdfLayerConfidence = pdfLayerConfidence;
+        this.routingTierUsed = routingTierUsed;
+        this.scanOnly = scanOnly;
         this.rawResponse = rawResponse;
         this.createdAt = LocalDateTime.now();
     }
