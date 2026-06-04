@@ -31,6 +31,14 @@ public class TextElement {
 
     private String type;
     private Integer readingOrder;
+    private Integer headingLevel;
+    private Double ocrConfidence;
+    private String tnText;
+    private String latexString;
+    private Integer selectedIdx;
+    private String renderMode;
+    private String visualSubtype;
+    private Double subtypeConfidence;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
@@ -40,18 +48,34 @@ public class TextElement {
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> currentContents;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String drafts;
+
     @Column(nullable = false)
     private boolean isBlocked;
 
     @Builder
     public TextElement(PageResult pageResult, int elementId, String type,
-                       Integer readingOrder, List<String> contents, boolean isBlocked) {
+                       Integer readingOrder, Integer headingLevel, Double ocrConfidence,
+                       String tnText, String latexString, Integer selectedIdx,
+                       String renderMode, String visualSubtype, Double subtypeConfidence,
+                       List<String> contents, String drafts, boolean isBlocked) {
         this.pageResult = pageResult;
         this.elementId = elementId;
         this.type = type;
         this.readingOrder = readingOrder;
+        this.headingLevel = headingLevel;
+        this.ocrConfidence = ocrConfidence;
+        this.tnText = tnText;
+        this.latexString = latexString;
+        this.selectedIdx = selectedIdx;
+        this.renderMode = renderMode;
+        this.visualSubtype = visualSubtype;
+        this.subtypeConfidence = subtypeConfidence;
         this.originalContents = contents;
         this.currentContents = contents;
+        this.drafts = drafts;
         this.isBlocked = isBlocked;
     }
 }
