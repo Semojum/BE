@@ -133,7 +133,7 @@ public class JobService {
                 // Redis task_queue에 등록
                 String task = String.format(
                         "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
-                        jobId, pageNo, fullPath, mode
+                        jobId, pageNo, fullPath, mode, totalPages
                 );
                 redisTemplate.opsForList().leftPush("task_queue", task);
 
@@ -190,7 +190,7 @@ public class JobService {
                     // Redis task_queue에 등록
                     String task = String.format(
                             "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
-                            jobId, i, fullPath, mode
+                            jobId, i, fullPath, mode, totalPages
                     );
                     redisTemplate.opsForList().leftPush("task_queue", task);
 
