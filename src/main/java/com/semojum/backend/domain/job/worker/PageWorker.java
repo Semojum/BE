@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.job.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.semojum.backend.domain.result.service.ResultService;
 import com.semojum.backend.global.gcs.GcsService;
 import com.semojum.backend.global.grpc.BrailleGrpcClient;
 import com.semojum.backend.grpc.BrailleRequest;
@@ -26,6 +27,7 @@ public class PageWorker {
     private final GcsService gcsService;
     private final BrailleGrpcClient grpcClient;
     private final ObjectMapper objectMapper;
+    private final ResultService resultService;
 
     private static final String TASK_QUEUE = "task_queue";
     private static final int WORKER_COUNT = 6;
@@ -78,6 +80,7 @@ public class PageWorker {
                 int pageNo = (int) taskMap.get("pageNo");
                 String gcsPath = (String) taskMap.get("gcsPath");
                 String mode = (String) taskMap.get("mode");
+                int totalPages = (int) taskMap.get("totalPages");
 
                 log.info("Worker-{} 작업 시작: jobId={}, pageNo={}", workerId, jobId, pageNo);
 
@@ -91,6 +94,7 @@ public class PageWorker {
                 BrailleRequest.Builder requestBuilder = BrailleRequest.newBuilder()
                         .setJobId(jobId)
                         .setPageNo(pageNo)
+                        .setTotalPages(totalPages)
                         .setMode(mode);
 
                 if (mode.equals("b")) {
@@ -104,6 +108,9 @@ public class PageWorker {
 
                 // AI 서버에 gRPC 요청
                 BrailleResponse response = grpcClient.processPage(requestBuilder.build());
+
+                // DB에 결과 저장
+                resultService.save(response);
 
                 // Redis 상태 → COMPLETED or NEEDS_REVIEW or BLOCKED
                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, response.getStatus());

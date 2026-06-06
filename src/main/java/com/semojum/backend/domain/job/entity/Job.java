@@ -51,4 +51,14 @@ public class Job {
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
     }
+
+    public void updateStatus(String status) {
+        this.status = status;
+    }
+
+    public void complete(int[] failedPages) {
+        this.status = "COMPLETED";
+        this.failedPages = failedPages;
+        this.finishedAt = LocalDateTime.now();
+    }
 }
