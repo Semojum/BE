@@ -32,6 +32,7 @@ public class BrailleElement {
     @Column(nullable = false)
     private String type;
 
+    private Integer readingOrder;
     private Integer headingLevel;
     private Double ocrConfidence;
     private String tnText;
@@ -58,13 +59,14 @@ public class BrailleElement {
 
     @Builder
     public BrailleElement(PageResult pageResult, int elementId, String type,
-                          Integer headingLevel, Double ocrConfidence,
+                          Integer readingOrder, Integer headingLevel, Double ocrConfidence,
                           String tnText, String latexString, Integer selectedIdx,
                           String renderMode, String visualSubtype, Double subtypeConfidence,
                           List<String> content, String drafts, boolean isBlocked) {
         this.pageResult = pageResult;
         this.elementId = elementId;
         this.type = type;
+        this.readingOrder = readingOrder;
         this.headingLevel = headingLevel;
         this.ocrConfidence = ocrConfidence;
         this.tnText = tnText;
