@@ -36,3 +36,5 @@ out/
 ### VS Code ###
 .vscode/
 .DS_Store
+task.md
+CLAUDE.md

@@ -46,4 +46,8 @@ public class Page {
         this.status = "PENDING";
         this.createdAt = LocalDateTime.now();
     }
+
+    public void updateStatus(String status) {
+        this.status = status;
+    }
 }
