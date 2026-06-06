@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -120,6 +121,7 @@ public class ResultService {
                     .pageResult(pageResult)
                     .elementId(parseId(protoBraille.getId()))
                     .type(protoBraille.getType().isEmpty() ? "text" : protoBraille.getType())
+                    .readingOrder(protoBraille.getOrder() > 0 ? protoBraille.getOrder() : null)
                     .headingLevel(protoBraille.getHeadingLevel() > 0 ? protoBraille.getHeadingLevel() : null)
                     .ocrConfidence(protoBraille.getOcrConfidence() > 0 ? (double) protoBraille.getOcrConfidence() : null)
                     .tnText(protoBraille.getTnText().isEmpty() ? null : protoBraille.getTnText())

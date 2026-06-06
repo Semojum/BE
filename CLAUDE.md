@@ -54,11 +54,11 @@ com.semojum.backend
 │   │   ├── repository   UserRepository, UserSessionRepository
 │   │   └── service      AuthService
 │   ├── job
-│   │   ├── controller   JobController
+│   │   ├── controller   JobController, SseController
 │   │   ├── dto          JobResponseDto
 │   │   ├── entity       Job, Page
 │   │   ├── repository   JobRepository, PageRepository
-│   │   ├── service      JobService
+│   │   ├── service      JobService, SseService
 │   │   └── worker       PageWorker
 │   └── result
 │       ├── entity       PageResult, TextElement, BrailleElement,
@@ -124,6 +124,13 @@ com.semojum.backend
   - 모드 b: TXT/HWP 30줄 단위 청크 → GCS 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
+- `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
+  - `queue_position`: PENDING 페이지 존재 시 전송 (position, estimated_wait_sec)
+  - `page_done`: 페이지 완료 시 DB 결과 포함 전송 (모드별 직렬화)
+    - mode a: image_resolution + bounding_box_list + text_list + quality_report
+    - mode b: text_list (id/contents) + braille_text_list + quality_report
+    - mode c: image_resolution + bounding_box_list + braille_text_list + quality_report
+  - `job_done`: 전체 완료 시 전송 후 연결 종료
 
 ### PageWorker
 - 6개 워커 스레드가 Redis `task_queue`에서 BLPOP으로 태스크 처리
@@ -143,41 +150,6 @@ com.semojum.backend
 - AI VM A (`34.50.58.227:50051`) TLS 연결
 - proto: `BrailleRequest` / `BrailleResponse`
 - BE gRPC 타임아웃: 200s (AI 서버 하드 타임아웃 180s보다 높게)
-
----
-
-## 현재 구현 중: SSE
-
-### 목표
-`GET /api/jobs/{jobId}/events` — FE에 실시간 변환 결과 스트리밍
-
-### 전송 이벤트
-1. **queue_position** — PENDING 페이지 존재 시 주기적 전송
-```json
-{ "type": "queue_position", "position": 3, "estimated_wait_sec": 45 }
-```
-
-2. **page_done** — 페이지 하나 완료 시 전송
-```json
-{ "type": "page_done", "job_id": "...", "page_no": 1, "status": "COMPLETED" }
-```
-
-3. **job_done** — 모든 페이지 완료 시 전송 후 연결 종료
-```json
-{ "type": "job_done", "job_id": "...", "total_pages": 5, "failed_pages": [2] }
-```
-
-### 구현 방식
-- Redis `job:{jobId}:pages` Hash를 1초마다 폴링
-- 이전 상태와 현재 상태 비교해서 변화 감지
-- `SseEmitter`로 이벤트 전송
-- JWT 인증 필요 (본인 Job만 조회 가능)
-- Envoy `idle_timeout: 0s`, `timeout: 0s` 필수 (장시간 연결)
-
-### 구현할 파일
-- `domain/job/service/SseService.java`
-- `domain/job/controller/SseController.java`
-- `envoy.yaml` 수정
 
 ---
 
