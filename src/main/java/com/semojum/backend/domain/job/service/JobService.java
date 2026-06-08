@@ -107,6 +107,7 @@ public class JobService {
                     .user(user)
                     .mode(mode)
                     .totalPages(totalPages)
+                    .originalFileName(file.getOriginalFilename())
                     .build();
             jobRepository.saveAndFlush(job);
 
@@ -132,7 +133,7 @@ public class JobService {
 
                 // Redis task_queue에 등록
                 String task = String.format(
-                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
+                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d}",
                         jobId, pageNo, fullPath, mode, totalPages
                 );
                 redisTemplate.opsForList().leftPush("task_queue", task);
@@ -161,6 +162,7 @@ public class JobService {
                         .user(user)
                         .mode(mode)
                         .totalPages(totalPages)
+                        .originalFileName(file.getOriginalFilename())
                         .build();
                 jobRepository.saveAndFlush(job);
 
@@ -189,7 +191,7 @@ public class JobService {
 
                     // Redis task_queue에 등록
                     String task = String.format(
-                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\"}",
+                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d}",
                             jobId, i, fullPath, mode, totalPages
                     );
                     redisTemplate.opsForList().leftPush("task_queue", task);

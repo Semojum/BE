@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.job.dto;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 public class JobResponseDto {
@@ -19,5 +20,29 @@ public class JobResponseDto {
             int runningPages,
             String overallStatus,
             Map<String, String> pages
+    ) {}
+
+    public record JobSummary(
+            String jobId,
+            String mode,
+            String status,
+            int totalPages,
+            int[] failedPages,
+            String originalFileName,
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt
+    ) {}
+
+    public record JobDetail(
+            String jobId,
+            String mode,
+            String status,
+            int totalPages,
+            int[] failedPages,
+            String originalFileName,
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt,
+            int pageNo,
+            Map<String, Object> result
     ) {}
 }
