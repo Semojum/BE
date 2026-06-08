@@ -35,6 +35,7 @@ public class Job {
     private int[] failedPages;
 
     private String originalFilePath;
+    private String originalFileName;
 
     @Column(nullable = false)
     private LocalDateTime startedAt;
@@ -42,11 +43,12 @@ public class Job {
     private LocalDateTime finishedAt;
 
     @Builder
-    public Job(String id, User user, String mode, int totalPages) {
+    public Job(String id, User user, String mode, int totalPages, String originalFileName) {
         this.id = id;
         this.user = user;
         this.mode = mode;
         this.totalPages = totalPages;
+        this.originalFileName = originalFileName;
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
