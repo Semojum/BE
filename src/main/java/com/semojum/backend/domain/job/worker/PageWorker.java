@@ -30,7 +30,7 @@ public class PageWorker {
     private final ResultService resultService;
 
     private static final String TASK_QUEUE = "task_queue";
-    private static final int WORKER_COUNT = 6;
+    private static final int WORKER_COUNT = 1; // TODO: AI 서버가 병렬 처리 지원하면 다시 6으로 복구
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
