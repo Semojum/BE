@@ -44,6 +44,7 @@ public class JobService {
     private final UserRepository userRepository;
     private final GcsService gcsService;
     private final RedisTemplate<String, String> redisTemplate;
+    private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
 
     private static final int LINES_PER_PAGE = 30;
 
@@ -111,6 +112,16 @@ public class JobService {
                     .build();
             jobRepository.saveAndFlush(job);
 
+            try {
+                byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
+                String thumbnailGcsPath = jobId + "/thumbnail.png";
+                String thumbnailFullPath = gcsService.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                job.updateThumbnailUrl(gcsService.getPublicUrl(thumbnailFullPath));
+                jobRepository.save(job);
+            } catch (Exception e) {
+                log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+            }
+
             // total_pages Redis에 저장
             redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
 
@@ -165,6 +176,16 @@ public class JobService {
                         .originalFileName(file.getOriginalFilename())
                         .build();
                 jobRepository.saveAndFlush(job);
+
+                try {
+                    byte[] thumbnailBytes = thumbnailService.generatePdfThumbnail(pdfBytes);
+                    String thumbnailGcsPath = jobId + "/thumbnail.png";
+                    String thumbnailFullPath = gcsService.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                    job.updateThumbnailUrl(gcsService.getPublicUrl(thumbnailFullPath));
+                    jobRepository.save(job);
+                } catch (Exception e) {
+                    log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+                }
 
                 // total_pages Redis에 저장
                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
