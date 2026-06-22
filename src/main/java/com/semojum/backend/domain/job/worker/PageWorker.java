@@ -66,9 +66,10 @@ public class PageWorker {
     private void runWorker(int workerId) {
         log.info("Worker-{} 시작", workerId);
         while (running) {
+            String task = null;
             try {
                 // task_queue에서 작업 꺼내기
-                String task = redisTemplate.opsForList().rightPop(TASK_QUEUE);
+                task = redisTemplate.opsForList().rightPop(TASK_QUEUE);
                 if (task == null) {
                     Thread.sleep(100);
                     continue;
@@ -119,7 +120,19 @@ public class PageWorker {
 
             } catch (Exception e) {
                 if (running) {
-                    log.error("Worker-{} 오류 발생: {}", workerId, e.getMessage());
+                    log.error("Worker-{} 오류 발생, 재시도 큐에 등록: {}", workerId, e.getMessage());
+                    if (task != null) {
+                        try {
+                            Map<String, Object> taskMap = objectMapper.readValue(task, Map.class);
+                            String jobId = (String) taskMap.get("jobId");
+                            int pageNo = (int) taskMap.get("pageNo");
+                            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+                        } catch (Exception ignored) {}
+                        redisTemplate.opsForList().leftPush(TASK_QUEUE, task);
+                    }
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException ignored) {}
                 }
             }
         }
