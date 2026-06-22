@@ -36,6 +36,7 @@ public class Job {
 
     private String originalFilePath;
     private String originalFileName;
+    private String thumbnailUrl;
 
     @Column(nullable = false)
     private LocalDateTime startedAt;
@@ -43,12 +44,13 @@ public class Job {
     private LocalDateTime finishedAt;
 
     @Builder
-    public Job(String id, User user, String mode, int totalPages, String originalFileName) {
+    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl) {
         this.id = id;
         this.user = user;
         this.mode = mode;
         this.totalPages = totalPages;
         this.originalFileName = originalFileName;
+        this.thumbnailUrl = thumbnailUrl;
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
@@ -56,6 +58,10 @@ public class Job {
 
     public void updateStatus(String status) {
         this.status = status;
+    }
+
+    public void updateThumbnailUrl(String thumbnailUrl) {
+        this.thumbnailUrl = thumbnailUrl;
     }
 
     public void complete(int[] failedPages) {

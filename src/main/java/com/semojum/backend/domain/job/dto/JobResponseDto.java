@@ -29,6 +29,7 @@ public class JobResponseDto {
             int totalPages,
             int[] failedPages,
             String originalFileName,
+            String thumbnailUrl,
             LocalDateTime startedAt,
             LocalDateTime finishedAt
     ) {}
