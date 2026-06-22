@@ -27,7 +27,7 @@ public class BrailleElement {
     private PageResult pageResult;
 
     @Column(nullable = false)
-    private int elementId;
+    private String elementId;
 
     @Column(nullable = false)
     private String type;
@@ -58,7 +58,7 @@ public class BrailleElement {
     private boolean isBlocked;
 
     @Builder
-    public BrailleElement(PageResult pageResult, int elementId, String type,
+    public BrailleElement(PageResult pageResult, String elementId, String type,
                           Integer readingOrder, Integer headingLevel, Double ocrConfidence,
                           String tnText, String latexString, Integer selectedIdx,
                           String renderMode, String visualSubtype, Double subtypeConfidence,

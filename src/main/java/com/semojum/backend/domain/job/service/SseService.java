@@ -295,8 +295,9 @@ public class SseService {
             map.put("section", rt.getSection());
             map.put("title", rt.getTitle());
             map.put("excerpt", rt.getExcerpt());
-            map.put("span_start", rt.getSpanStart());
-            map.put("span_end", rt.getSpanEnd());
+            map.put("line_no", rt.getLineNo());
+            map.put("col_start", rt.getColStart());
+            map.put("col_end", rt.getColEnd());
             map.put("tag", rt.getTag());
             list.add(map);
         }
