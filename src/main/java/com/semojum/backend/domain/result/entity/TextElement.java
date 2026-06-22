@@ -27,7 +27,7 @@ public class TextElement {
     private PageResult pageResult;
 
     @Column(nullable = false)
-    private int elementId;
+    private String elementId;
 
     private String type;
     private Integer readingOrder;
@@ -56,7 +56,7 @@ public class TextElement {
     private boolean isBlocked;
 
     @Builder
-    public TextElement(PageResult pageResult, int elementId, String type,
+    public TextElement(PageResult pageResult, String elementId, String type,
                        Integer readingOrder, Integer headingLevel, Double ocrConfidence,
                        String tnText, String latexString, Integer selectedIdx,
                        String renderMode, String visualSubtype, Double subtypeConfidence,

@@ -27,7 +27,7 @@ public class BoundingBox {
     private PageResult pageResult;
 
     @Column(nullable = false)
-    private int elementId;
+    private String elementId;
 
     @Column(nullable = false)
     private int x;
@@ -50,7 +50,7 @@ public class BoundingBox {
     private List<String> flags;
 
     @Builder
-    public BoundingBox(PageResult pageResult, int elementId, int x, int y, int x2, int y2,
+    public BoundingBox(PageResult pageResult, String elementId, int x, int y, int x2, int y2,
                        String type, Integer headingLevel, String captionRef, List<String> flags) {
         this.pageResult = pageResult;
         this.elementId = elementId;

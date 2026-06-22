@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -120,15 +121,25 @@ public class PageWorker {
 
             } catch (Exception e) {
                 if (running) {
-                    log.error("Worker-{} 오류 발생, 재시도 큐에 등록: {}", workerId, e.getMessage());
                     if (task != null) {
                         try {
-                            Map<String, Object> taskMap = objectMapper.readValue(task, Map.class);
+                            Map<String, Object> taskMap = new HashMap<>(objectMapper.readValue(task, Map.class));
                             String jobId = (String) taskMap.get("jobId");
                             int pageNo = (int) taskMap.get("pageNo");
-                            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+                            int retryCount = taskMap.get("retryCount") != null ? (int) taskMap.get("retryCount") : 0;
+
+                            if (retryCount < 3) {
+                                // 재시도 횟수 증가 후 큐에 재등록
+                                taskMap.put("retryCount", retryCount + 1);
+                                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+                                redisTemplate.opsForList().leftPush(TASK_QUEUE, objectMapper.writeValueAsString(taskMap));
+                                log.error("Worker-{} 오류 발생, 재시도 큐에 등록 ({}/3): {}", workerId, retryCount + 1, e.getMessage());
+                            } else {
+                                // 최대 재시도 초과 → BLOCKED 처리
+                                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "BLOCKED");
+                                log.error("Worker-{} 최대 재시도 초과, BLOCKED 처리: jobId={}, pageNo={}, error={}", workerId, jobId, pageNo, e.getMessage());
+                            }
                         } catch (Exception ignored) {}
-                        redisTemplate.opsForList().leftPush(TASK_QUEUE, task);
                     }
                     try {
                         Thread.sleep(2000);
