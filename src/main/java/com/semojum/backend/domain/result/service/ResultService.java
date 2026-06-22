@@ -91,7 +91,7 @@ public class ResultService {
             String draftsJson = serializeDrafts(protoText);
             TextElement textElement = TextElement.builder()
                     .pageResult(pageResult)
-                    .elementId(parseId(protoText.getId()))
+                    .elementId(protoText.getId())
                     .type(protoText.getType().isEmpty() ? null : protoText.getType())
                     .readingOrder(protoText.getOrder() > 0 ? protoText.getOrder() : null)
                     .headingLevel(protoText.getHeadingLevel() > 0 ? protoText.getHeadingLevel() : null)
@@ -119,7 +119,7 @@ public class ResultService {
             String draftsJson = serializeDrafts(protoBraille);
             BrailleElement brailleElement = BrailleElement.builder()
                     .pageResult(pageResult)
-                    .elementId(parseId(protoBraille.getId()))
+                    .elementId(protoBraille.getId())
                     .type(protoBraille.getType().isEmpty() ? "text" : protoBraille.getType())
                     .readingOrder(protoBraille.getOrder() > 0 ? protoBraille.getOrder() : null)
                     .headingLevel(protoBraille.getHeadingLevel() > 0 ? protoBraille.getHeadingLevel() : null)
@@ -146,7 +146,7 @@ public class ResultService {
         for (com.semojum.backend.grpc.BoundingBox protoBbox : response.getBoundingBoxListList()) {
             BoundingBox boundingBox = BoundingBox.builder()
                     .pageResult(pageResult)
-                    .elementId(parseId(protoBbox.getId()))
+                    .elementId(protoBbox.getId())
                     .x(protoBbox.getX())
                     .y(protoBbox.getY())
                     .x2(protoBbox.getX2())
@@ -165,7 +165,7 @@ public class ResultService {
                 QualityCriticalError error = QualityCriticalError.builder()
                         .pageResult(pageResult)
                         .type(protoError.getType())
-                        .elementId(parseId(protoError.getElementId()))
+                        .elementId(protoError.getElementId())
                         .message(protoError.getMessage())
                         .build();
                 qualityCriticalErrorRepository.save(error);
@@ -176,7 +176,7 @@ public class ResultService {
                 QualityReviewFlag flag = QualityReviewFlag.builder()
                         .pageResult(pageResult)
                         .type(protoFlag.getType())
-                        .elementId(parseId(protoFlag.getElementId()))
+                        .elementId(protoFlag.getElementId())
                         .message(protoFlag.getMessage())
                         .build();
                 qualityReviewFlagRepository.save(flag);
@@ -217,8 +217,9 @@ public class ResultService {
                 .section(protoRule.getSection())
                 .title(protoRule.getTitle())
                 .excerpt(protoRule.getExcerpt())
-                .spanStart(protoRule.getSpanStart() >= 0 ? protoRule.getSpanStart() : null)
-                .spanEnd(protoRule.getSpanEnd() >= 0 ? protoRule.getSpanEnd() : null)
+                .lineNo(protoRule.getLineNo())
+                .colStart(protoRule.getColStart() >= 0 ? protoRule.getColStart() : null)
+                .colEnd(protoRule.getColEnd() >= 0 ? protoRule.getColEnd() : null)
                 .tag(protoRule.getTag().isEmpty() ? null : protoRule.getTag())
                 .build();
     }
@@ -241,11 +242,5 @@ public class ResultService {
         }
     }
 
-    private int parseId(String id) {
-        try {
-            return Integer.parseInt(id);
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
+
 }

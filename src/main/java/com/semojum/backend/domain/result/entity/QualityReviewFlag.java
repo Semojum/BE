@@ -27,13 +27,13 @@ public class QualityReviewFlag {
     private String type;
 
     @Column(nullable = false)
-    private int elementId;
+    private String elementId;
 
     @Column(nullable = false)
     private String message;
 
     @Builder
-    public QualityReviewFlag(PageResult pageResult, String type, int elementId, String message) {
+    public QualityReviewFlag(PageResult pageResult, String type, String elementId, String message) {
         this.pageResult = pageResult;
         this.type = type;
         this.elementId = elementId;

@@ -42,15 +42,16 @@ public class RuleTrail {
     @Column(nullable = false)
     private String excerpt;
 
-    private Integer spanStart;
-    private Integer spanEnd;
+    private Integer lineNo;
+    private Integer colStart;
+    private Integer colEnd;
     private String tag;
 
     @Builder
     public RuleTrail(UUID elementId, String elementType, String ruleId,
                      String source, String priority,
                      String section, String title, String excerpt,
-                     Integer spanStart, Integer spanEnd, String tag) {
+                     Integer lineNo, Integer colStart, Integer colEnd, String tag) {
         this.elementId = elementId;
         this.elementType = elementType;
         this.ruleId = ruleId;
@@ -59,8 +60,9 @@ public class RuleTrail {
         this.section = section;
         this.title = title;
         this.excerpt = excerpt;
-        this.spanStart = spanStart;
-        this.spanEnd = spanEnd;
+        this.lineNo = lineNo;
+        this.colStart = colStart;
+        this.colEnd = colEnd;
         this.tag = tag;
     }
 }
