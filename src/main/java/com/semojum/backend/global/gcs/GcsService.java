@@ -29,6 +29,12 @@ public class GcsService {
         return "gs://" + bucketName + "/" + gcsPath;
     }
 
+    // GCS 경로를 공개 URL로 변환 (gs://bucket/path → https://storage.googleapis.com/bucket/path)
+    public String getPublicUrl(String gcsPath) {
+        String objectPath = gcsPath.replace("gs://" + bucketName + "/", "");
+        return "https://storage.googleapis.com/" + bucketName + "/" + objectPath;
+    }
+
     // GCS에서 파일 다운로드
     public byte[] downloadFile(String gcsPath) {
         // gs://semojum-bucket/path 형태에서 path만 추출
