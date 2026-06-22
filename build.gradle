@@ -61,6 +61,9 @@ dependencies {
 	// iText (PDF 페이지 분리)
 	implementation 'com.itextpdf:itext7-core:7.2.5'
 
+	// PDFBox (PDF 썸네일 생성)
+	implementation 'org.apache.pdfbox:pdfbox:2.0.29'
+
 	// hwp
 	implementation 'kr.dogfoot:hwplib:1.1.1'
 

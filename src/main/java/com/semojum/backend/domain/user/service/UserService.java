@@ -36,6 +36,7 @@ public class UserService {
                     job.getTotalPages(),
                     job.getFailedPages(),
                     job.getOriginalFileName(),
+                    job.getThumbnailUrl(),
                     job.getStartedAt(),
                     job.getFinishedAt()
             ));
