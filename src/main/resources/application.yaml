@@ -40,4 +40,4 @@ grpc:
       negotiation-type: tls
       security:
         trust-cert-collection: ${GRPC_CERT_PATH}
-        authority-override: semojum-ai
+        authority-override: semo-jum.com
