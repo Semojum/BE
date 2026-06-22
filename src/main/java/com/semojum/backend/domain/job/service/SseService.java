@@ -11,9 +11,12 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -34,6 +37,13 @@ public class SseService {
 
     private static final long EMITTER_TIMEOUT = 30 * 60 * 1000L;
 
+    private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
+
+    @PreDestroy
+    public void shutdown() {
+        sseExecutor.shutdown();
+    }
+
     public SseEmitter connect(String jobId) {
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT);
         // 멀티스레드 환경에서 루프 종료 신호를 안전하게 전달하기 위해 AtomicBoolean 사용
@@ -45,7 +55,7 @@ public class SseService {
         emitter.onError(e -> running.set(false));
 
         // 폴링 루프를 별도 스레드에서 실행해 HTTP 요청 스레드를 블로킹하지 않음
-        CompletableFuture.runAsync(() -> runPollingLoop(jobId, emitter, running));
+        CompletableFuture.runAsync(() -> runPollingLoop(jobId, emitter, running), sseExecutor);
 
         return emitter;
     }

@@ -33,7 +33,7 @@
 | BE VM | `semojum-backend`, `34.158.215.55` (asia-northeast3-a) |
 | Cloud SQL | PostgreSQL 18, `34.47.68.184`, DB: `postgres` |
 | GCS | `semojum-bucket` (asia-northeast3) |
-| AI VM A | `34.50.58.227`, gRPC `50051`, TLS |
+| AI VM A | `136.119.89.254`, gRPC `50051`, TLS, authority `semo-jum.com` |
 | 도메인 | `api.semojum.app`, Cloudflare Flexible SSL |
 | Redis | `docker run -d -p 6379:6379` (로컬) |
 | Docker Hub | `zxhwan/semojum-backend:latest` |
@@ -54,25 +54,29 @@ com.semojum.backend
 │   │   ├── repository   UserRepository, UserSessionRepository
 │   │   └── service      AuthService
 │   ├── job
-│   │   ├── controller   JobController, SseController
+│   │   ├── controller   JobController (SSE 엔드포인트 포함)
 │   │   ├── dto          JobResponseDto
 │   │   ├── entity       Job, Page
 │   │   ├── repository   JobRepository, PageRepository
 │   │   ├── service      JobService, SseService
 │   │   └── worker       PageWorker
-│   └── result
-│       ├── entity       PageResult, TextElement, BrailleElement,
-│       │                BoundingBox, RuleTrail,
-│       │                QualityCriticalError, QualityReviewFlag
-│       ├── repository   (각 엔티티별 JpaRepository)
-│       └── service      ResultService
+│   ├── result
+│   │   ├── entity       PageResult, TextElement, BrailleElement,
+│   │   │                BoundingBox, RuleTrail,
+│   │   │                QualityCriticalError, QualityReviewFlag
+│   │   ├── repository   (각 엔티티별 JpaRepository)
+│   │   └── service      ResultService
+│   └── user
+│       ├── controller   UserController
+│       └── service      UserService
 ├── global
 │   ├── exception        CustomException, ErrorCode, ApiResponse
 │   ├── gcs              GcsService
 │   ├── grpc             BrailleGrpcClient
 │   ├── jwt              JwtFilter, JwtProvider
 │   ├── oauth2           GoogleOAuthService, KakaoOAuthService
-│   └── security         SecurityConfig, UserDetailsServiceImpl
+│   ├── security         SecurityConfig, UserDetailsServiceImpl
+│   └── thumbnail        ThumbnailService
 └── grpc                 (proto 생성 클래스: BrailleRequest, BrailleResponse 등)
 ```
 
@@ -133,8 +137,9 @@ com.semojum.backend
   - `job_done`: 전체 완료 시 전송 후 연결 종료
 
 ### PageWorker
-- 6개 워커 스레드가 Redis `task_queue`에서 BLPOP으로 태스크 처리
+- 현재 **워커 1개** (AI 서버 병렬처리 지원 시 6으로 복구 예정, `WORKER_COUNT` 상수)
 - GCS 파일 다운로드 → gRPC 요청 (AI 서버) → ResultService.save() → Redis 상태 업데이트
+- 오류 발생 시 task를 큐에 재등록 후 2초 대기 (자동 재시도)
 - `@PreDestroy`로 graceful shutdown 처리
 
 ### ResultService
@@ -142,12 +147,23 @@ com.semojum.backend
 - 저장 테이블: `page_results`, `text_elements`, `braille_elements`, `bounding_boxes`, `rule_trails`, `quality_critical_errors`, `quality_review_flags`
 - Page 상태 업데이트, Job 완료 여부 확인 및 상태 업데이트
 
+### 마이페이지 (User)
+- `GET /api/users/jobs` — 내 Job 목록 조회 (최신순, thumbnailUrl 포함)
+- `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
+- 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
+
+### 썸네일 (ThumbnailService)
+- Job 생성 시 자동 생성 후 GCS 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
+- mode a/c: PDFBox로 PDF 첫 페이지 → PNG 렌더링
+- mode b: 텍스트를 NanumGothic 폰트로 흰 배경에 렌더링 → PNG
+- 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
+
 ### Spring Security
 - `JwtFilter`: PERMIT_URLS = `/api/auth/signup`, `/api/auth/login`, `/api/auth/google`, `/api/auth/kakao`, `/swagger-ui`, `/v3/api-docs`
 - 미인증 요청 시 `COMMON4001` JSON 반환
 
 ### gRPC
-- AI VM A (`34.50.58.227:50051`) TLS 연결
+- AI VM A (`136.119.89.254:50051`) TLS 연결, authority `semo-jum.com`
 - proto: `BrailleRequest` / `BrailleResponse`
 - BE gRPC 타임아웃: 200s (AI 서버 하드 타임아웃 180s보다 높게)
 
@@ -225,3 +241,5 @@ com.semojum.backend
 - Cloud SQL 미사용 시 중지 가능 (Spring Boot 재시작 없이 자동 재연결)
 - SSE 연결 시 Envoy `idle_timeout: 0s`, `timeout: 0s` 필수
 - gRPC 타임아웃은 AI 서버 하드 타임아웃(180s)보다 높은 200s로 설정
+- PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
+- UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정
