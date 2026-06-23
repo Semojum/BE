@@ -9,6 +9,7 @@ import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
@@ -25,6 +26,7 @@ public class UserService {
     private final QualityCriticalErrorRepository qualityCriticalErrorRepository;
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
 
+    @Transactional(readOnly = true)
     public List<JobResponseDto.JobSummary> getMyJobs(String userId) {
         List<Job> jobs = jobRepository.findByUserIdOrderByStartedAtDesc(UUID.fromString(userId));
         List<JobResponseDto.JobSummary> result = new ArrayList<>();
@@ -44,6 +46,7 @@ public class UserService {
         return result;
     }
 
+    @Transactional(readOnly = true)
     public JobResponseDto.JobDetail getJobPage(String userId, String jobId, int pageNo) {
         // 본인 Job인지 검증 (타인 jobId 직접 입력 시 403 반환)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
