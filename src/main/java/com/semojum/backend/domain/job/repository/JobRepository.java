@@ -2,7 +2,11 @@ package com.semojum.backend.domain.job.repository;
 
 import com.semojum.backend.domain.job.entity.Job;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -10,4 +14,50 @@ import java.util.UUID;
 public interface JobRepository extends JpaRepository<Job, String> {
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
+
+    // 페이지 이벤트 발생 시 호출: PENDING이면 IN_PROGRESS로 전이하고 updated_at 갱신.
+    // WHERE 가드로 이미 종료(COMPLETED/FAILED)된 Job은 절대 되살리지 않는다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE jobs
+            SET status = CASE WHEN status = 'PENDING' THEN 'IN_PROGRESS' ELSE status END,
+                updated_at = now()
+            WHERE id = :jobId AND status IN ('PENDING', 'IN_PROGRESS')
+            """, nativeQuery = true)
+    int touchJob(@Param("jobId") String jobId);
+
+    // 종료 전이: PENDING/IN_PROGRESS 상태에서만 newStatus(COMPLETED/FAILED)로 전이.
+    // failedPages는 '{1,2,3}' 형식 텍스트를 integer[]로 캐스팅하여 저장.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE jobs
+            SET status = :newStatus,
+                finished_at = now(),
+                updated_at = now(),
+                failed_pages = CAST(:failedPages AS integer[])
+            WHERE id = :jobId AND status IN ('PENDING', 'IN_PROGRESS')
+            """, nativeQuery = true)
+    int finishJob(@Param("jobId") String jobId,
+                  @Param("newStatus") String newStatus,
+                  @Param("failedPages") String failedPages);
+
+    // stale-job 안전망: 무진행 IN_PROGRESS → FAILED.
+    // cutoff는 Instant(절대시각) → updated_at(timestamptz) 비교가 타임존 무관하게 정확.
+    @Modifying(clearAutomatically = true)
+    @Query(value = """
+            UPDATE jobs
+            SET status = 'FAILED', finished_at = now(), updated_at = now()
+            WHERE status = 'IN_PROGRESS' AND updated_at < :cutoff
+            """, nativeQuery = true)
+    int failStaleInProgress(@Param("cutoff") Instant cutoff);
+
+    // stale-job 안전망: 고아 PENDING → FAILED.
+    // updated_at은 DDL(NOT NULL + DEFAULT now())로 항상 non-null이라 started_at 폴백 불필요.
+    @Modifying(clearAutomatically = true)
+    @Query(value = """
+            UPDATE jobs
+            SET status = 'FAILED', finished_at = now(), updated_at = now()
+            WHERE status = 'PENDING' AND updated_at < :cutoff
+            """, nativeQuery = true)
+    int failStalePending(@Param("cutoff") Instant cutoff);
 }
