@@ -22,7 +22,7 @@ static_resources:
                           route:
                             cluster: spring_boot
                             timeout: 0s
-                            idle_timeout: 900s
+                            idle_timeout: 10800s
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
