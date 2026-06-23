@@ -135,11 +135,21 @@ public class PageWorker {
                                 redisTemplate.opsForList().leftPush(TASK_QUEUE, objectMapper.writeValueAsString(taskMap));
                                 log.error("Worker-{} 오류 발생, 재시도 큐에 등록 ({}/3): {}", workerId, retryCount + 1, e.getMessage());
                             } else {
-                                // 최대 재시도 초과 → BLOCKED 처리
+                                // 최대 재시도 초과 → DB Page=BLOCKED + Job 종료 판정.
+                                // DB 반영 실패와 무관하게 Redis는 항상 BLOCKED로 갱신(SSE가 종료를 감지하도록 보장).
+                                try {
+                                    resultService.markPageBlocked(jobId, pageNo);
+                                } catch (Exception blockEx) {
+                                    log.error("Worker-{} markPageBlocked 실패(Redis는 BLOCKED 유지): jobId={}, pageNo={}, error={}", workerId, jobId, pageNo, blockEx.getMessage(), blockEx);
+                                }
                                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "BLOCKED");
                                 log.error("Worker-{} 최대 재시도 초과, BLOCKED 처리: jobId={}, pageNo={}, error={}", workerId, jobId, pageNo, e.getMessage());
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception ex) {
+                            // pop된 task가 무로그로 증발하지 않도록 가시화 (파싱 실패/leftPush 실패 등 포함).
+                            // task JSON에 jobId/pageNo/retryCount가 들어 있다.
+                            log.error("Worker-{} 예외 처리 중 추가 오류, task 처리 실패: task={}, error={}", workerId, task, ex.getMessage(), ex);
+                        }
                     }
                     try {
                         Thread.sleep(2000);
