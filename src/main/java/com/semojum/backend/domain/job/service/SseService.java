@@ -35,7 +35,7 @@ public class SseService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final long EMITTER_TIMEOUT = 30 * 60 * 1000L;
+    private static final long EMITTER_TIMEOUT = 3 * 60 * 60 * 1000L; // 3시간 (대용량 문서 직렬 처리 대비 SSE 최대 수명)
 
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
 
