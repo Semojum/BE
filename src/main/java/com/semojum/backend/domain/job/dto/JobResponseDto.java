@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.job.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 public class JobResponseDto {
@@ -44,6 +45,14 @@ public class JobResponseDto {
             LocalDateTime startedAt,
             LocalDateTime finishedAt,
             int pageNo,
-            Map<String, Object> result
+            Map<String, Object> result,
+            OriginalContent original
+    ) {}
+
+    // 페이지별 원본 (a/c: type="pdf"+url, b: type="text"+lines). 안 쓰는 필드는 null.
+    public record OriginalContent(
+            String type,
+            String url,
+            List<String> lines
     ) {}
 }
