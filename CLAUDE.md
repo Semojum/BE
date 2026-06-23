@@ -139,18 +139,34 @@ com.semojum.backend
 ### PageWorker
 - 현재 **워커 1개** (AI 서버 병렬처리 지원 시 6으로 복구 예정, `WORKER_COUNT` 상수)
 - GCS 파일 다운로드 → gRPC 요청 (AI 서버) → ResultService.save() → Redis 상태 업데이트
-- 오류 발생 시 task를 큐에 재등록 후 2초 대기 (자동 재시도)
+- 오류 발생 시 task를 큐에 재등록 후 2초 대기 (자동 재시도, **최대 3회**)
+- 최대 재시도(3회) 초과 → `ResultService.markPageBlocked()`로 DB Page=BLOCKED 반영 + Job 종료 판정 후 Redis도 BLOCKED. markPageBlocked 실패해도 Redis put은 항상 실행(SSE 종료 감지 보장)
+- 예외 처리 분기는 무로그로 삼키지 않고 `log.error`로 기록(pop된 task 증발 방지)
 - `@PreDestroy`로 graceful shutdown 처리
 
 ### ResultService
 - AI gRPC 응답(BrailleResponse)을 DB에 저장
 - 저장 테이블: `page_results`, `text_elements`, `braille_elements`, `bounding_boxes`, `rule_trails`, `quality_critical_errors`, `quality_review_flags`
-- Page 상태 업데이트, Job 완료 여부 확인 및 상태 업데이트
+- `save()`(성공 경로): Page 상태 업데이트 → `touchJob` → 종료 판정
+- `markPageBlocked(jobId, pageNo)`(BLOCKED 경로, 별도 `@Transactional` public, PageWorker가 호출): DB Page=BLOCKED 저장 → `touchJob` → 종료 판정
+- `evaluateJobTermination()`: 성공/BLOCKED 경로 공유. 모든 페이지가 terminal(COMPLETED/NEEDS_REVIEW/BLOCKED)일 때, 성공(COMPLETED/NEEDS_REVIEW)이 0건이면 **FAILED**, 1건 이상이면 **COMPLETED**(부분 성공=완료)
+
+### Job 상태 전이 & stale-job 스케줄러
+- Job 상태: `PENDING → IN_PROGRESS → COMPLETED / FAILED` (모두 plain String)
+- `JobRepository.touchJob(jobId)`: 페이지 이벤트마다 PENDING→IN_PROGRESS 전이 + `updated_at` 갱신 (네이티브 UPDATE)
+- `JobRepository.finishJob(jobId, status, failedPages)`: COMPLETED/FAILED 종료 전이 + `finished_at`/`updated_at`/`failed_pages` 기록
+- **두 쿼리 모두 `WHERE id=:jobId AND status IN ('PENDING','IN_PROGRESS')` 가드 → 이미 종료된 Job을 페이지 이벤트가 되살리지 못함 (가드 제거 금지)**
+- `StaleJobScheduler` (5분 주기, `SchedulingConfig`의 `@EnableScheduling`): 멈춘 Job 정리 안전망
+  - IN_PROGRESS 무진행(`job.stale.in-progress-timeout`, 기본 1h) → FAILED
+  - 고아 PENDING(`job.stale.pending-timeout`, 기본 12h) → FAILED
+  - cutoff는 `Instant`(절대시각) 기반 → 컨테이너/Cloud SQL 타임존과 무관하게 정확
 
 ### 마이페이지 (User)
 - `GET /api/users/jobs` — 내 Job 목록 조회 (최신순, thumbnailUrl 포함)
 - `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
+  - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<공개 URL>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (GCS의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**)
 - 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
+- `getMyJobs`/`getJobPage`는 `@Transactional(readOnly=true)` (OSIV off 대응)
 
 ### 썸네일 (ThumbnailService)
 - Job 생성 시 자동 생성 후 GCS 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
@@ -161,6 +177,10 @@ com.semojum.backend
 ### Spring Security
 - `JwtFilter`: PERMIT_URLS = `/api/auth/signup`, `/api/auth/login`, `/api/auth/google`, `/api/auth/kakao`, `/swagger-ui`, `/v3/api-docs`
 - 미인증 요청 시 `COMMON4001` JSON 반환
+
+### JPA / 커넥션 관리
+- `spring.jpa.open-in-view=false` — SSE(30분) 연결 동안 OSIV가 DB 커넥션을 잡아 풀(10) 고갈되는 누수 방지. 커넥션은 쿼리 종료 즉시 반납
+- 읽기 서비스 메서드는 `@Transactional(readOnly=true)` 부여 (OSIV off 대응 + 여러 쿼리 단일 세션)
 
 ### gRPC
 - AI VM A (`136.119.89.254:50051`) TLS 연결, authority `semo-jum.com`
@@ -176,7 +196,7 @@ com.semojum.backend
 |---|---|
 | users | 회원 (EMAIL/KAKAO/GOOGLE) |
 | user_sessions | 리프레시 토큰 세션 |
-| jobs | 변환 작업 |
+| jobs | 변환 작업 (`updated_at` timestamptz 포함 — touchJob/finishJob/DB default(now())로만 갱신) |
 | pages | 페이지별 파일 경로 |
 | page_results | AI 변환 결과 |
 | text_elements | 텍스트 요소 (text_list) |
@@ -199,8 +219,9 @@ com.semojum.backend
 | 값 | 설명 |
 |---|---|
 | PENDING | 처리 시작 전 |
-| IN_PROGRESS | 처리 중 |
-| COMPLETED | 전체 완료 |
+| IN_PROGRESS | 처리 중 (첫 페이지 이벤트 시 touchJob으로 전이) |
+| COMPLETED | 전체 완료 (부분 실패 포함 — failed_pages에 기록) |
+| FAILED | 변환 실패 (전체 페이지 BLOCKED, 또는 stale-job 스케줄러가 정리) |
 
 ---
 
@@ -239,7 +260,9 @@ com.semojum.backend
 ## 주의사항
 - `task.md`는 `.gitignore`에 등록됨 (커밋 제외)
 - Cloud SQL 미사용 시 중지 가능 (Spring Boot 재시작 없이 자동 재연결)
-- SSE 연결 시 Envoy `idle_timeout: 0s`, `timeout: 0s` 필수
+- SSE 연결 시 Envoy `timeout: 0s` 필수. `idle_timeout`은 SSE 타임아웃(30분) 이상으로 둘 것 (현재 `envoy.yaml`은 900s라 정합성 점검 필요)
 - gRPC 타임아웃은 AI 서버 하드 타임아웃(180s)보다 높은 200s로 설정
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
+- `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
+- stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정
