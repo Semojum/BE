@@ -187,23 +187,65 @@ public class ResultService {
         page.updateStatus(status);
         pageRepository.save(page);
 
-        // Job 완료 여부 확인
-        long doneCount = pageRepository.countByJobAndStatusIn(job,
-                List.of("COMPLETED", "NEEDS_REVIEW", "BLOCKED"));
-        if (doneCount == job.getTotalPages()) {
-            List<Page> blockedPages = pageRepository.findByJobAndStatus(job, "BLOCKED");
-            int[] failedPageNos = blockedPages.stream()
-                    .mapToInt(Page::getPageNo)
-                    .toArray();
-            job.complete(failedPageNos);
-            jobRepository.save(job);
-            log.info("Job 완료: jobId={}, failedPages={}", jobId, failedPageNos.length);
-        } else {
-            job.updateStatus("IN_PROGRESS");
-            jobRepository.save(job);
-        }
+        // PENDING→IN_PROGRESS 전이 + updated_at 갱신 (이미 종료된 Job은 가드로 보호)
+        jobRepository.touchJob(jobId);
+
+        // 종료 판정 (BLOCKED 경로와 공유)
+        evaluateJobTermination(job, jobId);
 
         log.info("ResultService 저장 완료: jobId={}, pageNo={}, status={}", jobId, pageNumber, status);
+    }
+
+    // 페이지가 최대 재시도 초과로 BLOCKED 될 때 DB에 즉시 반영하는 경로 (PageWorker에서 호출).
+    // self-invocation 무력화를 피하기 위해 PageWorker가 이 빈의 public 메서드를 직접 호출한다.
+    @Transactional
+    public void markPageBlocked(String jobId, int pageNo) {
+        Job job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new RuntimeException("Job not found: " + jobId));
+        Page page = pageRepository.findByJobAndPageNo(job, pageNo)
+                .orElseThrow(() -> new RuntimeException("Page not found: " + jobId + ", pageNo=" + pageNo));
+
+        // DB Page 행을 BLOCKED로 저장
+        page.updateStatus("BLOCKED");
+        pageRepository.save(page);
+
+        // updated_at 갱신 + 종료 판정 (성공 경로와 동일)
+        jobRepository.touchJob(jobId);
+        evaluateJobTermination(job, jobId);
+
+        log.info("Page BLOCKED 처리: jobId={}, pageNo={}", jobId, pageNo);
+    }
+
+    // 성공 경로와 BLOCKED 경로가 공유하는 Job 종료 판정.
+    // 모든 페이지가 terminal(COMPLETED/NEEDS_REVIEW/BLOCKED)일 때만 종료하며,
+    // 성공(COMPLETED/NEEDS_REVIEW)이 하나도 없고 전부 BLOCKED면 FAILED, 하나라도 성공이면 COMPLETED.
+    private void evaluateJobTermination(Job job, String jobId) {
+        long terminalCount = pageRepository.countByJobAndStatusIn(job,
+                List.of("COMPLETED", "NEEDS_REVIEW", "BLOCKED"));
+        if (terminalCount != job.getTotalPages()) {
+            return;
+        }
+
+        long successCount = pageRepository.countByJobAndStatusIn(job,
+                List.of("COMPLETED", "NEEDS_REVIEW"));
+        List<Page> blockedPages = pageRepository.findByJobAndStatus(job, "BLOCKED");
+        int[] failedPageNos = blockedPages.stream()
+                .mapToInt(Page::getPageNo)
+                .toArray();
+
+        String newStatus = successCount == 0 ? "FAILED" : "COMPLETED";
+        jobRepository.finishJob(jobId, newStatus, toPgIntArray(failedPageNos));
+        log.info("Job 종료 판정: jobId={}, status={}, failedPages={}", jobId, newStatus, failedPageNos.length);
+    }
+
+    // int[] → PostgreSQL integer[] 텍스트 리터럴('{1,2,3}'). 값은 페이지 번호(정수)라 인젝션 위험 없음.
+    private String toPgIntArray(int[] nums) {
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < nums.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(nums[i]);
+        }
+        return sb.append("}").toString();
     }
 
     // RuleTrail 빌드 헬퍼
