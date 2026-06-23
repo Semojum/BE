@@ -36,6 +36,11 @@ jwt:
   access-token-expiry: 3600000       # 1시간 (ms)
   refresh-token-expiry: 2592000000   # 30일 (ms)
 
+job:
+  stale:
+    in-progress-timeout: 1h    # IN_PROGRESS 무진행 1시간 → FAILED
+    pending-timeout: 12h       # PENDING 고아 12시간 → FAILED
+
 gcs:
   bucket-name: semojum-bucket
 
