@@ -2,15 +2,19 @@ package com.semojum.backend.domain.user.service;
 
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.entity.Job;
+import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
+import com.semojum.backend.global.gcs.GcsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -18,6 +22,8 @@ import java.util.*;
 public class UserService {
 
     private final JobRepository jobRepository;
+    private final PageRepository pageRepository;
+    private final GcsService gcsService;
     private final PageResultRepository pageResultRepository;
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
@@ -55,6 +61,11 @@ public class UserService {
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
+        // 페이지별 원본 정보 구성 (a/c: 원본 PDF 공개 URL, b: 원본 텍스트 줄 배열)
+        Page page = pageRepository.findByJobAndPageNo(job, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        JobResponseDto.OriginalContent original = buildOriginal(job.getMode(), page);
+
         return new JobResponseDto.JobDetail(
                 jobId,
                 job.getMode(),
@@ -65,8 +76,22 @@ public class UserService {
                 job.getStartedAt(),
                 job.getFinishedAt(),
                 pageNo,
-                buildResult(pageResult)
+                buildResult(pageResult),
+                original
         );
+    }
+
+    // 모드별 원본 구성. pdfPath(gs:// 전체경로)를 가공 없이 그대로 GcsService에 넘긴다.
+    private JobResponseDto.OriginalContent buildOriginal(String mode, Page page) {
+        if ("b".equals(mode)) {
+            // mode b: GCS의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
+            String text = new String(gcsService.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
+            List<String> lines = Arrays.asList(text.split("\n", -1));
+            return new JobResponseDto.OriginalContent("text", null, lines);
+        }
+        // mode a, c: 원본 PDF 공개 URL
+        String url = gcsService.getPublicUrl(page.getPdfPath());
+        return new JobResponseDto.OriginalContent("pdf", url, null);
     }
 
     // 모드에 따라 FE에 전달할 result 필드 구성 (a: 텍스트추출, b: 점자변환, c: 이미지→점자)
