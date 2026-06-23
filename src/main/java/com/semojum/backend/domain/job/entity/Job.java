@@ -43,6 +43,11 @@ public class Job {
 
     private LocalDateTime finishedAt;
 
+    // updated_at은 DB default(now()) 및 JobRepository의 명시적 UPDATE로만 갱신한다.
+    // 엔티티 저장으로 덮어쓰지 않도록 insertable/updatable=false로 둔다.
+    @Column(name = "updated_at", insertable = false, updatable = false)
+    private LocalDateTime updatedAt;
+
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl) {
         this.id = id;
