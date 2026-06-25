@@ -107,6 +107,8 @@ com.semojum.backend
 | JOB4001 | 404 | 존재하지 않는 작업 |
 | JOB4002 | 400 | 잘못된 파일 형식 |
 | JOB4003 | 400 | 지원하지 않는 모드 |
+| JOB4004 | 404 | 존재하지 않는 요소 |
+| JOB4005 | 400 | 잘못된 elementType (TEXT/BRAILLE만 허용) |
 
 ---
 
@@ -168,6 +170,18 @@ com.semojum.backend
 - 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
 - `getMyJobs`/`getJobPage`는 `@Transactional(readOnly=true)` (OSIV off 대응)
 
+### 점역사 수정 (Edit)
+- `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/{elementId}` — 요소 수정 (`ElementEditService`, `@Transactional`)
+  - body: `{ "elementType": "TEXT"|"BRAILLE", "contents": [...] }`
+  - `{elementId}`는 응답/SSE에 내려가던 **AI element id(String)** (엔티티 PK 아님) → `findByPageResultAndElementId`로 조회
+  - `current`(currentContents/currentContent)만 갱신, **`original`은 절대 보존**. 응답으로 갱신된 contents 반환
+  - 본인 Job 검증(타인 403), 없는 요소 404, 잘못된 elementType 400. `is_blocked`/상태 무관 수정 허용
+- **edit_logs 스냅샷 기록(RLHF용)**: 수정과 같은 트랜잭션에서 1수정=1행 저장
+  - 공통: before/after content + `ai_original_content` + mode/element_type/user/job/page
+  - mode a/c: `source_pdf_path` + `image_width/height` + `bounding_box`(해당 요소)
+  - mode b: `source_text`(변환에 쓴 원본 한글텍스트, GCS `.txt`에서 읽음)
+  - 입력 컨텍스트까지 자기완결 스냅샷(같은 요소 반복 수정 시 컨텍스트 중복은 의도된 트레이드오프). PDF/이미지 바이너리는 저장 안 하고 gs 경로만
+
 ### 썸네일 (ThumbnailService)
 - Job 생성 시 자동 생성 후 GCS 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
 - mode a/c: PDFBox로 PDF 첫 페이지 → PNG 렌더링
@@ -205,6 +219,7 @@ com.semojum.backend
 | rule_trails | 적용된 점역 규정 |
 | quality_critical_errors | 품질 오류 |
 | quality_review_flags | 검토 필요 항목 |
+| edit_logs | 점역사 수정 이력 (RLHF 학습용 스냅샷) |
 
 ### Page 상태 값
 | 값 | 설명 |
@@ -265,4 +280,5 @@ com.semojum.backend
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
 - `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
 - stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
+- `edit_logs` 테이블은 `ddl-auto:none`이라 자동 생성 안 됨 → 수정 API 배포 전에 DataGrip에서 `CREATE TABLE edit_logs (...)` 먼저 실행
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정
