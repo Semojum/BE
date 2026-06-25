@@ -20,6 +20,12 @@ public class AuthController {
         return ApiResponse.success(authService.signUp(request));
     }
 
+    // 이메일 중복확인 (회원가입 전 사용 가능 여부 체크)
+    @GetMapping("/email/check")
+    public ApiResponse<AuthResponseDto.EmailCheck> checkEmail(@RequestParam(required = false) String email) {
+        return ApiResponse.success(authService.checkEmail(email));
+    }
+
     @PostMapping("/login")
     public ApiResponse<AuthResponseDto.Login> login(@RequestBody @Valid AuthRequestDto.Login request) {
         return ApiResponse.success(authService.login(request));
