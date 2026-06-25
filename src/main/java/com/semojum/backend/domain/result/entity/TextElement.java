@@ -78,4 +78,9 @@ public class TextElement {
         this.drafts = drafts;
         this.isBlocked = isBlocked;
     }
+
+    // 점역사 수정: current만 갱신(original은 보존)
+    public void updateCurrentContents(List<String> contents) {
+        this.currentContents = contents;
+    }
 }
