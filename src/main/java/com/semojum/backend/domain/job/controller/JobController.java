@@ -1,12 +1,15 @@
 package com.semojum.backend.domain.job.controller;
 
+import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.service.JobService;
 import com.semojum.backend.domain.job.service.SseService;
+import com.semojum.backend.domain.result.service.ElementEditService;
 import com.semojum.backend.global.exception.ApiResponse;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,6 +30,7 @@ public class JobController {
     private final JobService jobService;
     private final SseService sseService;
     private final JobRepository jobRepository;
+    private final ElementEditService elementEditService;
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(
@@ -53,5 +58,20 @@ public class JobController {
         jobRepository.findByIdAndUserId(jobId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         return sseService.connect(jobId);
+    }
+
+    // 점역사 요소 수정 (current만 갱신, edit_logs 스냅샷 기록)
+    @PatchMapping("/{jobId}/pages/{pageNo}/elements/{elementId}")
+    public ApiResponse<List<String>> editElement(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @PathVariable String elementId,
+            @RequestBody @Valid JobRequestDto.EditElement request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        List<String> updated = elementEditService.editElement(
+                userDetails.getUsername(), jobId, pageNo, elementId,
+                request.elementType(), request.contents());
+        return ApiResponse.success(updated);
     }
 }
