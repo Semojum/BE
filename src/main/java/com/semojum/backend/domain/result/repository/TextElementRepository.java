@@ -5,8 +5,10 @@ import com.semojum.backend.domain.result.entity.TextElement;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TextElementRepository extends JpaRepository<TextElement, UUID> {
     List<TextElement> findByPageResult(PageResult pageResult);
+    Optional<TextElement> findByPageResultAndElementId(PageResult pageResult, String elementId);
 }
