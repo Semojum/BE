@@ -50,6 +50,14 @@ public class AuthService {
         return new AuthResponseDto.SignUp(user.getEmail(), user.getName());
     }
 
+    // 이메일 중복확인: 사용 가능하면 available=true (중복은 정상 결과라 예외 던지지 않음)
+    public AuthResponseDto.EmailCheck checkEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        return new AuthResponseDto.EmailCheck(!userRepository.existsByEmail(email));
+    }
+
     @Transactional
     public AuthResponseDto.Login login(AuthRequestDto.Login request) {
         // 이메일로 유저 조회

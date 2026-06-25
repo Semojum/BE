@@ -15,4 +15,8 @@ public class AuthResponseDto {
     public record Refresh(
             String accessToken
     ) {}
+
+    public record EmailCheck(
+            boolean available
+    ) {}
 }
