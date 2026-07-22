@@ -11,9 +11,11 @@ import com.semojum.backend.grpc.BrailleResponse;
 import com.semojum.backend.grpc.ProcessingMeta;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +34,7 @@ public class ResultService {
     private final RuleTrailRepository ruleTrailRepository;
     private final QualityCriticalErrorRepository qualityCriticalErrorRepository;
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
+    private final RedisTemplate<String, String> redisTemplate;
 
     @Transactional
     public void save(BrailleResponse response) {
@@ -235,6 +238,8 @@ public class ResultService {
 
         String newStatus = successCount == 0 ? "FAILED" : "COMPLETED";
         jobRepository.finishJob(jobId, newStatus, toPgIntArray(failedPageNos));
+        // Job 전체 종료 확정 → 페이지 상태 Hash에 TTL 1시간 부여 (완료 후 자동 삭제, Redis 메모리 누수 방지)
+        redisTemplate.expire("job:" + jobId + ":pages", Duration.ofHours(1));
         log.info("Job 종료 판정: jobId={}, status={}, failedPages={}", jobId, newStatus, failedPageNos.length);
     }
 
