@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -91,7 +93,7 @@ public class ResultService {
 
         // TextElement 저장 (text_list)
         for (com.semojum.backend.grpc.TextElement protoText : response.getTextListList()) {
-            String draftsJson = serializeDrafts(protoText);
+            List<Map<String, Object>> draftsJson = serializeDrafts(protoText);
             TextElement textElement = TextElement.builder()
                     .pageResult(pageResult)
                     .elementId(protoText.getId())
@@ -119,7 +121,7 @@ public class ResultService {
 
         // BrailleElement 저장 (braille_text_list)
         for (com.semojum.backend.grpc.TextElement protoBraille : response.getBrailleTextListList()) {
-            String draftsJson = serializeDrafts(protoBraille);
+            List<Map<String, Object>> draftsJson = serializeDrafts(protoBraille);
             BrailleElement brailleElement = BrailleElement.builder()
                     .pageResult(pageResult)
                     .elementId(protoBraille.getId())
@@ -271,22 +273,19 @@ public class ResultService {
                 .build();
     }
 
-    // Drafts JSON 직렬화 헬퍼
-    private String serializeDrafts(com.semojum.backend.grpc.TextElement protoText) {
+    // Drafts 변환 헬퍼: proto Draft(text/contents/label) → List<Map>.
+    // jsonb 배열로 저장되고 조회 시 그대로 배열로 응답됨(문자열 이중 인코딩 방지).
+    private List<Map<String, Object>> serializeDrafts(com.semojum.backend.grpc.TextElement protoText) {
         if (protoText.getDraftsList().isEmpty()) return null;
-        try {
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < protoText.getDraftsList().size(); i++) {
-                com.semojum.backend.grpc.Draft draft = protoText.getDraftsList().get(i);
-                sb.append(JsonFormat.printer().print(draft));
-                if (i < protoText.getDraftsList().size() - 1) sb.append(",");
-            }
-            sb.append("]");
-            return sb.toString();
-        } catch (Exception e) {
-            log.warn("Drafts JSON 직렬화 실패: {}", e.getMessage());
-            return null;
+        List<Map<String, Object>> drafts = new ArrayList<>();
+        for (com.semojum.backend.grpc.Draft draft : protoText.getDraftsList()) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("text", draft.getText());
+            map.put("contents", new ArrayList<>(draft.getContentsList()));
+            map.put("label", draft.getLabel());
+            drafts.add(map);
         }
+        return drafts;
     }
 
 

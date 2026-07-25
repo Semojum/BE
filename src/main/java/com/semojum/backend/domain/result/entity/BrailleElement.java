@@ -9,6 +9,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -52,7 +53,7 @@ public class BrailleElement {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
-    private String drafts;
+    private List<Map<String, Object>> drafts;
 
     @Column(nullable = false)
     private boolean isBlocked;
@@ -62,7 +63,7 @@ public class BrailleElement {
                           Integer readingOrder, Integer headingLevel, Double ocrConfidence,
                           String tnText, String latexString, Integer selectedIdx,
                           String renderMode, String visualSubtype, Double subtypeConfidence,
-                          List<String> content, String drafts, boolean isBlocked) {
+                          List<String> content, List<Map<String, Object>> drafts, boolean isBlocked) {
         this.pageResult = pageResult;
         this.elementId = elementId;
         this.type = type;
