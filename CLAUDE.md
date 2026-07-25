@@ -152,6 +152,7 @@ com.semojum.backend
 - `save()`(성공 경로): Page 상태 업데이트 → `touchJob` → 종료 판정
 - `markPageBlocked(jobId, pageNo)`(BLOCKED 경로, 별도 `@Transactional` public, PageWorker가 호출): DB Page=BLOCKED 저장 → `touchJob` → 종료 판정
 - `evaluateJobTermination()`: 성공/BLOCKED 경로 공유. 모든 페이지가 terminal(COMPLETED/NEEDS_REVIEW/BLOCKED)일 때, 성공(COMPLETED/NEEDS_REVIEW)이 0건이면 **FAILED**, 1건 이상이면 **COMPLETED**(부분 성공=완료)
+- **drafts(시각요소 복수 초안) 저장 형태**: `text_elements`/`braille_elements`의 `drafts` 컬럼(jsonb)은 엔티티에서 `List<Map<String,Object>>`로 매핑(`contents`의 `List<String>`와 동일한 패턴). AI가 주는 drafts는 mode c의 `braille_text_list` 시각요소(image/chart_graph)에만 `[{text, contents:[...], label}]` 배열로 옴. `serializeDrafts()`가 proto Draft를 `{text, contents, label}` Map으로 변환해 저장 → 조회 시 `getDrafts()`가 List를 반환해 응답에 **JSON 배열**로 나감. (과거 `String` 매핑이라 응답에서 이중 인코딩(`"drafts":"[{...}]"`)되던 버그 수정. `SseService`/`UserService`의 `buildResult`는 변경 없이 배열로 직렬화됨)
 
 ### Job 상태 전이 & stale-job 스케줄러
 - Job 상태: `PENDING → IN_PROGRESS → COMPLETED / FAILED` (모두 plain String)
