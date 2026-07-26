@@ -54,8 +54,9 @@ public class EditLog {
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> afterContent;
 
+    // ADD(사용자 추가 블록)는 AI 원본이 없어 null
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> aiOriginalContent;
 
     // mode a/c: 원본 페이지 입력 정보 (PDF 바이너리는 저장 안 하고 gs 경로만)

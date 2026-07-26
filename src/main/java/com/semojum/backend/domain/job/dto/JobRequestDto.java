@@ -23,4 +23,12 @@ public class JobRequestDto {
             @NotBlank String elementType,
             @NotNull List<String> orderedElementIds
     ) {}
+
+    // 블록 추가 요청: afterElementId 뒤에 삽입(null이면 맨 앞). type은 블록 종류(기본 "text").
+    public record AddElement(
+            @NotBlank String elementType,
+            @NotNull List<String> contents,
+            String afterElementId,
+            String type
+    ) {}
 }
