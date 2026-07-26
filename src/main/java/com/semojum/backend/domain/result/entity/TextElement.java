@@ -88,4 +88,9 @@ public class TextElement {
     public void updateCurrentContents(List<String> contents) {
         this.currentContents = contents;
     }
+
+    // 블록 순서변경: reading_order 갱신
+    public void updateReadingOrder(Integer readingOrder) {
+        this.readingOrder = readingOrder;
+    }
 }

@@ -16,9 +16,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 // 점역사 요소 수정: current만 갱신(original 보존) + edit_logs 스냅샷 기록(RLHF용)
@@ -115,6 +118,55 @@ public class ElementEditService {
 
         log.info("요소 수정: jobId={}, pageNo={}, elementId={}, type={}", jobId, pageNo, elementId, type);
         return newContents;
+    }
+
+    // 블록 순서변경: 그 페이지의 최종 element_id 순서 전체를 받아 reading_order를 1..N으로 재작성.
+    // FE는 순서 배열만 보내고 order 숫자는 서버가 결정. 삭제 안 된 요소들의 순열이어야 함(불일치 시 400).
+    @Transactional
+    public List<String> reorderElements(String userId, String jobId, int pageNo,
+                                        String elementType, List<String> orderedElementIds) {
+        // 1. 본인 Job 검증 (타인 접근 403)
+        Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+
+        // 2. 해당 페이지 결과
+        PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+
+        // 3. elementType 분기 → 현재 살아있는(is_deleted=false) 요소 id→엔티티 맵 구성 후 순서대로 재번호
+        String type = elementType == null ? "" : elementType.toUpperCase();
+        if (type.equals("TEXT")) {
+            Map<String, TextElement> map = new HashMap<>();
+            for (TextElement el : textElementRepository.findByPageResult(pageResult)) {
+                map.put(el.getElementId(), el);
+            }
+            validateOrder(orderedElementIds, map.keySet());
+            for (int i = 0; i < orderedElementIds.size(); i++) {
+                map.get(orderedElementIds.get(i)).updateReadingOrder(i + 1);
+            }
+        } else if (type.equals("BRAILLE")) {
+            Map<String, BrailleElement> map = new HashMap<>();
+            for (BrailleElement el : brailleElementRepository.findByPageResult(pageResult)) {
+                map.put(el.getElementId(), el);
+            }
+            validateOrder(orderedElementIds, map.keySet());
+            for (int i = 0; i < orderedElementIds.size(); i++) {
+                map.get(orderedElementIds.get(i)).updateReadingOrder(i + 1);
+            }
+        } else {
+            throw new CustomException(ErrorCode.ELEMENT_INVALID_TYPE);
+        }
+
+        log.info("블록 순서변경: jobId={}, pageNo={}, type={}, count={}", jobId, pageNo, type, orderedElementIds.size());
+        return orderedElementIds;
+    }
+
+    // 순서 목록이 현재 페이지 요소 집합과 정확히 일치(같은 원소들의 순열)하는지 검증. 누락/중복/미지의 id면 400.
+    private void validateOrder(List<String> orderedElementIds, Set<String> currentIds) {
+        if (orderedElementIds.size() != currentIds.size()
+                || !new HashSet<>(orderedElementIds).equals(currentIds)) {
+            throw new CustomException(ErrorCode.ELEMENT_ORDER_MISMATCH);
+        }
     }
 
     // 해당 요소(elementId)의 bbox를 JSON 문자열로 직렬화 (mode a/c). 없으면 null.

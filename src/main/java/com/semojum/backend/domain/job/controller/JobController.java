@@ -74,4 +74,18 @@ public class JobController {
                 request.elementType(), request.contents());
         return ApiResponse.success(updated);
     }
+
+    // 블록 순서변경 (전체 순서 배열을 받아 reading_order 1..N 재작성)
+    @PatchMapping("/{jobId}/pages/{pageNo}/elements/order")
+    public ApiResponse<List<String>> reorderElements(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @RequestBody @Valid JobRequestDto.ReorderElements request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        List<String> ordered = elementEditService.reorderElements(
+                userDetails.getUsername(), jobId, pageNo,
+                request.elementType(), request.orderedElementIds());
+        return ApiResponse.success(ordered);
+    }
 }

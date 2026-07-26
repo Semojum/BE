@@ -90,4 +90,9 @@ public class BrailleElement {
     public void updateCurrentContent(List<String> content) {
         this.currentContent = content;
     }
+
+    // 블록 순서변경: reading_order 갱신
+    public void updateReadingOrder(Integer readingOrder) {
+        this.readingOrder = readingOrder;
+    }
 }
