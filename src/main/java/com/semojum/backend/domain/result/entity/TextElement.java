@@ -56,6 +56,10 @@ public class TextElement {
     @Column(nullable = false)
     private boolean isBlocked;
 
+    // 블록 삭제(soft-delete): true면 읽기 경로(buildResult)에서 제외. 점역사 편집 이력 보존용.
+    @Column(nullable = false)
+    private boolean isDeleted;
+
     @Builder
     public TextElement(PageResult pageResult, String elementId, String type,
                        Integer readingOrder, Integer headingLevel, Double ocrConfidence,
