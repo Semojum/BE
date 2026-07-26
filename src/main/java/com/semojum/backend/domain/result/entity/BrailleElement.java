@@ -95,4 +95,9 @@ public class BrailleElement {
     public void updateReadingOrder(Integer readingOrder) {
         this.readingOrder = readingOrder;
     }
+
+    // 블록 삭제(soft-delete): 행은 보존하고 플래그만 true
+    public void markDeleted() {
+        this.isDeleted = true;
+    }
 }
