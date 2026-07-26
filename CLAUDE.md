@@ -3,7 +3,6 @@
 ## 프로젝트 개요
 
 **세모점**은 점역사(전문 점자 번역사)를 위한 AI 기반 점자 변환 플랫폼이다.
-회사: EduDot / 팀: 김현주(CEO), 김태민(CTO), 이준혁(CPO), 조하은(PM/BE)
 
 ### 변환 모드
 | 모드 | 설명 | 입력 파일 |
@@ -109,6 +108,7 @@ com.semojum.backend
 | JOB4003 | 400 | 지원하지 않는 모드 |
 | JOB4004 | 404 | 존재하지 않는 요소 |
 | JOB4005 | 400 | 잘못된 elementType (TEXT/BRAILLE만 허용) |
+| JOB4006 | 400 | 순서 목록이 현재 페이지 요소와 불일치 (블록 순서변경) |
 
 ---
 
@@ -178,10 +178,24 @@ com.semojum.backend
   - `current`(currentContents/currentContent)만 갱신, **`original`은 절대 보존**. 응답으로 갱신된 contents 반환
   - 본인 Job 검증(타인 403), 없는 요소 404, 잘못된 elementType 400. `is_blocked`/상태 무관 수정 허용
 - **edit_logs 스냅샷 기록(RLHF용)**: 수정과 같은 트랜잭션에서 1수정=1행 저장
-  - 공통: before/after content + `ai_original_content` + mode/element_type/user/job/page
+  - 공통: `action`(EDIT/DELETE/ADD) + before/after content + `ai_original_content` + mode/element_type/user/job/page
   - mode a/c: `source_pdf_path` + `image_width/height` + `bounding_box`(해당 요소)
   - mode b: `source_text`(변환에 쓴 원본 한글텍스트, GCS `.txt`에서 읽음)
   - 입력 컨텍스트까지 자기완결 스냅샷(같은 요소 반복 수정 시 컨텍스트 중복은 의도된 트레이드오프). PDF/이미지 바이너리는 저장 안 하고 gs 경로만
+  - 저장 로직은 `saveEditLog(...)` 공통 헬퍼로 EDIT/DELETE/ADD가 공유
+
+### 블록 편집 (Block Edit)
+`ElementEditService`, 모두 `@Transactional` + 본인 Job 검증(타인 403). 브랜치 `feat/block-edit`.
+- **읽기 정렬 토대**: `text_elements`/`braille_elements`에 `is_deleted`(soft-delete) 추가. `findByPageResult`가 `is_deleted=false` 필터 + `ORDER BY reading_order`(`@Query`, 호출부 무변경) → 추가/삭제/순서변경이 `buildResult`(SSE·마이페이지) 응답에 반영됨.
+- **순서(reading_order)는 서버가 소유**: 어떤 편집이든 살아있는 블록을 최종 순서대로 `reading_order = 1..N` 재번호. FE는 order 숫자를 계산하지 않고 "무엇을/어디에"만 전송.
+- `POST /api/jobs/{jobId}/pages/{pageNo}/elements` — 블록 추가
+  - body: `{ elementType, contents, afterElementId, type }` (`afterElementId` null이면 맨 앞, `type` 기본 "text")
+  - 서버가 element_id 발급, `original=NULL`(=사용자 작성 블록 표시), `current=contents`. afterElementId 뒤 삽입 후 재번호. edit_logs `action=ADD`(before=`[]`, ai_original=null). 없는 afterElementId면 404
+- `DELETE /api/jobs/{jobId}/pages/{pageNo}/elements/{elementId}?elementType=` — 블록 삭제
+  - soft-delete(`is_deleted=true`) + 남은 블록 재번호. 이미 삭제된 요소 재삭제 시 404. edit_logs `action=DELETE`(after=`[]`)
+- `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/order` — 순서변경
+  - body: `{ elementType, orderedElementIds }` (그 페이지 최종 순서 전체) → `reading_order` 1..N 재작성. 살아있는 요소들의 순열이어야 함(불일치 시 JOB4006). edit_logs 미기록(내용 안 바뀌는 구조 변경 전용)
+- **DDL(ddl-auto:none, 수동 적용 완료)**: `is_deleted`(text/braille, NOT NULL default false), `edit_logs.action`(varchar, 기존행 EDIT 백필), `original_contents`/`original_content`/`ai_original_content` NOT NULL 해제(사용자 추가 블록·ADD 로그는 AI 원본 없음)
 
 ### 썸네일 (ThumbnailService)
 - Job 생성 시 자동 생성 후 GCS 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
