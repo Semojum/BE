@@ -88,4 +88,18 @@ public class JobController {
                 request.elementType(), request.orderedElementIds());
         return ApiResponse.success(ordered);
     }
+
+    // 블록 삭제 (soft-delete + 남은 블록 재번호 + edit_logs DELETE 기록)
+    @DeleteMapping("/{jobId}/pages/{pageNo}/elements/{elementId}")
+    public ApiResponse<Void> deleteElement(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @PathVariable String elementId,
+            @RequestParam String elementType,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        elementEditService.deleteElement(
+                userDetails.getUsername(), jobId, pageNo, elementId, elementType);
+        return ApiResponse.success(null);
+    }
 }
