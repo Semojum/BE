@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -125,6 +126,78 @@ public class ElementEditService {
                 before, List.of(), aiOriginal);
 
         log.info("블록 삭제: jobId={}, pageNo={}, elementId={}, type={}", jobId, pageNo, elementId, type);
+    }
+
+    // 블록 추가: 사용자가 작성한 새 블록을 afterElementId 뒤(null이면 맨 앞)에 삽입 후 reading_order 1..N 재번호.
+    // 서버가 element_id 발급, original=null(사용자 작성 표시), edit_logs(ADD) 기록.
+    @Transactional
+    public Map<String, Object> addElement(String userId, String jobId, int pageNo,
+                                          String elementType, List<String> contents,
+                                          String afterElementId, String type) {
+        Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+
+        String etype = elementType == null ? "" : elementType.toUpperCase();
+        String newElementId = UUID.randomUUID().toString();
+        String blockType = (type == null || type.isBlank()) ? "text" : type;
+        UUID elementPk;
+
+        if (etype.equals("TEXT")) {
+            List<TextElement> current = textElementRepository.findByPageResult(pageResult);
+            validateAfter(afterElementId, current.stream().map(TextElement::getElementId).toList());
+            TextElement neo = TextElement.builder()
+                    .pageResult(pageResult).elementId(newElementId).type(blockType)
+                    .contents(contents).isBlocked(false).build();
+            neo.markUserAuthored();
+            textElementRepository.save(neo);
+            List<TextElement> ordered = new ArrayList<>();
+            if (afterElementId == null) ordered.add(neo);
+            for (TextElement el : current) {
+                ordered.add(el);
+                if (el.getElementId().equals(afterElementId)) ordered.add(neo);
+            }
+            for (int i = 0; i < ordered.size(); i++) ordered.get(i).updateReadingOrder(i + 1);
+            elementPk = neo.getId();
+        } else if (etype.equals("BRAILLE")) {
+            List<BrailleElement> current = brailleElementRepository.findByPageResult(pageResult);
+            validateAfter(afterElementId, current.stream().map(BrailleElement::getElementId).toList());
+            BrailleElement neo = BrailleElement.builder()
+                    .pageResult(pageResult).elementId(newElementId).type(blockType)
+                    .content(contents).isBlocked(false).build();
+            neo.markUserAuthored();
+            brailleElementRepository.save(neo);
+            List<BrailleElement> ordered = new ArrayList<>();
+            if (afterElementId == null) ordered.add(neo);
+            for (BrailleElement el : current) {
+                ordered.add(el);
+                if (el.getElementId().equals(afterElementId)) ordered.add(neo);
+            }
+            for (int i = 0; i < ordered.size(); i++) ordered.get(i).updateReadingOrder(i + 1);
+            elementPk = neo.getId();
+        } else {
+            throw new CustomException(ErrorCode.ELEMENT_INVALID_TYPE);
+        }
+
+        // edit_logs(ADD): before=[], after=contents, aiOriginal=null(사용자 작성)
+        saveEditLog("ADD", userId, jobId, job, pageResult, pageNo, newElementId, elementPk, etype,
+                List.of(), contents, null);
+
+        log.info("블록 추가: jobId={}, pageNo={}, newElementId={}, type={}, after={}",
+                jobId, pageNo, newElementId, etype, afterElementId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", newElementId);
+        result.put("contents", contents);
+        return result;
+    }
+
+    // afterElementId가 null이 아니면 현재(삭제 안 된) 요소 목록에 존재해야 함 (없으면 404)
+    private void validateAfter(String afterElementId, List<String> currentIds) {
+        if (afterElementId != null && !currentIds.contains(afterElementId)) {
+            throw new CustomException(ErrorCode.ELEMENT_NOT_FOUND);
+        }
     }
 
     // 남은(삭제 안 된) 블록을 현재 순서대로 reading_order = 1..N 재번호 (findByPageResult가 삭제분 자동 제외)

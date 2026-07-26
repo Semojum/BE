@@ -43,8 +43,9 @@ public class BrailleElement {
     private String visualSubtype;
     private Double subtypeConfidence;
 
+    // 사용자가 직접 추가한 블록은 AI 원본이 없어 null (null = 사용자 작성 블록 표시)
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> originalContent;
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -99,5 +100,10 @@ public class BrailleElement {
     // 블록 삭제(soft-delete): 행은 보존하고 플래그만 true
     public void markDeleted() {
         this.isDeleted = true;
+    }
+
+    // 사용자가 직접 추가한 블록: AI 원본 없음(original=null). current는 사용자가 입력한 값 유지.
+    public void markUserAuthored() {
+        this.originalContent = null;
     }
 }

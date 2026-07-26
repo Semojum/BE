@@ -20,6 +20,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -101,5 +102,19 @@ public class JobController {
         elementEditService.deleteElement(
                 userDetails.getUsername(), jobId, pageNo, elementId, elementType);
         return ApiResponse.success(null);
+    }
+
+    // 블록 추가 (사용자 작성 새 블록을 afterElementId 뒤에 삽입 + 재번호 + edit_logs ADD 기록)
+    @PostMapping("/{jobId}/pages/{pageNo}/elements")
+    public ApiResponse<Map<String, Object>> addElement(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @RequestBody @Valid JobRequestDto.AddElement request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Map<String, Object> created = elementEditService.addElement(
+                userDetails.getUsername(), jobId, pageNo,
+                request.elementType(), request.contents(), request.afterElementId(), request.type());
+        return ApiResponse.success(created);
     }
 }
