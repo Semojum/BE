@@ -20,6 +20,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -73,5 +74,47 @@ public class JobController {
                 userDetails.getUsername(), jobId, pageNo, elementId,
                 request.elementType(), request.contents());
         return ApiResponse.success(updated);
+    }
+
+    // 블록 순서변경 (전체 순서 배열을 받아 reading_order 1..N 재작성)
+    @PatchMapping("/{jobId}/pages/{pageNo}/elements/order")
+    public ApiResponse<List<String>> reorderElements(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @RequestBody @Valid JobRequestDto.ReorderElements request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        List<String> ordered = elementEditService.reorderElements(
+                userDetails.getUsername(), jobId, pageNo,
+                request.elementType(), request.orderedElementIds());
+        return ApiResponse.success(ordered);
+    }
+
+    // 블록 삭제 (soft-delete + 남은 블록 재번호 + edit_logs DELETE 기록)
+    @DeleteMapping("/{jobId}/pages/{pageNo}/elements/{elementId}")
+    public ApiResponse<Void> deleteElement(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @PathVariable String elementId,
+            @RequestParam String elementType,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        elementEditService.deleteElement(
+                userDetails.getUsername(), jobId, pageNo, elementId, elementType);
+        return ApiResponse.success(null);
+    }
+
+    // 블록 추가 (사용자 작성 새 블록을 afterElementId 뒤에 삽입 + 재번호 + edit_logs ADD 기록)
+    @PostMapping("/{jobId}/pages/{pageNo}/elements")
+    public ApiResponse<Map<String, Object>> addElement(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @RequestBody @Valid JobRequestDto.AddElement request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Map<String, Object> created = elementEditService.addElement(
+                userDetails.getUsername(), jobId, pageNo,
+                request.elementType(), request.contents(), request.afterElementId(), request.type());
+        return ApiResponse.success(created);
     }
 }
