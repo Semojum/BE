@@ -41,8 +41,9 @@ public class TextElement {
     private String visualSubtype;
     private Double subtypeConfidence;
 
+    // 사용자가 직접 추가한 블록은 AI 원본이 없어 null (null = 사용자 작성 블록 표시)
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> originalContents;
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -55,6 +56,10 @@ public class TextElement {
 
     @Column(nullable = false)
     private boolean isBlocked;
+
+    // 블록 삭제(soft-delete): true면 읽기 경로(buildResult)에서 제외. 점역사 편집 이력 보존용.
+    @Column(nullable = false)
+    private boolean isDeleted;
 
     @Builder
     public TextElement(PageResult pageResult, String elementId, String type,
@@ -83,5 +88,20 @@ public class TextElement {
     // 점역사 수정: current만 갱신(original은 보존)
     public void updateCurrentContents(List<String> contents) {
         this.currentContents = contents;
+    }
+
+    // 블록 순서변경: reading_order 갱신
+    public void updateReadingOrder(Integer readingOrder) {
+        this.readingOrder = readingOrder;
+    }
+
+    // 블록 삭제(soft-delete): 행은 보존하고 플래그만 true
+    public void markDeleted() {
+        this.isDeleted = true;
+    }
+
+    // 사용자가 직접 추가한 블록: AI 원본 없음(original=null). current는 사용자가 입력한 값 유지.
+    public void markUserAuthored() {
+        this.originalContents = null;
     }
 }

@@ -25,7 +25,8 @@ public enum ErrorCode {
     JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "mode a/c는 PDF, mode b는 TXT/HWP 파일만 업로드 가능합니다."),
     JOB_INVALID_MODE(HttpStatus.BAD_REQUEST, "JOB4003", "지원하지 않는 모드입니다."),
     ELEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4004", "존재하지 않는 요소입니다."),
-    ELEMENT_INVALID_TYPE(HttpStatus.BAD_REQUEST, "JOB4005", "elementType은 TEXT 또는 BRAILLE만 허용됩니다.");
+    ELEMENT_INVALID_TYPE(HttpStatus.BAD_REQUEST, "JOB4005", "elementType은 TEXT 또는 BRAILLE만 허용됩니다."),
+    ELEMENT_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "순서 목록이 현재 페이지의 요소와 일치하지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

@@ -43,6 +43,9 @@ public class EditLog {
     @Column(nullable = false)
     private String mode; // "a" | "b" | "c"
 
+    // 편집 종류: "EDIT"(내용 수정) | "DELETE"(블록 삭제) | "ADD"(블록 추가). RLHF 학습 신호 구분용.
+    private String action;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> beforeContent;
@@ -51,8 +54,9 @@ public class EditLog {
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> afterContent;
 
+    // ADD(사용자 추가 블록)는 AI 원본이 없어 null
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
+    @Column(columnDefinition = "jsonb")
     private List<String> aiOriginalContent;
 
     // mode a/c: 원본 페이지 입력 정보 (PDF 바이너리는 저장 안 하고 gs 경로만)
@@ -73,7 +77,7 @@ public class EditLog {
 
     @Builder
     public EditLog(UUID userId, String jobId, int pageNo, UUID elementId, String elementType,
-                   String mode, List<String> beforeContent, List<String> afterContent,
+                   String mode, String action, List<String> beforeContent, List<String> afterContent,
                    List<String> aiOriginalContent, String sourcePdfPath, Integer imageWidth,
                    Integer imageHeight, String boundingBox, String sourceText) {
         this.userId = userId;
@@ -82,6 +86,7 @@ public class EditLog {
         this.elementId = elementId;
         this.elementType = elementType;
         this.mode = mode;
+        this.action = action;
         this.beforeContent = beforeContent;
         this.afterContent = afterContent;
         this.aiOriginalContent = aiOriginalContent;
