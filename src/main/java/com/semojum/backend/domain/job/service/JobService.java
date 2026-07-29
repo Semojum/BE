@@ -12,7 +12,7 @@ import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.gcs.GcsService;
+import com.semojum.backend.global.s3.S3Service;
 import kr.dogfoot.hwplib.object.HWPFile;
 import kr.dogfoot.hwplib.object.bodytext.Section;
 import kr.dogfoot.hwplib.object.bodytext.paragraph.Paragraph;
@@ -44,7 +44,7 @@ public class JobService {
     private final JobRepository jobRepository;
     private final PageRepository pageRepository;
     private final UserRepository userRepository;
-    private final GcsService gcsService;
+    private final S3Service s3Service;
     private final RedisTemplate<String, String> redisTemplate;
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
 
@@ -118,8 +118,8 @@ public class JobService {
             try {
                 byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
                 String thumbnailGcsPath = jobId + "/thumbnail.png";
-                String thumbnailFullPath = gcsService.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
-                job.updateThumbnailUrl(gcsService.getPublicUrl(thumbnailFullPath));
+                String thumbnailFullPath = s3Service.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
                 jobRepository.save(job);
             } catch (Exception e) {
                 log.warn("썸네일 생성 실패: jobId={}", jobId, e);
@@ -135,7 +135,7 @@ public class JobService {
                 // GCS 업로드 (txt로 통일)
                 String gcsPath = jobId + "/pages/page-" + pageNo + ".txt";
                 byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
-                String fullPath = gcsService.uploadFile(gcsPath, chunkBytes, "text/plain");
+                String fullPath = s3Service.uploadFile(gcsPath, chunkBytes, "text/plain");
 
                 // Page 엔티티 생성
                 Page page = Page.builder()
@@ -183,8 +183,8 @@ public class JobService {
                 try {
                     byte[] thumbnailBytes = thumbnailService.generatePdfThumbnail(pdfBytes);
                     String thumbnailGcsPath = jobId + "/thumbnail.png";
-                    String thumbnailFullPath = gcsService.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
-                    job.updateThumbnailUrl(gcsService.getPublicUrl(thumbnailFullPath));
+                    String thumbnailFullPath = s3Service.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                    job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
                     jobRepository.save(job);
                 } catch (Exception e) {
                     log.warn("썸네일 생성 실패: jobId={}", jobId, e);
@@ -203,7 +203,7 @@ public class JobService {
 
                     // GCS 업로드
                     String gcsPath = jobId + "/pages/page-" + i + ".pdf";
-                    String fullPath = gcsService.uploadFile(gcsPath, pageOut.toByteArray(), "application/pdf");
+                    String fullPath = s3Service.uploadFile(gcsPath, pageOut.toByteArray(), "application/pdf");
 
                     // Page 엔티티 생성
                     Page page = Page.builder()

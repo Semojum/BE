@@ -31,6 +31,8 @@ dependencies {
 	implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
 	implementation 'io.grpc:grpc-protobuf:1.63.0'
 	implementation 'io.grpc:grpc-stub:1.63.0'
+	// BrailleResponse → JSON 직렬화(JsonFormat). 기존엔 google-cloud-storage에 묻어오던 의존성
+	implementation 'com.google.protobuf:protobuf-java-util:3.25.3'
 	compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
 
 	// JPA
@@ -51,12 +53,9 @@ dependencies {
 	// Swagger
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
 
-	// GCS
-	implementation('com.google.cloud:google-cloud-storage:2.40.1') {
-		exclude group: 'io.grpc', module: 'grpc-xds'
-		exclude group: 'io.grpc', module: 'grpc-alts'
-		exclude group: 'io.grpc', module: 'grpc-grpclb'
-	}
+	// AWS S3
+	implementation platform('software.amazon.awssdk:bom:2.25.64')
+	implementation 'software.amazon.awssdk:s3'
 
 	// iText (PDF 페이지 분리)
 	implementation 'com.itextpdf:itext7-core:7.2.5'

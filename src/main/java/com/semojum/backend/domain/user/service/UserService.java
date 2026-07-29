@@ -9,7 +9,7 @@ import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.gcs.GcsService;
+import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +23,7 @@ public class UserService {
 
     private final JobRepository jobRepository;
     private final PageRepository pageRepository;
-    private final GcsService gcsService;
+    private final S3Service s3Service;
     private final PageResultRepository pageResultRepository;
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
@@ -85,12 +85,12 @@ public class UserService {
     private JobResponseDto.OriginalContent buildOriginal(String mode, Page page) {
         if ("b".equals(mode)) {
             // mode b: GCS의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
-            String text = new String(gcsService.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
+            String text = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
             List<String> lines = Arrays.asList(text.split("\n", -1));
             return new JobResponseDto.OriginalContent("text", null, lines);
         }
         // mode a, c: 원본 PDF 공개 URL
-        String url = gcsService.getPublicUrl(page.getPdfPath());
+        String url = s3Service.getPublicUrl(page.getPdfPath());
         return new JobResponseDto.OriginalContent("pdf", url, null);
     }
 

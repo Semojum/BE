@@ -2,7 +2,7 @@ spring:
   application:
     name: backend
   datasource:
-    url: jdbc:postgresql://34.47.68.184:5432/postgres?ssl=true&sslmode=require
+    url: jdbc:postgresql://${DB_HOST:34.47.68.184}:5432/postgres?ssl=true&sslmode=require
     username: postgres
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -41,8 +41,10 @@ job:
     in-progress-timeout: 1h    # IN_PROGRESS 무진행 1시간 → FAILED
     pending-timeout: 12h       # PENDING 고아 12시간 → FAILED
 
-gcs:
-  bucket-name: semojum-bucket
+aws:
+  region: ${AWS_REGION:ap-northeast-2}
+  s3:
+    bucket: ${S3_BUCKET:semojum-bucket}
 
 grpc:
   client:

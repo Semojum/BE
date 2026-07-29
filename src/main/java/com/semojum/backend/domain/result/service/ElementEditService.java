@@ -9,7 +9,7 @@ import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.gcs.GcsService;
+import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,7 +38,7 @@ public class ElementEditService {
     private final BrailleElementRepository brailleElementRepository;
     private final BoundingBoxRepository boundingBoxRepository;
     private final EditLogRepository editLogRepository;
-    private final GcsService gcsService;
+    private final S3Service s3Service;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -227,7 +227,7 @@ public class ElementEditService {
 
         if (mode.equals("b")) {
             // 변환에 사용한 원본 한글 텍스트 (GCS .txt)
-            sourceText = new String(gcsService.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
+            sourceText = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
         } else {
             // mode a, c: 원본 페이지 파일 경로 + 이미지 크기 + 해당 요소 bbox
             sourcePdfPath = page.getPdfPath();
