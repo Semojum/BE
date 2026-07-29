@@ -16,8 +16,8 @@
 ## 기술 스택
 
 - **언어/프레임워크**: Java 21, Spring Boot 3.5.13, Gradle-Groovy
-- **DB**: PostgreSQL 18 (Cloud SQL), Redis (로컬 Docker)
-- **스토리지**: GCS (`semojum-bucket`, asia-northeast3), Workload Identity 인증
+- **DB**: PostgreSQL 18.4 (AWS RDS), Redis (Docker 컨테이너)
+- **스토리지**: AWS S3 (`semojum-bucket`, ap-northeast-2), EC2 IAM Role 인증(키리스)
 - **통신**: gRPC + TLS (AI 서버), SSE (FE 실시간 스트리밍)
 - **인증**: Spring Security, JWT (jjwt), BCrypt, SHA-256
 - **배포**: Docker Compose, Envoy Proxy, GitHub Actions CI/CD
@@ -25,19 +25,29 @@
 
 ---
 
-## 인프라
+## 인프라 (AWS, 계정 804136008552, 서울 ap-northeast-2)
 
 | 구성요소 | 상세 |
 |---|---|
-| BE VM | `semojum-backend`, `34.158.215.55` (asia-northeast3-a) |
-| Cloud SQL | PostgreSQL 18, `34.47.68.184`, DB: `postgres` |
-| GCS | `semojum-bucket` (asia-northeast3) |
-| AI VM A | `136.119.89.254`, gRPC `50051`, TLS, authority `semo-jum.com` |
+| EC2 | `semojum-backend`(`i-0287cb956dfefdbde`), t3.medium·30GB, 고정 IP `43.200.184.56`, Ubuntu 22.04 + Docker/Compose v2 |
+| RDS | `semojum-postgres`, PostgreSQL 18.4, db.t3.small, 20GB gp3(→100GB 자동증설), 백업 7일. 엔드포인트 `semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com` |
+| S3 | `semojum-bucket` — 객체 공개 읽기(썸네일·원본 공개 URL). EC2는 IAM Role(`semojum-ec2-role`/`semojum-ec2-profile`)로 키리스 접근 |
+| VPC | **기본(default) VPC** 사용(`vpc-008bb1c520fdf781e`) — 커스텀 VPC(프라이빗 서브넷+NAT)는 출시 후 보안 강화 항목. AI 서버 이전 시 같은 VPC에 넣어 사설 IP 통신 예정 |
+| 보안그룹 | `semojum-ec2-sg`(80/443 공개, 22는 관리자 IP만) / `semojum-rds-sg`(5432는 EC2 SG+관리자 IP만) |
+| AI VM A | `136.119.89.254`, gRPC `50051`, TLS, authority `semo-jum.com` (외부·GCP, 추후 같은 AWS 계정으로 이전 예정) |
 | 도메인 | `api.semojum.app`, Cloudflare Flexible SSL |
-| Redis | `docker run -d -p 6379:6379` (로컬) |
+| Redis | EC2 내 Docker 컨테이너 (compose에 포함) |
 | Docker Hub | `zxhwan/semojum-backend:latest` |
+| 예산 알람 | 월 $50의 80%·100% 도달 시 `contact@semo-jum.com` 메일 |
 
-**배포 흐름**: `dev` 브랜치 push → GitHub Actions → Docker Hub → VM SSH 실행
+**배포 흐름**: `dev` 브랜치 push → GitHub Actions → Docker Hub → EC2 SSH(`ubuntu@43.200.184.56`, `/home/ubuntu/semojum`, `docker compose`)
+
+### GCP → AWS 이전 상태 (2026-07-29 기준, 브랜치 `feat/aws-migration`)
+- **완료**: S3·RDS·EC2 생성 / DB 전체 이관·검증(12테이블) / GCS→S3 객체 460개 이관·일치 확인 / EC2에서 E2E 검증(가입→Job 생성→S3 업로드→워커 다운로드) / GitHub 시크릿(VM_HOST·VM_USER·VM_SSH_KEY) EC2로 교체 완료
+- **미완(컷오버 대기)**: ① AI 서버 gRPC 재테스트(테스트 당시 AI 서버 자체가 꺼져 있어 GCP 경로도 불통 — AWS 문제 아님. 방화벽에 `43.200.184.56` 허용 필요할 수 있음) ② 컷오버 직전 DB 델타 재덤프+S3 재동기화 ③ Cloudflare A레코드를 `43.200.184.56`으로 변경 ④ 본 브랜치 dev 머지(머지 시 CI가 EC2로 배포) ⑤ 안정화 후 GCP(VM·Cloud SQL) 정리 + 테스트 계정(`awstest@semojum.test`) 삭제
+- **⚠️ 시크릿이 이미 EC2로 교체됨** → 컷오버 전에 dev push 금지(옛 GCS 코드가 EC2에 배포되면 크래시). 다음 dev 반영은 반드시 `feat/aws-migration` 머지
+- 구 GCP 인프라(참고): BE VM `34.158.215.55` / Cloud SQL `34.47.68.184` / GCS `semojum-bucket` — 컷오버·안정화까지 유지(롤백 보험)
+- 로컬 시크릿: RDS 비밀번호·EIP 등 `~/Desktop/semojum-aws-secrets.txt`(팀 비밀번호 관리자로 이관 권장), SSH 키 `~/.ssh/semojum-key.pem`
 
 ---
 
@@ -70,7 +80,7 @@ com.semojum.backend
 │       └── service      UserService
 ├── global
 │   ├── exception        CustomException, ErrorCode, ApiResponse
-│   ├── gcs              GcsService
+│   ├── s3               S3Service (구 GcsService 대체, 동일 시그니처)
 │   ├── grpc             BrailleGrpcClient
 │   ├── jwt              JwtFilter, JwtProvider
 │   ├── oauth2           GoogleOAuthService, KakaoOAuthService
@@ -126,8 +136,8 @@ com.semojum.backend
 
 ### Job
 - `POST /api/jobs` — Job 생성 (multipart)
-  - 모드 a/c: PDF 페이지별 분리 → GCS 업로드
-  - 모드 b: TXT/HWP 30줄 단위 청크 → GCS 업로드
+  - 모드 a/c: PDF 페이지별 분리 → S3 업로드
+  - 모드 b: TXT/HWP 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
 - `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
@@ -140,7 +150,7 @@ com.semojum.backend
 
 ### PageWorker
 - 현재 **워커 1개** (AI 서버 병렬처리 지원 시 6으로 복구 예정, `WORKER_COUNT` 상수)
-- GCS 파일 다운로드 → gRPC 요청 (AI 서버) → ResultService.save() → Redis 상태 업데이트
+- S3 파일 다운로드 → gRPC 요청 (AI 서버) → ResultService.save() → Redis 상태 업데이트
 - 오류 발생 시 task를 큐에 재등록 후 2초 대기 (자동 재시도, **최대 3회**)
 - 최대 재시도(3회) 초과 → `ResultService.markPageBlocked()`로 DB Page=BLOCKED 반영 + Job 종료 판정 후 Redis도 BLOCKED. markPageBlocked 실패해도 Redis put은 항상 실행(SSE 종료 감지 보장)
 - 예외 처리 분기는 무로그로 삼키지 않고 `log.error`로 기록(pop된 task 증발 방지)
@@ -162,12 +172,12 @@ com.semojum.backend
 - `StaleJobScheduler` (5분 주기, `SchedulingConfig`의 `@EnableScheduling`): 멈춘 Job 정리 안전망
   - IN_PROGRESS 무진행(`job.stale.in-progress-timeout`, 기본 1h) → FAILED
   - 고아 PENDING(`job.stale.pending-timeout`, 기본 12h) → FAILED
-  - cutoff는 `Instant`(절대시각) 기반 → 컨테이너/Cloud SQL 타임존과 무관하게 정확
+  - cutoff는 `Instant`(절대시각) 기반 → 컨테이너/DB(RDS) 타임존과 무관하게 정확
 
 ### 마이페이지 (User)
 - `GET /api/users/jobs` — 내 Job 목록 조회 (최신순, thumbnailUrl 포함)
 - `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
-  - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<공개 URL>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (GCS의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**)
+  - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<공개 URL>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (S3의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**)
 - 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
 - `getMyJobs`/`getJobPage`는 `@Transactional(readOnly=true)` (OSIV off 대응)
 
@@ -180,8 +190,8 @@ com.semojum.backend
 - **edit_logs 스냅샷 기록(RLHF용)**: 수정과 같은 트랜잭션에서 1수정=1행 저장
   - 공통: `action`(EDIT/DELETE/ADD) + before/after content + `ai_original_content` + mode/element_type/user/job/page
   - mode a/c: `source_pdf_path` + `image_width/height` + `bounding_box`(해당 요소)
-  - mode b: `source_text`(변환에 쓴 원본 한글텍스트, GCS `.txt`에서 읽음)
-  - 입력 컨텍스트까지 자기완결 스냅샷(같은 요소 반복 수정 시 컨텍스트 중복은 의도된 트레이드오프). PDF/이미지 바이너리는 저장 안 하고 gs 경로만
+  - mode b: `source_text`(변환에 쓴 원본 한글텍스트, S3 `.txt`에서 읽음)
+  - 입력 컨텍스트까지 자기완결 스냅샷(같은 요소 반복 수정 시 컨텍스트 중복은 의도된 트레이드오프). PDF/이미지 바이너리는 저장 안 하고 s3 경로만(구 데이터는 gs:// 경로 — S3Service가 양쪽 호환)
   - 저장 로직은 `saveEditLog(...)` 공통 헬퍼로 EDIT/DELETE/ADD가 공유
 
 ### 블록 편집 (Block Edit)
@@ -198,7 +208,7 @@ com.semojum.backend
 - **DDL(ddl-auto:none, 수동 적용 완료)**: `is_deleted`(text/braille, NOT NULL default false), `edit_logs.action`(varchar, 기존행 EDIT 백필), `original_contents`/`original_content`/`ai_original_content` NOT NULL 해제(사용자 추가 블록·ADD 로그는 AI 원본 없음)
 
 ### 썸네일 (ThumbnailService)
-- Job 생성 시 자동 생성 후 GCS 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
+- Job 생성 시 자동 생성 후 S3 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
 - mode a/c: PDFBox로 PDF 첫 페이지 → PNG 렌더링
 - mode b: 텍스트를 NanumGothic 폰트로 흰 배경에 렌더링 → PNG
 - 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
@@ -289,8 +299,8 @@ com.semojum.backend
 
 ## 주의사항
 - `task.md`는 `.gitignore`에 등록됨 (커밋 제외)
-- Cloud SQL 미사용 시 중지 가능 (Spring Boot 재시작 없이 자동 재연결)
-- SSE 연결 시 Envoy `timeout: 0s` 필수. `idle_timeout`은 SSE 타임아웃(30분) 이상으로 둘 것 (현재 `envoy.yaml`은 900s라 정합성 점검 필요)
+- RDS는 상시 가동(중지 시 7일 후 자동 재시작됨에 유의). 구 Cloud SQL은 컷오버 안정화 후 삭제 예정
+- SSE 연결 시 Envoy `timeout: 0s` 필수. `idle_timeout`은 SSE 최대 수명(3시간=`EMITTER_TIMEOUT`) 이상으로 둘 것 (현재 `envoy.yaml`은 `10800s`로 정합)
 - gRPC 타임아웃은 AI 서버 하드 타임아웃(180s)보다 높은 200s로 설정
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
 - `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
