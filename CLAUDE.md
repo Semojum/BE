@@ -75,6 +75,13 @@ com.semojum.backend
 │   │   │                QualityCriticalError, QualityReviewFlag
 │   │   ├── repository   (각 엔티티별 JpaRepository)
 │   │   └── service      ResultService
+│   ├── org
+│   │   ├── entity       Organization (기관, 계약 만료일)
+│   │   └── repository   OrganizationRepository
+│   ├── admin
+│   │   ├── controller   AdminController (X-Admin-Key 검증)
+│   │   ├── dto          AdminRequestDto, AdminResponseDto
+│   │   └── service      AdminService (계정 발급·PW 재발급)
 │   └── user
 │       ├── controller   UserController
 │       └── service      UserService
@@ -83,7 +90,6 @@ com.semojum.backend
 │   ├── s3               S3Service (구 GcsService 대체, 동일 시그니처)
 │   ├── grpc             BrailleGrpcClient
 │   ├── jwt              JwtFilter, JwtProvider
-│   ├── oauth2           GoogleOAuthService, KakaoOAuthService
 │   ├── security         SecurityConfig, UserDetailsServiceImpl
 │   └── thumbnail        ThumbnailService
 └── grpc                 (proto 생성 클래스: BrailleRequest, BrailleResponse 등)
@@ -109,10 +115,11 @@ com.semojum.backend
 | COMMON4001 | 401 | 인증 필요 |
 | COMMON4003 | 403 | 권한 없음 |
 | COMMON5000 | 500 | 서버 에러 |
-| AUTH4001 | 401 | 이메일/비밀번호 오류 |
-| AUTH4002 | 409 | 이미 사용 중인 이메일 |
+| AUTH4001 | 401 | 아이디/비밀번호 오류 |
+| AUTH4002 | 409 | 이미 사용 중인 로그인 ID |
 | AUTH4003 | 401 | 액세스 토큰 만료/유효하지 않음 |
 | USER4001 | 404 | 존재하지 않는 회원 |
+| ORG4001 | 404 | 존재하지 않는 기관 |
 | JOB4001 | 404 | 존재하지 않는 작업 |
 | JOB4002 | 400 | 잘못된 파일 형식 |
 | JOB4003 | 400 | 지원하지 않는 모드 |
@@ -124,15 +131,16 @@ com.semojum.backend
 
 ## 구현 완료 목록
 
-### 인증 (Auth)
-- `POST /api/auth/signup` — 이메일 회원가입
-- `POST /api/auth/login` — 이메일 로그인 (JWT 발급)
-- `POST /api/auth/google` — 구글 PKCE 소셜 로그인
-- `POST /api/auth/kakao` — 카카오 소셜 로그인
+### 인증 (Auth) — V3 발급형 체제 (`feat/v3-auth`)
+- **자체 가입·소셜 로그인 없음**: 운영자가 기관별 계정(loginId/PW)을 발급, 점역사는 부여받은 계정으로만 로그인 (1인 1계정)
+- `POST /api/auth/login` — 발급 loginId/PW 로그인. **중복 로그인 금지**: 로그인 시 기존 활성 세션 전부 revoke(신규가 밀어냄, `revokeAllActiveByUser`)
 - `POST /api/auth/logout` — 로그아웃 (리프레시 토큰 revoke)
-- `POST /api/auth/refresh` — 액세스 토큰 재발급
+- `POST /api/auth/refresh` — 액세스 토큰 재발급 (밀려난 세션은 여기서 차단됨)
+- 자동 로그인 X: refresh 만료 30일 → **12시간**. 초기 비밀번호는 난수 발급·사용자 변경 불가(운영자 재발급만)
 - DB 세션 관리: `user_sessions` 테이블, SHA-256 해시 저장
-- 소셜 로그인 방식: PKCE 기반 (RFC 8252), 클라이언트가 OAuth2 플로우 처리 후 code + code_verifier + redirect_uri를 BE로 전송
+- **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증 — env `ADMIN_API_KEY`, 미설정 시 전부 차단):
+  - `POST /api/admin/orgs` 기관 생성(계약 만료일 포함) / `POST /api/admin/accounts` 계정 발급(난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
+- 레거시(이메일/소셜) users 행은 login_id가 null이라 로그인 불가 상태로 보존
 
 ### Job
 - `POST /api/jobs` — Job 생성 (multipart)
@@ -214,7 +222,7 @@ com.semojum.backend
 - 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
 
 ### Spring Security
-- `JwtFilter`: PERMIT_URLS = `/api/auth/signup`, `/api/auth/login`, `/api/auth/google`, `/api/auth/kakao`, `/swagger-ui`, `/v3/api-docs`
+- `JwtFilter`: PERMIT_URLS = `/api/auth/login`, `/api/admin/`(X-Admin-Key 자체 검증), `/swagger-ui`, `/v3/api-docs`
 - 미인증 요청 시 `COMMON4001` JSON 반환
 
 ### JPA / 커넥션 관리
@@ -233,7 +241,8 @@ com.semojum.backend
 ### 주요 테이블
 | 테이블 | 설명 |
 |---|---|
-| users | 회원 (EMAIL/KAKAO/GOOGLE) |
+| users | 회원 — V3 발급형(login_id, organization_id). 레거시 이메일/소셜 행은 보존만 |
+| organizations | 기관 (계약 만료일, 상태) — V3 신규 |
 | user_sessions | 리프레시 토큰 세션 |
 | jobs | 변환 작업 (`updated_at` timestamptz 포함 — touchJob/finishJob/DB default(now())로만 갱신) |
 | pages | 페이지별 파일 경로 |
@@ -305,5 +314,6 @@ com.semojum.backend
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
 - `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
 - stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
+- V3 인증 개편 배포 전 `ddl/v3_auth.sql` 수동 실행 필요 (organizations 생성 + users에 login_id/organization_id 추가)
 - `edit_logs` 테이블은 `ddl-auto:none`이라 자동 생성 안 됨 → 수정 API 배포 전에 DataGrip에서 `CREATE TABLE edit_logs (...)` 먼저 실행
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정
