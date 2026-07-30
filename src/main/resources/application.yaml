@@ -34,7 +34,11 @@ spring:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiry: 3600000       # 1시간 (ms)
-  refresh-token-expiry: 2592000000   # 30일 (ms)
+  refresh-token-expiry: 43200000     # 12시간 (ms) — V3 자동 로그인 X 정책으로 30일→12h 축소
+
+# V3 운영자 API (X-Admin-Key 헤더 검증). 미설정 시 운영자 API 전부 차단
+admin:
+  api-key: ${ADMIN_API_KEY:}
 
 job:
   stale:
