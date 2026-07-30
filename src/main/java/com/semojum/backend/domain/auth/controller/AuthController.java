@@ -8,23 +8,13 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+// V3: 회원가입·소셜 로그인 제거 — 발급형 계정 로그인/로그아웃/재발급만 제공
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
-
-    @PostMapping("/signup")
-    public ApiResponse<AuthResponseDto.SignUp> signUp(@RequestBody @Valid AuthRequestDto.SignUp request) {
-        return ApiResponse.success(authService.signUp(request));
-    }
-
-    // 이메일 중복확인 (회원가입 전 사용 가능 여부 체크)
-    @GetMapping("/email/check")
-    public ApiResponse<AuthResponseDto.EmailCheck> checkEmail(@RequestParam(required = false) String email) {
-        return ApiResponse.success(authService.checkEmail(email));
-    }
 
     @PostMapping("/login")
     public ApiResponse<AuthResponseDto.Login> login(@RequestBody @Valid AuthRequestDto.Login request) {
@@ -40,15 +30,5 @@ public class AuthController {
     @PostMapping("/refresh")
     public ApiResponse<AuthResponseDto.Refresh> refresh(@RequestBody @Valid AuthRequestDto.Refresh request) {
         return ApiResponse.success(authService.refresh(request));
-    }
-
-    @PostMapping("/google")
-    public ApiResponse<AuthResponseDto.Login> googleLogin(@RequestBody @Valid AuthRequestDto.GoogleLogin request) {
-        return ApiResponse.success(authService.googleLogin(request));
-    }
-
-    @PostMapping("/kakao")
-    public ApiResponse<AuthResponseDto.Login> kakaoLogin(@RequestBody @Valid AuthRequestDto.KakaoLogin request) {
-        return ApiResponse.success(authService.kakaoLogin(request));
     }
 }

@@ -13,12 +13,15 @@ public enum ErrorCode {
     COMMON_INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON5000", "서버 에러, 관리자에게 문의 바랍니다."),
 
     // ========== 인증 (AUTH) ==========
-    AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "AUTH4001", "이메일 또는 비밀번호가 올바르지 않습니다."),
-    AUTH_DUPLICATE_EMAIL(HttpStatus.CONFLICT, "AUTH4002", "이미 사용 중인 이메일입니다."),
+    AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "AUTH4001", "아이디 또는 비밀번호가 올바르지 않습니다."),
+    AUTH_DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "AUTH4002", "이미 사용 중인 로그인 ID입니다."),
     AUTH_INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH4003", "액세스 토큰이 만료되었거나 유효하지 않습니다."),
 
     // ========== 유저 (USER) ==========
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER4001", "존재하지 않는 회원입니다."),
+
+    // ========== 기관 (ORG) ==========
+    ORG_NOT_FOUND(HttpStatus.NOT_FOUND, "ORG4001", "존재하지 않는 기관입니다."),
 
     // ========== 작업 (JOB) ==========
     JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4001", "존재하지 않는 작업입니다."),
