@@ -55,7 +55,10 @@ aws:
 grpc:
   client:
     ai-server:
-      address: static://136.119.89.254:50051
+      # AI 서버는 같은 VPC(AWS 서울)에 있으므로 사설 IP로 접속한다.
+      # 공인 IP로 가면 트래픽이 VPC를 벗어나 AI 보안그룹의 "BE 보안그룹 허용" 규칙에 걸리지 않아 차단된다.
+      # (전송비 0원·지연 감소 효과도 있음) 주소는 환경변수로 교체 가능.
+      address: ${GRPC_AI_ADDRESS:static://172.31.47.101:50051}
       negotiation-type: tls
       security:
         trust-cert-collection: ${GRPC_CERT_PATH}
