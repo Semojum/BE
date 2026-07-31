@@ -35,6 +35,23 @@ jobs:
           push: true
           tags: zxhwan/semojum-backend:latest
 
+      # EC2의 22번 포트를 상시 개방하지 않기 위해, 배포 동안만 러너 IP를 허용한다.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Open SSH for runner IP
+        id: open-ssh
+        run: |
+          RUNNER_IP=$(curl -s https://checkip.amazonaws.com)
+          echo "runner_ip=$RUNNER_IP" >> "$GITHUB_OUTPUT"
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.EC2_SECURITY_GROUP_ID }} \
+            --protocol tcp --port 22 --cidr "$RUNNER_IP/32"
+
       - name: Copy docker-compose to VM
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -42,7 +59,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           source: "docker-compose.yml,envoy.yaml"
-          target: "/home/joha-eun/semojum/"
+          target: "/home/ubuntu/semojum/"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
@@ -51,7 +68,15 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            cd /home/joha-eun/semojum
-            sudo docker pull zxhwan/semojum-backend:latest
-            sudo docker-compose down
-            sudo docker-compose up -d
+            cd /home/ubuntu/semojum
+            docker pull zxhwan/semojum-backend:latest
+            docker compose down
+            docker compose up -d
+
+      # 배포 성공·실패와 무관하게 반드시 회수 (규칙이 남아 포트가 열린 채 방치되지 않도록)
+      - name: Close SSH for runner IP
+        if: always() && steps.open-ssh.outputs.runner_ip != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.EC2_SECURITY_GROUP_ID }} \
+            --protocol tcp --port 22 --cidr "${{ steps.open-ssh.outputs.runner_ip }}/32"

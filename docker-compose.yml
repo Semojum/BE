@@ -15,6 +15,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - DB_HOST=${DB_HOST}
       - DB_PASSWORD=${DB_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - SPRING_PROFILES_ACTIVE=prod
@@ -23,10 +24,13 @@ services:
       - GRPC_CERT_PATH=${GRPC_CERT_PATH}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - S3_BUCKET=${S3_BUCKET}
+      - AWS_REGION=${AWS_REGION}
     depends_on:
       - redis
     volumes:
-      - /home/joha-eun/server.crt:/home/joha-eun/server.crt:ro
+      # 호스트 경로를 compose 파일 기준 상대경로로 (GCP/AWS 어느 VM에서든 동작)
+      - ./server.crt:/home/joha-eun/server.crt:ro
 
   redis:
     image: redis:latest
