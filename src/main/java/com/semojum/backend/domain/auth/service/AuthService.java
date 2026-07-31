@@ -4,14 +4,11 @@ import com.semojum.backend.domain.auth.dto.AuthRequestDto;
 import com.semojum.backend.domain.auth.dto.AuthResponseDto;
 import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.entity.UserSession;
-import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.jwt.JwtProvider;
-import com.semojum.backend.global.oauth2.GoogleOAuthService;
-import com.semojum.backend.global.oauth2.KakaoOAuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
+// V3: 자체 가입·소셜 로그인 제거. 운영자가 발급한 계정(loginId/PW)으로만 로그인한다.
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -27,53 +25,27 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
-    private final GoogleOAuthService googleOAuthService;
-    private final KakaoOAuthService kakaoOAuthService;
-
-    @Transactional
-    public AuthResponseDto.SignUp signUp(AuthRequestDto.SignUp request) {
-        // 이메일 중복 체크
-        if (userRepository.existsByEmail(request.email())) {
-            throw new CustomException(ErrorCode.AUTH_DUPLICATE_EMAIL);
-        }
-
-        // 일반 로그인 유저 생성 (provider = EMAIL)
-        User user = User.builder()
-                .email(request.email())
-                .password(passwordEncoder.encode(request.password()))
-                .name(request.name())
-                .provider(AuthProvider.EMAIL)
-                .build();
-
-        userRepository.save(user);
-
-        return new AuthResponseDto.SignUp(user.getEmail(), user.getName());
-    }
-
-    // 이메일 중복확인: 사용 가능하면 available=true (중복은 정상 결과라 예외 던지지 않음)
-    public AuthResponseDto.EmailCheck checkEmail(String email) {
-        if (email == null || email.isBlank()) {
-            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
-        }
-        return new AuthResponseDto.EmailCheck(!userRepository.existsByEmail(email));
-    }
 
     @Transactional
     public AuthResponseDto.Login login(AuthRequestDto.Login request) {
-        // 이메일로 유저 조회
-        User user = userRepository.findByEmail(request.email())
+        // 발급 ID로 유저 조회
+        User user = userRepository.findByLoginId(request.loginId())
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS));
 
         // 비밀번호 검증
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+        if (user.getPassword() == null
+                || !passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
         }
+
+        // 중복 로그인 금지: 기존 활성 세션 전부 revoke (신규 로그인이 기존을 밀어냄)
+        userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
 
         // JWT 발급 (subject: UUID)
         String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
         String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
 
-        // 리프레시 토큰 세션 저장
+        // 리프레시 토큰 세션 저장 (계정당 활성 1개)
         saveSession(user, refreshToken);
 
         return new AuthResponseDto.Login(accessToken, refreshToken);
@@ -116,7 +88,7 @@ public class AuthService {
         User user = userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
-        // 세션 유효성 확인
+        // 세션 유효성 확인 (다른 곳에서 로그인해 revoke됐다면 여기서 차단됨)
         String hash = jwtProvider.hashToken(refreshToken);
         UserSession session = userSessionRepository
                 .findByUserAndRefreshTokenHashAndRevokedAtIsNull(user, hash)
@@ -130,65 +102,6 @@ public class AuthService {
         String newAccessToken = jwtProvider.generateAccessToken(userId);
 
         return new AuthResponseDto.Refresh(newAccessToken);
-    }
-
-    @Transactional
-    public AuthResponseDto.Login googleLogin(AuthRequestDto.GoogleLogin request) {
-        com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload payload =
-                googleOAuthService.exchange(request.code(), request.codeVerifier(), request.redirectUri());
-
-        String providerUid = payload.getSubject();
-        String email = payload.getEmail();
-        String name = (String) payload.get("name");
-
-        // 유저 조회 또는 생성
-        User user = userRepository.findByProviderAndProviderUid(AuthProvider.GOOGLE, providerUid)
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .email(email)
-                            .name(name)
-                            .provider(AuthProvider.GOOGLE)
-                            .providerUid(providerUid)
-                            .build();
-                    return userRepository.save(newUser);
-                });
-
-        String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
-        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
-        saveSession(user, refreshToken);
-
-        return new AuthResponseDto.Login(accessToken, refreshToken);
-    }
-
-    @Transactional
-    public AuthResponseDto.Login kakaoLogin(AuthRequestDto.KakaoLogin request) {
-        java.util.Map<String, Object> userInfo =
-                kakaoOAuthService.exchange(request.code(), request.codeVerifier(), request.redirectUri());
-
-        String providerUid = String.valueOf(userInfo.get("id"));
-        java.util.Map<String, Object> kakaoAccount = (java.util.Map<String, Object>) userInfo.get("kakao_account");
-        java.util.Map<String, Object> properties = (java.util.Map<String, Object>) userInfo.get("properties");
-
-        String email = kakaoAccount != null ? (String) kakaoAccount.get("email") : null;
-        String name = properties != null ? (String) properties.get("nickname") : null;
-
-        // 유저 조회 또는 생성
-        User user = userRepository.findByProviderAndProviderUid(AuthProvider.KAKAO, providerUid)
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .email(email)
-                            .name(name)
-                            .provider(AuthProvider.KAKAO)
-                            .providerUid(providerUid)
-                            .build();
-                    return userRepository.save(newUser);
-                });
-
-        String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
-        String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());
-        saveSession(user, refreshToken);
-
-        return new AuthResponseDto.Login(accessToken, refreshToken);
     }
 
     // 리프레시 토큰 세션 저장

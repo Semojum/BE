@@ -63,17 +63,12 @@ dependencies {
 	// PDFBox (PDF 썸네일 생성)
 	implementation 'org.apache.pdfbox:pdfbox:2.0.29'
 
-	// hwp
-	implementation 'kr.dogfoot:hwplib:1.1.1'
+	// hwp — 1.1.1은 일부 실제 파일에서 파싱이 무한 대기(hang)하는 문제가 있어 1.1.9로 상향
+	implementation 'kr.dogfoot:hwplib:1.1.9'
 
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
-	// OAuth2
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
-
-	// Google OAuth2 id_token 검증
-	implementation 'com.google.api-client:google-api-client:2.2.0'
 }
 
 protobuf {
