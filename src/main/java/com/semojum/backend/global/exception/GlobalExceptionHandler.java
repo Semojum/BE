@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @Slf4j
 @RestControllerAdvice
@@ -25,6 +26,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(e.getErrorCode().getHttpStatus())
                 .body(ApiResponse.failure(e.getErrorCode()));
+    }
+
+    // 업로드 용량 초과 — 핸들링하지 않으면 500으로 나가 원인을 알 수 없다
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return ResponseEntity
+                .status(ErrorCode.JOB_FILE_TOO_LARGE.getHttpStatus())
+                .body(ApiResponse.failure(ErrorCode.JOB_FILE_TOO_LARGE));
     }
 
     // 그 외 예외

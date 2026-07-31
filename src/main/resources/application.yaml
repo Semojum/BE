@@ -28,8 +28,10 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      # V3 정책: 업로드 파일 1개당 100MB 상한
+      max-file-size: 100MB
+      # 파일 + mode 파라미터 + 멀티파트 오버헤드를 감안해 약간의 여유를 둔다
+      max-request-size: 105MB
 
 jwt:
   secret: ${JWT_SECRET}

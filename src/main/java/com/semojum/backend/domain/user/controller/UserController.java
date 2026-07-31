@@ -24,6 +24,14 @@ public class UserController {
         return ApiResponse.success(userService.getMyJobs(userDetails.getUsername()));
     }
 
+    // 앱 재시작·네트워크 재연결 시 복구용 — 진행 중(PENDING/IN_PROGRESS) Job 목록
+    @GetMapping("/jobs/active")
+    public ApiResponse<List<JobResponseDto.JobSummary>> getActiveJobs(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(userService.getActiveJobs(userDetails.getUsername()));
+    }
+
     @GetMapping("/jobs/{jobId}/pages/{pageNo}")
     public ApiResponse<JobResponseDto.JobDetail> getJobPage(
             @PathVariable String jobId,
