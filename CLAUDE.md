@@ -153,8 +153,38 @@ com.semojum.backend
 - `POST /api/auth/refresh` — 액세스 토큰 재발급 (밀려난 세션은 여기서 차단됨)
 - 자동 로그인 X: refresh 만료 30일 → **12시간**. 초기 비밀번호는 난수 발급·사용자 변경 불가(운영자 재발급만)
 - DB 세션 관리: `user_sessions` 테이블, SHA-256 해시 저장
-- **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증 — env `ADMIN_API_KEY`, 미설정 시 전부 차단):
+- **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증):
   - `POST /api/admin/orgs` 기관 생성(계약 만료일 포함) / `POST /api/admin/accounts` 계정 발급(난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
+
+#### X-Admin-Key 사용법
+관리자 페이지가 2차로 미뤄져, 그때까지 운영자 API를 보호하는 **임시 수단**이다. JWT로는 막을 수 없어(로그인한 점역사면 누구나 통과) 공유 비밀키를 헤더로 검증한다.
+
+- **키 저장 위치**: EC2 `/home/ubuntu/semojum/.env`의 `ADMIN_API_KEY` (코드·저장소에 없음). 로컬 사본은 `~/Desktop/semojum-admin-key.txt`
+- **검증 방식**: `AdminController.validateAdminKey()` — `MessageDigest.isEqual`로 **constant-time 비교**(타이밍 공격 방지)
+- **fail-closed**: 키가 비어 있으면(env 미설정) 운영자 API를 **전부 차단**. 실수로 열려 있는 상황을 만들지 않는다
+- 실패 시 응답: `COMMON4003 권한이 없습니다`
+
+```bash
+KEY=$(cat ~/Desktop/semojum-admin-key.txt)
+
+# 기관 생성
+curl -X POST https://api.semojum.app/api/admin/orgs \
+  -H "X-Admin-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"한국점자도서관","contractExpiresAt":"2027-12-31"}'
+
+# 계정 발급 (응답의 password는 이때 1회만 노출됨 — 서버는 BCrypt 해시만 보관)
+curl -X POST https://api.semojum.app/api/admin/accounts \
+  -H "X-Admin-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"organizationId":"<org uuid>","loginId":"kblib001","name":"점역사 이름"}'
+
+# 비밀번호 재발급 (계정·작업물 유지, PW만 교체)
+curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissue \
+  -H "X-Admin-Key: $KEY"
+```
+
+**키 회전**: EC2 `.env`의 `ADMIN_API_KEY` 수정 → `docker compose up -d` 재기동. 유출 의심 시 즉시 회전할 것.
+**한계(2차에서 교체)**: 키만 있으면 누구나 실행 가능해 **작업자 추적·감사 로그가 없고**, 권한 세분화도 불가. 관리자 페이지 구축 시 운영자 계정+역할+감사 로그로 대체한다.
+⚠️ 키를 Git·노션·채팅에 올리지 말 것. 팀 비밀번호 관리자에 보관.
 - 레거시(이메일/소셜) users 행은 login_id가 null이라 로그인 불가 상태로 보존
 
 ### Job
