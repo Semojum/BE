@@ -87,15 +87,22 @@ com.semojum.backend
 │   │   │                QualityCriticalError, QualityReviewFlag
 │   │   ├── repository   (각 엔티티별 JpaRepository)
 │   │   └── service      ResultService
+│   ├── org
+│   │   ├── entity       Organization (기관, 계약 만료일)
+│   │   └── repository   OrganizationRepository
+│   ├── admin
+│   │   ├── controller   AdminController (X-Admin-Key 검증)
+│   │   ├── dto          AdminRequestDto, AdminResponseDto
+│   │   └── service      AdminService (계정 발급·PW 재발급)
 │   └── user
 │       ├── controller   UserController
 │       └── service      UserService
 ├── global
 │   ├── exception        CustomException, ErrorCode, ApiResponse
 │   ├── s3               S3Service (구 GcsService 대체, 동일 시그니처)
+│   ├── hwp              HwpPageExtractor (HWP 실제 페이지 분리)
 │   ├── grpc             BrailleGrpcClient
 │   ├── jwt              JwtFilter, JwtProvider
-│   ├── oauth2           GoogleOAuthService, KakaoOAuthService
 │   ├── security         SecurityConfig, UserDetailsServiceImpl
 │   └── thumbnail        ThumbnailService
 └── grpc                 (proto 생성 클래스: BrailleRequest, BrailleResponse 등)
@@ -121,35 +128,39 @@ com.semojum.backend
 | COMMON4001 | 401 | 인증 필요 |
 | COMMON4003 | 403 | 권한 없음 |
 | COMMON5000 | 500 | 서버 에러 |
-| AUTH4001 | 401 | 이메일/비밀번호 오류 |
-| AUTH4002 | 409 | 이미 사용 중인 이메일 |
+| AUTH4001 | 401 | 아이디/비밀번호 오류 |
+| AUTH4002 | 409 | 이미 사용 중인 로그인 ID |
 | AUTH4003 | 401 | 액세스 토큰 만료/유효하지 않음 |
 | USER4001 | 404 | 존재하지 않는 회원 |
+| ORG4001 | 404 | 존재하지 않는 기관 |
 | JOB4001 | 404 | 존재하지 않는 작업 |
 | JOB4002 | 400 | 잘못된 파일 형식 |
 | JOB4003 | 400 | 지원하지 않는 모드 |
 | JOB4004 | 404 | 존재하지 않는 요소 |
 | JOB4005 | 400 | 잘못된 elementType (TEXT/BRAILLE만 허용) |
 | JOB4006 | 400 | 순서 목록이 현재 페이지 요소와 불일치 (블록 순서변경) |
+| JOB4007 | 400 | HWP 파싱 실패 (손상·미지원 형식) |
+| JOB4008 | 400 | 암호 설정/배포용 HWP (변환 불가) |
 
 ---
 
 ## 구현 완료 목록
 
-### 인증 (Auth)
-- `POST /api/auth/signup` — 이메일 회원가입
-- `POST /api/auth/login` — 이메일 로그인 (JWT 발급)
-- `POST /api/auth/google` — 구글 PKCE 소셜 로그인
-- `POST /api/auth/kakao` — 카카오 소셜 로그인
+### 인증 (Auth) — V3 발급형 체제 (`feat/v3-auth`)
+- **자체 가입·소셜 로그인 없음**: 운영자가 기관별 계정(loginId/PW)을 발급, 점역사는 부여받은 계정으로만 로그인 (1인 1계정)
+- `POST /api/auth/login` — 발급 loginId/PW 로그인. **중복 로그인 금지**: 로그인 시 기존 활성 세션 전부 revoke(신규가 밀어냄, `revokeAllActiveByUser`)
 - `POST /api/auth/logout` — 로그아웃 (리프레시 토큰 revoke)
-- `POST /api/auth/refresh` — 액세스 토큰 재발급
+- `POST /api/auth/refresh` — 액세스 토큰 재발급 (밀려난 세션은 여기서 차단됨)
+- 자동 로그인 X: refresh 만료 30일 → **12시간**. 초기 비밀번호는 난수 발급·사용자 변경 불가(운영자 재발급만)
 - DB 세션 관리: `user_sessions` 테이블, SHA-256 해시 저장
-- 소셜 로그인 방식: PKCE 기반 (RFC 8252), 클라이언트가 OAuth2 플로우 처리 후 code + code_verifier + redirect_uri를 BE로 전송
+- **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증 — env `ADMIN_API_KEY`, 미설정 시 전부 차단):
+  - `POST /api/admin/orgs` 기관 생성(계약 만료일 포함) / `POST /api/admin/accounts` 계정 발급(난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
+- 레거시(이메일/소셜) users 행은 login_id가 null이라 로그인 불가 상태로 보존
 
 ### Job
 - `POST /api/jobs` — Job 생성 (multipart)
   - 모드 a/c: PDF 페이지별 분리 → S3 업로드
-  - 모드 b: TXT/HWP 30줄 단위 청크 → S3 업로드
+  - 모드 b: **HWP는 실제 페이지 단위**(레이아웃 기반, 표 내용 포함) / TXT는 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
 - `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
@@ -219,6 +230,14 @@ com.semojum.backend
   - body: `{ elementType, orderedElementIds }` (그 페이지 최종 순서 전체) → `reading_order` 1..N 재작성. 살아있는 요소들의 순열이어야 함(불일치 시 JOB4006). edit_logs 미기록(내용 안 바뀌는 구조 변경 전용)
 - **DDL(ddl-auto:none, 수동 적용 완료)**: `is_deleted`(text/braille, NOT NULL default false), `edit_logs.action`(varchar, 기존행 EDIT 백필), `original_contents`/`original_content`/`ai_original_content` NOT NULL 해제(사용자 추가 블록·ADD 로그는 AI 원본 없음)
 
+### HWP 페이지 분리 (HwpPageExtractor)
+- **실제 페이지 경계 복원**: 한글이 저장 시 계산해 둔 레이아웃 캐시(LineSeg)의 `lineVerticalPosition`(줄 세로 위치)을 사용. 같은 페이지에선 y가 증가하고 페이지가 바뀌면 상단으로 리셋되므로 **y가 작아지는 지점 = 페이지 경계**
+- ⚠️ `LineSegItemTag.isFirstLineAtPage()`는 **실제 파일에서 항상 false**(tag 하위 비트를 한글이 쓰지 않음) → 사용 금지, y 리셋 방식 유지할 것
+- **표·중첩 표 셀 문단까지 재귀 추출** — 최상위 문단만 읽으면 서식 문서 내용의 40~96%가 누락됨(검증: 논문심사의견서 21자→576자, 한이음 수행계획서 3843자→6497자)
+- 암호 설정/배포용/공인인증 암호화 문서는 `JOB4008`로 거부 (본문 대신 안내문만 들어 있어 점역 불가)
+- **hwplib 1.1.9 필수**: 1.1.1은 일부 실제 파일에서 파싱이 무한 대기(hang)함 — 워커 1개 구조라 스레드가 영구 정지될 수 있어 다운그레이드 금지
+- 문단이 페이지를 걸치면 줄 단위로 분리해 각 페이지에 나눠 기록. 표는 앵커 문단이 속한 페이지에 귀속(페이지를 걸친 표는 시작 페이지로 — 한계)
+
 ### 썸네일 (ThumbnailService)
 - Job 생성 시 자동 생성 후 S3 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
 - mode a/c: PDFBox로 PDF 첫 페이지 → PNG 렌더링
@@ -226,7 +245,7 @@ com.semojum.backend
 - 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
 
 ### Spring Security
-- `JwtFilter`: PERMIT_URLS = `/api/auth/signup`, `/api/auth/login`, `/api/auth/google`, `/api/auth/kakao`, `/swagger-ui`, `/v3/api-docs`
+- `JwtFilter`: PERMIT_URLS = `/api/auth/login`, `/api/admin/`(X-Admin-Key 자체 검증), `/swagger-ui`, `/v3/api-docs`
 - 미인증 요청 시 `COMMON4001` JSON 반환
 
 ### JPA / 커넥션 관리
@@ -245,7 +264,8 @@ com.semojum.backend
 ### 주요 테이블
 | 테이블 | 설명 |
 |---|---|
-| users | 회원 (EMAIL/KAKAO/GOOGLE) |
+| users | 회원 — V3 발급형(login_id, organization_id). 레거시 이메일/소셜 행은 보존만 |
+| organizations | 기관 (계약 만료일, 상태) — V3 신규 |
 | user_sessions | 리프레시 토큰 세션 |
 | jobs | 변환 작업 (`updated_at` timestamptz 포함 — touchJob/finishJob/DB default(now())로만 갱신) |
 | pages | 페이지별 파일 경로 |
@@ -317,5 +337,6 @@ com.semojum.backend
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
 - `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
 - stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
+- V3 인증 개편 배포 전 `ddl/v3_auth.sql` 수동 실행 필요 (organizations 생성 + users에 login_id/organization_id 추가)
 - `edit_logs` 테이블은 `ddl-auto:none`이라 자동 생성 안 됨 → 수정 API 배포 전에 DataGrip에서 `CREATE TABLE edit_logs (...)` 먼저 실행
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정

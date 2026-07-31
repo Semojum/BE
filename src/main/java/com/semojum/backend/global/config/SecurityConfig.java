@@ -32,8 +32,9 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/signup", "/api/auth/login",
-                                "/api/auth/google", "/api/auth/kakao", "/api/auth/email/check").permitAll()
+                        .requestMatchers("/api/auth/login").permitAll()
+                        // 운영자 API는 JWT 대신 X-Admin-Key 헤더로 자체 검증 (AdminController)
+                        .requestMatchers("/api/admin/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
