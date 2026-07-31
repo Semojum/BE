@@ -35,7 +35,7 @@
 | VPC | **기본(default) VPC** 사용(`vpc-008bb1c520fdf781e`) — 커스텀 VPC(프라이빗 서브넷+NAT)는 출시 후 보안 강화 항목. AI 서버 이전 시 같은 VPC에 넣어 사설 IP 통신 예정 |
 | 보안그룹 | `semojum-ec2-sg`(80/443 공개, 22는 관리자 IP만 — 배포 시 러너 IP 임시 허용) / `semojum-rds-sg`(5432는 EC2 SG+관리자 IP만) |
 | 배포용 IAM | `semojum-github-actions` — 보안그룹 인바운드 토글 권한만(최소 권한). 액세스 키는 GitHub Secrets에만 존재 |
-| AI VM A | `136.119.89.254`, gRPC `50051`, TLS, authority `semo-jum.com` (외부·GCP, 추후 같은 AWS 계정으로 이전 예정) |
+| AI 서버 | `semojum-ai`(`i-0b93026dfaaca87c0`), **g5.2xlarge(GPU)**, **같은 VPC** — BE는 **사설 IP `172.31.47.101:50051`** 로 접속. TLS, authority `semo-jum.com` |
 | 도메인 | `api.semojum.app`, Cloudflare Flexible SSL |
 | Redis | EC2 내 Docker 컨테이너 (compose에 포함) |
 | Docker Hub | `zxhwan/semojum-backend:latest` |
@@ -56,7 +56,8 @@ EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러�
 
 ### GCP → AWS 이전 상태 (2026-07-29 기준, 브랜치 `feat/aws-migration`)
 - **완료**: S3·RDS·EC2 생성 / DB 전체 이관·검증(12테이블) / GCS→S3 객체 460개 이관·일치 확인 / EC2에서 E2E 검증(가입→Job 생성→S3 업로드→워커 다운로드) / GitHub 시크릿(VM_HOST·VM_USER·VM_SSH_KEY) EC2로 교체 완료
-- **미완(컷오버 대기)**: ① AI 서버 gRPC 재테스트(테스트 당시 AI 서버 자체가 꺼져 있어 GCP 경로도 불통 — AWS 문제 아님. 방화벽에 `43.200.184.56` 허용 필요할 수 있음) ② 컷오버 직전 DB 델타 재덤프+S3 재동기화 ③ Cloudflare A레코드를 `43.200.184.56`으로 변경 ④ 본 브랜치 dev 머지(머지 시 CI가 EC2로 배포) ⑤ 안정화 후 GCP(VM·Cloud SQL) 정리 + 테스트 계정(`awstest@semojum.test`) 삭제
+- **컷오버 완료(2026-07-31)**: Cloudflare A레코드 전환 → 트래픽이 EC2·RDS·S3로 서비스 중. **AI 서버도 같은 AWS 계정·VPC로 이전 완료**, gRPC 실변환 E2E 검증됨(TLS 통과, 0.9초 내 COMPLETED)
+- **남은 정리**: GCP 리소스(VM·Cloud SQL) 삭제 · 테스트 계정/Job 정리 · 무중단 배포 전환(현재 배포마다 약 20초 중단)
 - **⚠️ 시크릿이 이미 EC2로 교체됨** → 컷오버 전에 dev push 금지(옛 GCS 코드가 EC2에 배포되면 크래시). 다음 dev 반영은 반드시 `feat/aws-migration` 머지
 - 구 GCP 인프라(참고): BE VM `34.158.215.55` / Cloud SQL `34.47.68.184` / GCS `semojum-bucket` — 컷오버·안정화까지 유지(롤백 보험)
 - 로컬 시크릿: RDS 비밀번호·EIP 등 `~/Desktop/semojum-aws-secrets.txt`(팀 비밀번호 관리자로 이관 권장), SSH 키 `~/.ssh/semojum-key.pem`
@@ -282,8 +283,30 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - `spring.jpa.open-in-view=false` — SSE(30분) 연결 동안 OSIV가 DB 커넥션을 잡아 풀(10) 고갈되는 누수 방지. 커넥션은 쿼리 종료 즉시 반납
 - 읽기 서비스 메서드는 `@Transactional(readOnly=true)` 부여 (OSIV off 대응 + 여러 쿼리 단일 세션)
 
-### gRPC
-- AI VM A (`136.119.89.254:50051`) TLS 연결, authority `semo-jum.com`
+### gRPC (AI 서버 연동)
+- **사설 IP `172.31.47.101:50051`** TLS 연결, authority `semo-jum.com`. 주소는 `GRPC_AI_ADDRESS` 환경변수로 재배포 없이 교체 가능
+- ⚠️ **반드시 사설 IP를 쓸 것** — AI 보안그룹(`semojum-ai-sg`)은 *BE 보안그룹(`semojum-ec2-sg`)에서 오는 트래픽*만 50051을 허용한다. 공인 IP(`3.37.198.245`)로 접속하면 트래픽이 VPC를 벗어났다 돌아오면서 이 규칙에 매칭되지 않아 **차단된다**(실측 확인). 사설 IP는 전송비 0·지연 감소 이점도 있음
+
+#### TLS 인증서 운영
+- AI 서버의 **자체 서명 인증서**를 신뢰 앵커로 사용. EC2의 `~/semojum/server.crt`를 compose가 컨테이너로 볼륨 마운트(`GRPC_CERT_PATH=file:/home/joha-eun/server.crt`)
+- 현재 인증서: 2026-07-30 발급, **2036-07-27 만료**, SAN `DNS:semo-jum.com` (구 GCP 인증서는 `server.crt.gcp-backup-20260731`로 백업)
+- SAN에 IP가 없지만 `authority-override: semo-jum.com` 덕분에 사설 IP로 접속해도 검증됨 → **이 설정을 제거하면 연결이 깨진다**
+
+**인증서 교체 절차** (AI팀에서 새 인증서를 받았을 때)
+```bash
+# 1. 배치 — 볼륨 마운트라 이미지 재빌드·재배포 불필요
+scp <새 인증서> semojum-aws:~/semojum/server.crt
+
+# 2. 적용 (앱이 기동 시 읽으므로 재시작 필요, 약 20초 중단)
+ssh semojum-aws 'cd ~/semojum && docker compose restart backend'
+
+# 3. 검증 — 세 지문이 모두 같아야 정상
+openssl x509 -in <새 인증서> -noout -fingerprint -sha256
+ssh semojum-aws 'openssl x509 -in ~/semojum/server.crt -noout -fingerprint -sha256'
+ssh semojum-aws 'docker exec semojum-backend-1 openssl x509 -in /home/joha-eun/server.crt -noout -fingerprint -sha256'
+```
+- 교체 전 기존 파일을 `server.crt.backup-<날짜>`로 남길 것
+- 연결 확인: `ssh semojum-aws 'openssl s_client -connect 172.31.47.101:50051 -alpn h2 -CAfile ~/semojum/server.crt -servername semo-jum.com </dev/null 2>&1 | grep "Verify return code"'` → `0 (ok)` 이어야 함
 - proto: `BrailleRequest` / `BrailleResponse`
 - BE gRPC 타임아웃: 200s (AI 서버 하드 타임아웃 180s보다 높게)
 
