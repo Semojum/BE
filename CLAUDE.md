@@ -33,7 +33,8 @@
 | RDS | `semojum-postgres`, PostgreSQL 18.4, db.t3.small, 20GB gp3(→100GB 자동증설), 백업 7일. 엔드포인트 `semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com` |
 | S3 | `semojum-bucket` — 객체 공개 읽기(썸네일·원본 공개 URL). EC2는 IAM Role(`semojum-ec2-role`/`semojum-ec2-profile`)로 키리스 접근 |
 | VPC | **기본(default) VPC** 사용(`vpc-008bb1c520fdf781e`) — 커스텀 VPC(프라이빗 서브넷+NAT)는 출시 후 보안 강화 항목. AI 서버 이전 시 같은 VPC에 넣어 사설 IP 통신 예정 |
-| 보안그룹 | `semojum-ec2-sg`(80/443 공개, 22는 관리자 IP만) / `semojum-rds-sg`(5432는 EC2 SG+관리자 IP만) |
+| 보안그룹 | `semojum-ec2-sg`(80/443 공개, 22는 관리자 IP만 — 배포 시 러너 IP 임시 허용) / `semojum-rds-sg`(5432는 EC2 SG+관리자 IP만) |
+| 배포용 IAM | `semojum-github-actions` — 보안그룹 인바운드 토글 권한만(최소 권한). 액세스 키는 GitHub Secrets에만 존재 |
 | AI VM A | `136.119.89.254`, gRPC `50051`, TLS, authority `semo-jum.com` (외부·GCP, 추후 같은 AWS 계정으로 이전 예정) |
 | 도메인 | `api.semojum.app`, Cloudflare Flexible SSL |
 | Redis | EC2 내 Docker 컨테이너 (compose에 포함) |
@@ -41,6 +42,17 @@
 | 예산 알람 | 월 $50의 80%·100% 도달 시 `contact@semo-jum.com` 메일 |
 
 **배포 흐름**: `dev` 브랜치 push → GitHub Actions → Docker Hub → EC2 SSH(`ubuntu@43.200.184.56`, `/home/ubuntu/semojum`, `docker compose`)
+
+### CI 배포의 SSH 접근 방식 (중요)
+EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러너는 IP가 매번 바뀌므로, 워크플로우가 **배포 동안만 러너 IP를 인바운드에 추가하고 회수**한다.
+- 순서: `Configure AWS credentials` → `Open SSH for runner IP`(러너 IP/32 추가) → scp·ssh 배포 → `Close SSH for runner IP`(**`if: always()`** 로 성공·실패 무관 회수)
+- 전용 IAM 사용자 **`semojum-github-actions`**: 인라인 정책 `sg-ssh-toggle` — `semojum-ec2-sg`에 대한 `AuthorizeSecurityGroupIngress`/`RevokeSecurityGroupIngress` + `DescribeSecurityGroups`만 보유(인스턴스 생성·삭제 등 불가)
+- **22번 포트를 0.0.0.0/0으로 열지 말 것.** 이 토글 방식이 상시 개방을 대체한다
+- 배포가 SSH 단계에서 실패하면 러너 IP 회수 여부를 먼저 확인(`aws ec2 describe-security-groups`로 22번 규칙에 관리자 IP만 남아야 정상)
+
+**GitHub Secrets 목록**: `VM_HOST`(EC2 EIP) · `VM_USER`(ubuntu) · `VM_SSH_KEY`(semojum-key.pem) · `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`(semojum-github-actions) · `EC2_SECURITY_GROUP_ID` · `DOCKER_HUB_USERNAME`/`DOCKER_HUB_TOKEN`
+
+**관리자 IP가 바뀌면**(네트워크 이동 등) 보안그룹 두 곳을 갱신해야 SSH·DataGrip 접속이 된다 — `semojum-ec2-sg`(22), `semojum-rds-sg`(5432).
 
 ### GCP → AWS 이전 상태 (2026-07-29 기준, 브랜치 `feat/aws-migration`)
 - **완료**: S3·RDS·EC2 생성 / DB 전체 이관·검증(12테이블) / GCS→S3 객체 460개 이관·일치 확인 / EC2에서 E2E 검증(가입→Job 생성→S3 업로드→워커 다운로드) / GitHub 시크릿(VM_HOST·VM_USER·VM_SSH_KEY) EC2로 교체 완료
