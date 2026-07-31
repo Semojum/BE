@@ -88,6 +88,7 @@ com.semojum.backend
 ├── global
 │   ├── exception        CustomException, ErrorCode, ApiResponse
 │   ├── s3               S3Service (구 GcsService 대체, 동일 시그니처)
+│   ├── hwp              HwpPageExtractor (HWP 실제 페이지 분리)
 │   ├── grpc             BrailleGrpcClient
 │   ├── jwt              JwtFilter, JwtProvider
 │   ├── security         SecurityConfig, UserDetailsServiceImpl
@@ -126,6 +127,8 @@ com.semojum.backend
 | JOB4004 | 404 | 존재하지 않는 요소 |
 | JOB4005 | 400 | 잘못된 elementType (TEXT/BRAILLE만 허용) |
 | JOB4006 | 400 | 순서 목록이 현재 페이지 요소와 불일치 (블록 순서변경) |
+| JOB4007 | 400 | HWP 파싱 실패 (손상·미지원 형식) |
+| JOB4008 | 400 | 암호 설정/배포용 HWP (변환 불가) |
 
 ---
 
@@ -145,7 +148,7 @@ com.semojum.backend
 ### Job
 - `POST /api/jobs` — Job 생성 (multipart)
   - 모드 a/c: PDF 페이지별 분리 → S3 업로드
-  - 모드 b: TXT/HWP 30줄 단위 청크 → S3 업로드
+  - 모드 b: **HWP는 실제 페이지 단위**(레이아웃 기반, 표 내용 포함) / TXT는 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
 - `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
@@ -214,6 +217,14 @@ com.semojum.backend
 - `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/order` — 순서변경
   - body: `{ elementType, orderedElementIds }` (그 페이지 최종 순서 전체) → `reading_order` 1..N 재작성. 살아있는 요소들의 순열이어야 함(불일치 시 JOB4006). edit_logs 미기록(내용 안 바뀌는 구조 변경 전용)
 - **DDL(ddl-auto:none, 수동 적용 완료)**: `is_deleted`(text/braille, NOT NULL default false), `edit_logs.action`(varchar, 기존행 EDIT 백필), `original_contents`/`original_content`/`ai_original_content` NOT NULL 해제(사용자 추가 블록·ADD 로그는 AI 원본 없음)
+
+### HWP 페이지 분리 (HwpPageExtractor)
+- **실제 페이지 경계 복원**: 한글이 저장 시 계산해 둔 레이아웃 캐시(LineSeg)의 `lineVerticalPosition`(줄 세로 위치)을 사용. 같은 페이지에선 y가 증가하고 페이지가 바뀌면 상단으로 리셋되므로 **y가 작아지는 지점 = 페이지 경계**
+- ⚠️ `LineSegItemTag.isFirstLineAtPage()`는 **실제 파일에서 항상 false**(tag 하위 비트를 한글이 쓰지 않음) → 사용 금지, y 리셋 방식 유지할 것
+- **표·중첩 표 셀 문단까지 재귀 추출** — 최상위 문단만 읽으면 서식 문서 내용의 40~96%가 누락됨(검증: 논문심사의견서 21자→576자, 한이음 수행계획서 3843자→6497자)
+- 암호 설정/배포용/공인인증 암호화 문서는 `JOB4008`로 거부 (본문 대신 안내문만 들어 있어 점역 불가)
+- **hwplib 1.1.9 필수**: 1.1.1은 일부 실제 파일에서 파싱이 무한 대기(hang)함 — 워커 1개 구조라 스레드가 영구 정지될 수 있어 다운그레이드 금지
+- 문단이 페이지를 걸치면 줄 단위로 분리해 각 페이지에 나눠 기록. 표는 앵커 문단이 속한 페이지에 귀속(페이지를 걸친 표는 시작 페이지로 — 한계)
 
 ### 썸네일 (ThumbnailService)
 - Job 생성 시 자동 생성 후 S3 업로드, 공개 URL을 `jobs.thumbnail_url`에 저장
