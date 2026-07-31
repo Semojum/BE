@@ -13,10 +13,6 @@ import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.s3.S3Service;
-import kr.dogfoot.hwplib.object.HWPFile;
-import kr.dogfoot.hwplib.object.bodytext.Section;
-import kr.dogfoot.hwplib.object.bodytext.paragraph.Paragraph;
-import kr.dogfoot.hwplib.reader.HWPReader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -47,6 +43,7 @@ public class JobService {
     private final S3Service s3Service;
     private final RedisTemplate<String, String> redisTemplate;
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
+    private final com.semojum.backend.global.hwp.HwpPageExtractor hwpPageExtractor;
 
     private static final int LINES_PER_PAGE = 30;
 
@@ -84,24 +81,22 @@ public class JobService {
         List<Page> pages = new ArrayList<>();
 
         if (mode.equals("b")) {
-            // 5-b. txt/hwp → 텍스트 추출 후 30줄 단위로 분리하여 GCS 업로드
-
-            // 텍스트 추출
-            String fullText;
+            // 5-b. txt/hwp → 페이지 단위로 분리하여 S3 업로드
+            //  - hwp: 한글 레이아웃 정보 기반으로 "실제 페이지"대로 분리 (표 내용 포함)
+            //  - txt: 페이지 개념이 없으므로 기존대로 30줄 단위 청크
+            List<String> chunks;
             if (ext.equals("hwp")) {
-                fullText = extractTextFromHwp(file);
+                chunks = hwpPageExtractor.extractPages(file.getInputStream());
             } else {
-                fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
+                String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
+                String[] lines = fullText.split("\n");
+                chunks = new ArrayList<>();
+                for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
+                    int end = Math.min(i + LINES_PER_PAGE, lines.length);
+                    chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
+                }
+                if (chunks.isEmpty()) chunks.add(fullText);
             }
-
-            // 30줄 단위로 분리
-            String[] lines = fullText.split("\n");
-            List<String> chunks = new ArrayList<>();
-            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
-                int end = Math.min(i + LINES_PER_PAGE, lines.length);
-                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
-            }
-            if (chunks.isEmpty()) chunks.add(fullText);
 
             int totalPages = chunks.size();
 
@@ -274,18 +269,4 @@ public class JobService {
         return new JobResponseDto.Status(jobId, totalPages, completedPages, pendingPages, runningPages, overallStatus, pages);
     }
 
-    // HWP 텍스트 추출
-    private String extractTextFromHwp(MultipartFile file) throws Exception {
-        HWPFile hwpFile = HWPReader.fromInputStream(file.getInputStream());
-        StringBuilder sb = new StringBuilder();
-        for (Section section : hwpFile.getBodyText().getSectionList()) {
-            for (int i = 0; i < section.getParagraphCount(); i++) {
-                Paragraph paragraph = section.getParagraph(i);
-                if (paragraph.getNormalString() != null) {
-                    sb.append(paragraph.getNormalString()).append("\n");
-                }
-            }
-        }
-        return sb.toString();
-    }
 }
