@@ -2,7 +2,7 @@ package com.semojum.backend.domain.job.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.result.service.ResultService;
-import com.semojum.backend.global.gcs.GcsService;
+import com.semojum.backend.global.s3.S3Service;
 import com.semojum.backend.global.grpc.BrailleGrpcClient;
 import com.semojum.backend.grpc.BrailleRequest;
 import com.semojum.backend.grpc.BrailleResponse;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class PageWorker {
 
     private final RedisTemplate<String, String> redisTemplate;
-    private final GcsService gcsService;
+    private final S3Service s3Service;
     private final BrailleGrpcClient grpcClient;
     private final ObjectMapper objectMapper;
     private final ResultService resultService;
@@ -90,7 +90,7 @@ public class PageWorker {
                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "RUNNING");
 
                 // GCS에서 파일 다운로드
-                byte[] fileData = gcsService.downloadFile(gcsPath);
+                byte[] fileData = s3Service.downloadFile(gcsPath);
 
                 // gRPC 요청 빌드
                 BrailleRequest.Builder requestBuilder = BrailleRequest.newBuilder()
