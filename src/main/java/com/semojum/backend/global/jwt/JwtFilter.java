@@ -30,6 +30,10 @@ public class JwtFilter extends OncePerRequestFilter {
     // 인증 없이 통과시킬 경로
     private static final List<String> PERMIT_URLS = List.of(
             "/api/auth/login",
+            // refresh/logout은 액세스 토큰이 만료된 뒤에 호출되므로 액세스 토큰 검사를 하면 안 된다.
+            // 두 API 모두 요청 본문의 refreshToken 유효성 + 세션(revoked_at) 상태로 자체 검증한다.
+            "/api/auth/refresh",
+            "/api/auth/logout",
             "/api/admin/",      // 운영자 API — X-Admin-Key로 자체 검증
             "/swagger-ui",
             "/v3/api-docs"
