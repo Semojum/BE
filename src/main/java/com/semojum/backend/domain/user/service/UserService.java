@@ -52,6 +52,29 @@ public class UserService {
         return result;
     }
 
+    // 앱 재시작·네트워크 재연결 시 복구용: 아직 진행 중인 Job 목록.
+    // FE는 이 목록으로 각 Job의 status를 조회하고 SSE를 다시 연결한다(탭 2개 이상 대응).
+    @Transactional(readOnly = true)
+    public List<JobResponseDto.JobSummary> getActiveJobs(String userId) {
+        List<Job> jobs = jobRepository.findByUserIdAndStatusInOrderByStartedAtDesc(
+                UUID.fromString(userId), List.of("PENDING", "IN_PROGRESS"));
+        List<JobResponseDto.JobSummary> result = new ArrayList<>();
+        for (Job job : jobs) {
+            result.add(new JobResponseDto.JobSummary(
+                    job.getId(),
+                    job.getMode(),
+                    job.getStatus(),
+                    job.getTotalPages(),
+                    job.getFailedPages(),
+                    job.getOriginalFileName(),
+                    job.getThumbnailUrl(),
+                    job.getStartedAt(),
+                    job.getFinishedAt()
+            ));
+        }
+        return result;
+    }
+
     @Transactional(readOnly = true)
     public JobResponseDto.JobDetail getJobPage(String userId, String jobId, int pageNo) {
         // 본인 Job인지 검증 (타인 jobId 직접 입력 시 403 반환)
