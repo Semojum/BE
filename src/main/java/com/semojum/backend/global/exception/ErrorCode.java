@@ -29,7 +29,9 @@ public enum ErrorCode {
     JOB_INVALID_MODE(HttpStatus.BAD_REQUEST, "JOB4003", "지원하지 않는 모드입니다."),
     ELEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4004", "존재하지 않는 요소입니다."),
     ELEMENT_INVALID_TYPE(HttpStatus.BAD_REQUEST, "JOB4005", "elementType은 TEXT 또는 BRAILLE만 허용됩니다."),
-    ELEMENT_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "순서 목록이 현재 페이지의 요소와 일치하지 않습니다.");
+    ELEMENT_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "순서 목록이 현재 페이지의 요소와 일치하지 않습니다."),
+    JOB_HWP_PARSE_FAILED(HttpStatus.BAD_REQUEST, "JOB4007", "HWP 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식입니다."),
+    JOB_HWP_UNSUPPORTED(HttpStatus.BAD_REQUEST, "JOB4008", "암호가 설정되었거나 배포용으로 저장된 HWP 파일은 변환할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
