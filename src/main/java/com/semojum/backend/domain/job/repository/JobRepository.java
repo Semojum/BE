@@ -15,6 +15,9 @@ public interface JobRepository extends JpaRepository<Job, String> {
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
 
+    // 앱 재시작·네트워크 재연결 시 복구용: 아직 끝나지 않은 Job 목록
+    List<Job> findByUserIdAndStatusInOrderByStartedAtDesc(UUID userId, List<String> statuses);
+
     // 페이지 이벤트 발생 시 호출: PENDING이면 IN_PROGRESS로 전이하고 updated_at 갱신.
     // WHERE 가드로 이미 종료(COMPLETED/FAILED)된 Job은 절대 되살리지 않는다.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
