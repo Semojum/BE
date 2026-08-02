@@ -32,6 +32,46 @@ public class JobController {
     private final SseService sseService;
     private final JobRepository jobRepository;
     private final ElementEditService elementEditService;
+    private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
+
+    // ===== V3 마이페이지 작업 관리 =====
+
+    // 작업 이름 변경 (원본 파일명은 유지)
+    @PatchMapping("/{jobId}")
+    public ApiResponse<Map<String, String>> renameJob(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable String jobId,
+            @Valid @RequestBody JobRequestDto.Rename request
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        var job = jobManageService.rename(userId, jobId, request.fileName());
+        return ApiResponse.success(Map.of("jobId", job.getId(), "fileName", job.getOriginalFileName()));
+    }
+
+    // 작업 일괄 이동 (전체 성공 또는 전체 롤백)
+    @PostMapping("/move")
+    public ApiResponse<Map<String, Object>> moveJobs(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody JobRequestDto.BulkMove request
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        int moved = jobManageService.moveAll(userId, request.jobIds(), request.targetFolderId());
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("movedCount", moved);
+        result.put("targetFolderId", request.targetFolderId());
+        return ApiResponse.success(result);
+    }
+
+    // 작업 일괄 삭제 → 휴지통 (전체 성공 또는 전체 롤백)
+    @PostMapping("/trash")
+    public ApiResponse<Map<String, Object>> trashJobs(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody JobRequestDto.BulkTrash request
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        int trashed = jobManageService.trashAll(userId, request.jobIds());
+        return ApiResponse.success(Map.of("trashedCount", trashed));
+    }
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(

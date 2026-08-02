@@ -27,6 +27,11 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
+	// 통합 테스트 — Testcontainers로 실제 PostgreSQL 컨테이너를 띄워 검증 (Docker 필요)
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:junit-jupiter'
+
 	// gRPC
 	implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
 	implementation 'io.grpc:grpc-protobuf:1.63.0'
@@ -40,6 +45,10 @@ dependencies {
 
 	// PostgreSQL
 	runtimeOnly 'org.postgresql:postgresql'
+
+	// Flyway — 스키마 마이그레이션 (앱 기동 시 db/migration의 미적용 버전을 자동 적용)
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
 
 	// Spring Security + JWT
 	implementation 'org.springframework.boot:spring-boot-starter-security'

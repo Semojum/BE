@@ -52,6 +52,27 @@ public class S3Service {
         return content;
     }
 
+    // V3 휴지통 완전 삭제: jobId 프리픽스 아래 모든 객체(원본·페이지·썸네일) 제거
+    public void deleteByPrefix(String prefix) {
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Request listReq =
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Request.builder()
+                        .bucket(bucketName)
+                        .prefix(prefix)
+                        .build();
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Response listRes;
+        do {
+            listRes = s3Client.listObjectsV2(listReq);
+            for (software.amazon.awssdk.services.s3.model.S3Object obj : listRes.contents()) {
+                s3Client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(obj.key())
+                        .build());
+            }
+            listReq = listReq.toBuilder().continuationToken(listRes.nextContinuationToken()).build();
+        } while (Boolean.TRUE.equals(listRes.isTruncated()));
+        log.info("S3 프리픽스 삭제 완료: {}", prefix);
+    }
+
     // s3://bucket/key · gs://bucket/key(GCP 시절 DB 경로 호환) · 순수 key 모두에서 객체 key만 추출.
     // 기존 DB 행의 gs:// 경로도 객체를 같은 key로 S3에 복사해두면 UPDATE 없이 그대로 읽힌다.
     private String toKey(String storagePath) {
