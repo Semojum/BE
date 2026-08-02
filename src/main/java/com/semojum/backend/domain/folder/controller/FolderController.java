@@ -1,0 +1,55 @@
+package com.semojum.backend.domain.folder.controller;
+
+import com.semojum.backend.domain.folder.dto.FolderDto;
+import com.semojum.backend.domain.folder.service.FolderService;
+import com.semojum.backend.global.exception.ApiResponse;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/folders")
+@RequiredArgsConstructor
+public class FolderController {
+
+    private final FolderService folderService;
+
+    @PostMapping
+    public ApiResponse<FolderDto.Response> create(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody FolderDto.Create request
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        return ApiResponse.success(folderService.create(userId, request));
+    }
+
+    @PatchMapping("/{folderId}")
+    public ApiResponse<FolderDto.Response> update(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable UUID folderId,
+            @RequestBody FolderDto.Update request
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        return ApiResponse.success(folderService.update(userId, folderId, request));
+    }
+
+    @DeleteMapping("/{folderId}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable UUID folderId
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        folderService.moveToTrash(userId, folderId);
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/tree")
+    public ApiResponse<FolderDto.Tree> tree(@AuthenticationPrincipal UserDetails userDetails) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        return ApiResponse.success(folderService.tree(userId));
+    }
+}

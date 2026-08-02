@@ -32,7 +32,15 @@ public enum ErrorCode {
     ELEMENT_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "순서 목록이 현재 페이지의 요소와 일치하지 않습니다."),
     JOB_HWP_PARSE_FAILED(HttpStatus.BAD_REQUEST, "JOB4007", "HWP 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식입니다."),
     JOB_HWP_UNSUPPORTED(HttpStatus.BAD_REQUEST, "JOB4008", "암호가 설정되었거나 배포용으로 저장된 HWP 파일은 변환할 수 없습니다."),
-    JOB_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "JOB4009", "업로드 가능한 파일 최대 용량(100MB)을 초과했습니다.");
+    JOB_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "JOB4009", "업로드 가능한 파일 최대 용량(100MB)을 초과했습니다."),
+    JOB_IN_PROGRESS(HttpStatus.CONFLICT, "JOB4010", "변환 중인 작업은 이동·이름변경·삭제·다운로드할 수 없습니다."),
+    JOB_BRAILLE_EXISTS(HttpStatus.CONFLICT, "JOB4011", "이미 연결된 점역 문서가 있습니다. 덮어쓰기 여부를 확인해 주세요."),
+
+    // ========== 폴더 (FOLDER) ==========
+    FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER4001", "존재하지 않는 폴더입니다."),
+    FOLDER_NAME_DUPLICATE(HttpStatus.CONFLICT, "FOLDER4002", "같은 위치에 같은 이름의 폴더가 이미 있습니다."),
+    FOLDER_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "FOLDER4003", "폴더는 5단계까지만 만들 수 있으며, 자기 자신의 하위로 이동할 수 없습니다."),
+    FOLDER_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "FOLDER4004", "폴더는 계정당 최대 200개까지 만들 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
