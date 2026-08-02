@@ -45,9 +45,9 @@ public interface JobRepository extends JpaRepository<Job, String> {
     @Query("SELECT j FROM Job j WHERE j.deletedAt IS NOT NULL AND j.deletedAt < :cutoff")
     List<Job> findExpired(@Param("cutoff") java.time.LocalDateTime cutoff);
 
-    // 작업 이름 중복 시 "(2)" 부여 판단용
-    @Query("SELECT COUNT(j) > 0 FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NULL AND j.workName = :workName")
-    boolean existsActiveWorkName(@Param("userId") UUID userId, @Param("workName") String workName);
+    // 파일 이름 중복 시 "(2)" 부여 판단용
+    @Query("SELECT COUNT(j) > 0 FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NULL AND j.originalFileName = :fileName")
+    boolean existsActiveFileName(@Param("userId") UUID userId, @Param("fileName") String fileName);
 
     // 페이지 이벤트 발생 시 호출: PENDING이면 IN_PROGRESS로 전이하고 updated_at 갱신.
     // WHERE 가드로 이미 종료(COMPLETED/FAILED)된 Job은 절대 되살리지 않는다.
