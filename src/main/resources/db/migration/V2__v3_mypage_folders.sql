@@ -16,7 +16,9 @@ CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_folder_id) WHERE
 
 -- 2) jobs 컬럼 추가
 -- work_name: 작업 이름(기본값 = 원본 파일명). 원본 파일명과 분리해 사용자 변경 가능
---            NOT NULL은 V3 코드 배포 후 다음 마이그레이션(V3__)에서 적용 — V2 코드는 work_name 없이 INSERT하므로
+--            ⚠️ NOT NULL은 "이 코드가 운영 배포된 후" 별도 마이그레이션으로 적용한다.
+--            (지금 걸면 work_name 없이 INSERT하는 운영 중 V2 코드의 Job 생성이 깨짐.
+--             DB를 로컬·개발·운영이 공유하므로, 로컬 테스트로 마이그레이션이 먼저 적용돼도 안전해야 함)
 -- folder_id: NULL = 루트
 -- deleted_at: 휴지통 (folders와 동일 정책)
 -- last_modified_at: 카드 날짜·정렬 기준. updated_at(변환 파이프라인·StaleJobScheduler 전용)과 반드시 분리
