@@ -12,6 +12,15 @@ spring:
       connection-timeout: 30000
       leak-detection-threshold: 60000
 
+  # Flyway 스키마 마이그레이션 — 앱 기동 시 db/migration의 미적용 버전을 자동 적용
+  # baseline: 이미 운영 중인 DB(V2 서비스 스키마 + v3_auth 적용 상태)를 버전 1로 간주하고,
+  #           V2__ 이후 마이그레이션부터 적용한다. 첫 기동 때 flyway_schema_history가 자동 생성됨.
+  # ⚠️ 신규 빈 DB에는 base 스키마(V1)가 없어 적용 불가 — 신규 환경 구축 시 운영 DB 덤프로 V1 작성 필요
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "1"
+
   jpa:
     open-in-view: false
     hibernate:
