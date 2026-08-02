@@ -31,4 +31,19 @@ public class JobRequestDto {
             String afterElementId,
             String type
     ) {}
+
+    // ===== V3 마이페이지 작업 관리 =====
+    public record Rename(
+            @NotBlank String workName
+    ) {}
+
+    // targetFolderId: null = 루트(전체)로 이동
+    public record BulkMove(
+            @NotNull List<String> jobIds,
+            java.util.UUID targetFolderId
+    ) {}
+
+    public record BulkTrash(
+            @NotNull List<String> jobIds
+    ) {}
 }

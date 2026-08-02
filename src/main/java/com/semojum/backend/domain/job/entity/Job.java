@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "jobs")
@@ -48,8 +49,32 @@ public class Job {
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
+    // ===== V3 마이페이지 디렉토리 =====
+    // 작업 이름(기본값 = 원본 파일명). 원본 파일명과 분리해 사용자가 변경 가능
+    @Column(name = "work_name", nullable = false)
+    private String workName;
+
+    // 소속 폴더. NULL = 루트(전체)
+    @Column(name = "folder_id")
+    private UUID folderId;
+
+    // 값이 있으면 휴지통 (30일 후 완전 삭제)
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    // 카드 날짜·정렬 기준. updated_at(변환 파이프라인·StaleJobScheduler 전용)과 분리
+    @Column(name = "last_modified_at", nullable = false)
+    private LocalDateTime lastModifiedAt;
+
+    // 페이지 일괄 저장 API용 (V3 4장) — 컬럼 선반영
+    @Column(name = "last_edited_page")
+    private Integer lastEditedPage;
+
+    @Column(name = "is_edited", nullable = false)
+    private boolean isEdited;
+
     @Builder
-    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl) {
+    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl, String workName) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -59,6 +84,39 @@ public class Job {
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
+        this.workName = workName != null ? workName : originalFileName;
+        this.lastModifiedAt = LocalDateTime.now();
+        this.isEdited = false;
+    }
+
+    // ===== V3 도메인 메서드 =====
+    public boolean isInProgress() {
+        return "PENDING".equals(status) || "IN_PROGRESS".equals(status);
+    }
+
+    public boolean isTrashed() {
+        return deletedAt != null;
+    }
+
+    public void rename(String workName) {
+        this.workName = workName;
+        this.lastModifiedAt = LocalDateTime.now();
+    }
+
+    public void moveToFolder(UUID folderId) {
+        this.folderId = folderId;
+        this.lastModifiedAt = LocalDateTime.now();
+    }
+
+    // 폴더째 삭제 시 폴더와 같은 시각을 공유해야 배치 복원이 가능하므로 시각을 받는다
+    public void moveToTrash(LocalDateTime at) {
+        this.deletedAt = at;
+    }
+
+    public void restoreTo(UUID folderId) {
+        this.deletedAt = null;
+        this.folderId = folderId;
+        this.lastModifiedAt = LocalDateTime.now();
     }
 
     public void updateStatus(String status) {
