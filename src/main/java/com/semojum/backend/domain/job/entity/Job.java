@@ -50,9 +50,8 @@ public class Job {
     private LocalDateTime updatedAt;
 
     // ===== V3 마이페이지 디렉토리 =====
-    // 작업 이름(기본값 = 원본 파일명). 원본 파일명과 분리해 사용자가 변경 가능
-    @Column(name = "work_name", nullable = false)
-    private String workName;
+    // 파일 이름은 originalFileName 하나만 사용한다 (팀 결정: 파일 하나 = 이름 하나).
+    // 카드 표시·이름 변경 모두 이 컬럼 대상이며, 업로드 시 중복이면 "(2)"가 자동 부여된다.
 
     // 소속 폴더. NULL = 루트(전체)
     @Column(name = "folder_id")
@@ -74,7 +73,7 @@ public class Job {
     private boolean isEdited;
 
     @Builder
-    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl, String workName) {
+    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -84,7 +83,6 @@ public class Job {
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
-        this.workName = workName != null ? workName : originalFileName;
         this.lastModifiedAt = LocalDateTime.now();
         this.isEdited = false;
     }
@@ -98,8 +96,8 @@ public class Job {
         return deletedAt != null;
     }
 
-    public void rename(String workName) {
-        this.workName = workName;
+    public void rename(String fileName) {
+        this.originalFileName = fileName;
         this.lastModifiedAt = LocalDateTime.now();
     }
 

@@ -53,7 +53,7 @@ public class TrashService {
             Folder parent = job.getFolderId() != null ? trashedFolderById.get(job.getFolderId()) : null;
             boolean partOfFolderBatch = parent != null && Objects.equals(parent.getDeletedAt(), job.getDeletedAt());
             if (!partOfFolderBatch) {
-                items.add(new TrashDto.Item("JOB", job.getId(), job.getWorkName(), null,
+                items.add(new TrashDto.Item("JOB", job.getId(), job.getOriginalFileName(), null,
                         job.getDeletedAt(), job.getDeletedAt().plusDays(RETENTION_DAYS)));
             }
         }

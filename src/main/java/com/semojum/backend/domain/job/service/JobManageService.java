@@ -25,8 +25,8 @@ public class JobManageService {
     private final FolderRepository folderRepository;
 
     @Transactional
-    public Job rename(UUID userId, String jobId, String workName) {
-        String name = normalize(workName);
+    public Job rename(UUID userId, String jobId, String fileName) {
+        String name = normalize(fileName);
         Job job = jobRepository.findActiveByIdAndUserId(jobId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
         if (job.isInProgress()) {

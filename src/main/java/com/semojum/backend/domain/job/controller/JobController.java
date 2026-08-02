@@ -44,8 +44,8 @@ public class JobController {
             @Valid @RequestBody JobRequestDto.Rename request
     ) {
         UUID userId = UUID.fromString(userDetails.getUsername());
-        var job = jobManageService.rename(userId, jobId, request.workName());
-        return ApiResponse.success(Map.of("jobId", job.getId(), "workName", job.getWorkName()));
+        var job = jobManageService.rename(userId, jobId, request.fileName());
+        return ApiResponse.success(Map.of("jobId", job.getId(), "fileName", job.getOriginalFileName()));
     }
 
     // 작업 일괄 이동 (전체 성공 또는 전체 롤백)
