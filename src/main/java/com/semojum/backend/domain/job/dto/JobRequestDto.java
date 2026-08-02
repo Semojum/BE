@@ -31,4 +31,20 @@ public class JobRequestDto {
             String afterElementId,
             String type
     ) {}
+
+    // ===== V3 마이페이지 작업 관리 =====
+    // 파일 이름은 하나만 사용 (팀 결정) — 이름 변경은 originalFileName 자체를 바꾼다
+    public record Rename(
+            @NotBlank String fileName
+    ) {}
+
+    // targetFolderId: null = 루트(전체)로 이동
+    public record BulkMove(
+            @NotNull List<String> jobIds,
+            java.util.UUID targetFolderId
+    ) {}
+
+    public record BulkTrash(
+            @NotNull List<String> jobIds
+    ) {}
 }

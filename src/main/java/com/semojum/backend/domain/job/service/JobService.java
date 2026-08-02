@@ -106,7 +106,7 @@ public class JobService {
                     .user(user)
                     .mode(mode)
                     .totalPages(totalPages)
-                    .originalFileName(file.getOriginalFilename())
+                    .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                     .build();
             jobRepository.saveAndFlush(job);
 
@@ -171,7 +171,7 @@ public class JobService {
                         .user(user)
                         .mode(mode)
                         .totalPages(totalPages)
-                        .originalFileName(file.getOriginalFilename())
+                        .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                         .build();
                 jobRepository.saveAndFlush(job);
 
@@ -267,6 +267,25 @@ public class JobService {
         }
 
         return new JobResponseDto.Status(jobId, totalPages, completedPages, pendingPages, runningPages, overallStatus, pages);
+    }
+
+    // V3: 파일 이름은 하나만 사용. 활성 목록에 같은 이름이 있으면 "(2)", "(3)"… 자동 부여
+    private String resolveFileName(java.util.UUID userId, String originalFileName) {
+        String base = originalFileName != null ? originalFileName : "이름 없는 작업";
+        if (base.length() > 100) base = base.substring(0, 100);
+        if (!jobRepository.existsActiveFileName(userId, base)) {
+            return base;
+        }
+        for (int n = 2; n <= 999; n++) {
+            String candidate = base + " (" + n + ")";
+            if (candidate.length() > 100) {
+                candidate = base.substring(0, Math.max(1, 100 - (" (" + n + ")").length())) + " (" + n + ")";
+            }
+            if (!jobRepository.existsActiveFileName(userId, candidate)) {
+                return candidate;
+            }
+        }
+        return base + " (" + System.currentTimeMillis() + ")";
     }
 
 }
