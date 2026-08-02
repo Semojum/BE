@@ -27,6 +27,11 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
+	// 통합 테스트 — Testcontainers로 실제 PostgreSQL 컨테이너를 띄워 검증 (Docker 필요)
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:junit-jupiter'
+
 	// gRPC
 	implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
 	implementation 'io.grpc:grpc-protobuf:1.63.0'
