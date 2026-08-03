@@ -3,7 +3,9 @@ package com.semojum.backend.domain.admin.service;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.auth.entity.User;
+import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
+import com.semojum.backend.domain.auth.repository.UserSessionRepository;
 import com.semojum.backend.domain.org.entity.Organization;
 import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.global.exception.CustomException;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +30,7 @@ public class AdminService {
 
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final UserSessionRepository userSessionRepository;
     private final PasswordEncoder passwordEncoder;
 
     // 헷갈리는 문자(0/O, 1/l/I) 제외한 난수 비밀번호 문자셋
@@ -91,6 +95,19 @@ public class AdminService {
                 .mapToInt(m -> Integer.parseInt(m.group(1)))
                 .max().orElse(0) + 1;
         return String.format("org%02d", next);
+    }
+
+    // 계정 상태 변경 — INACTIVE 시 활성 세션 전부 revoke (액세스 토큰은 JWT stateless라 최대 1시간 유효)
+    @Transactional
+    public AdminResponseDto.AccountStatus updateStatus(String loginId, AdminRequestDto.UpdateStatus request) {
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        user.changeStatus(request.status());
+        if (request.status() == UserStatus.INACTIVE) {
+            userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
+        }
+        return new AdminResponseDto.AccountStatus(loginId, user.getStatus().name());
     }
 
     // 비밀번호 재발급 (분실·유출 대응 — 계정·작업물은 유지, PW만 교체)
