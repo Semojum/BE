@@ -155,7 +155,7 @@ com.semojum.backend
 - 자동 로그인 X: refresh 만료 30일 → **12시간**. 초기 비밀번호는 난수 발급·사용자 변경 불가(운영자 재발급만)
 - DB 세션 관리: `user_sessions` 테이블, SHA-256 해시 저장
 - **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증):
-  - `POST /api/admin/orgs` 기관 생성(계약 만료일 포함) / `POST /api/admin/accounts` 계정 발급(난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
+  - `POST /api/admin/orgs` 기관 생성(계약 만료일·**기관 코드** — 미입력 시 orgNN 자동) / `POST /api/admin/accounts` **계정 일괄 발급**(기관 ID+수량 → 서버가 `{기관코드}{순번}`으로 생성, 난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
 
 #### X-Admin-Key 사용법
 관리자 페이지가 2차로 미뤄져, 그때까지 운영자 API를 보호하는 **임시 수단**이다. JWT로는 막을 수 없어(로그인한 점역사면 누구나 통과) 공유 비밀키를 헤더로 검증한다.
@@ -168,15 +168,16 @@ com.semojum.backend
 ```bash
 KEY=$(cat ~/Desktop/semojum-admin-key.txt)
 
-# 기관 생성
+# 기관 생성 — code는 계정 loginId 프리픽스(소문자 영숫자 2~12자). 미입력 시 orgNN 자동 부여
 curl -X POST https://api.semojum.app/api/admin/orgs \
   -H "X-Admin-Key: $KEY" -H 'Content-Type: application/json' \
-  -d '{"name":"한국점자도서관","contractExpiresAt":"2027-12-31"}'
+  -d '{"name":"한국점자도서관","code":"kblib","contractExpiresAt":"2027-12-31"}'
 
-# 계정 발급 (응답의 password는 이때 1회만 노출됨 — 서버는 BCrypt 해시만 보관)
+# 계정 일괄 발급 — 수량만 주면 서버가 kblib01, kblib02… 순번으로 생성 (1~50개)
+# 응답의 password들은 이때 1회만 노출됨 — 서버는 BCrypt 해시만 보관
 curl -X POST https://api.semojum.app/api/admin/accounts \
   -H "X-Admin-Key: $KEY" -H 'Content-Type: application/json' \
-  -d '{"organizationId":"<org uuid>","loginId":"kblib001"}'
+  -d '{"organizationId":"<org uuid>","count":5}'
 
 # 비밀번호 재발급 (계정·작업물 유지, PW만 교체)
 curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissue \
