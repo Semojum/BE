@@ -3,7 +3,9 @@ package com.semojum.backend.domain.admin;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.admin.service.AdminService;
+import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
+import com.semojum.backend.domain.auth.repository.UserSessionRepository;
 import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -39,6 +41,7 @@ class AdminAccountIssueTest {
 
     @Autowired OrganizationRepository organizationRepository;
     @Autowired UserRepository userRepository;
+    @Autowired UserSessionRepository userSessionRepository;
 
     AdminService adminService;
 
@@ -52,7 +55,7 @@ class AdminAccountIssueTest {
 
     @BeforeEach
     void setUp() {
-        adminService = new AdminService(organizationRepository, userRepository, NOOP_ENCODER);
+        adminService = new AdminService(organizationRepository, userRepository, userSessionRepository, NOOP_ENCODER);
     }
 
     private String createOrg(String name, String code) {
@@ -106,6 +109,38 @@ class AdminAccountIssueTest {
 
         // kblib01은 "kb"로 시작하지만 숫자 접미사가 아니므로 kb의 순번에 영향 없음
         assertEquals("kb01", kbAccounts.get(0).loginId());
+    }
+
+    @Test
+    void 발급된_계정은_ACTIVE_상태로_생성된다() {
+        String orgId = createOrg("기관C", "orgc");
+        adminService.issueAccounts(new AdminRequestDto.IssueAccounts(orgId, 1));
+        assertEquals(UserStatus.ACTIVE,
+                userRepository.findByLoginId("orgc01").orElseThrow().getStatus());
+    }
+
+    @Test
+    void 상태를_INACTIVE로_바꾸면_저장되고_다시_ACTIVE로_되돌릴_수_있다() {
+        String orgId = createOrg("기관D", "orgd");
+        adminService.issueAccounts(new AdminRequestDto.IssueAccounts(orgId, 1));
+
+        AdminResponseDto.AccountStatus off = adminService.updateStatus("orgd01",
+                new AdminRequestDto.UpdateStatus(UserStatus.INACTIVE));
+        assertEquals("INACTIVE", off.status());
+        assertFalse(userRepository.findByLoginId("orgd01").orElseThrow().isActive());
+
+        AdminResponseDto.AccountStatus on = adminService.updateStatus("orgd01",
+                new AdminRequestDto.UpdateStatus(UserStatus.ACTIVE));
+        assertEquals("ACTIVE", on.status());
+        assertTrue(userRepository.findByLoginId("orgd01").orElseThrow().isActive());
+    }
+
+    @Test
+    void 없는_계정의_상태_변경은_404다() {
+        CustomException e = assertThrows(CustomException.class,
+                () -> adminService.updateStatus("ghost01",
+                        new AdminRequestDto.UpdateStatus(UserStatus.INACTIVE)));
+        assertEquals(ErrorCode.USER_NOT_FOUND, e.getErrorCode());
     }
 
     @Test
