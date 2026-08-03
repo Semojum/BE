@@ -43,6 +43,16 @@ public class AdminController {
         return ApiResponse.success(adminService.issueAccounts(request));
     }
 
+    @PatchMapping("/accounts/{loginId}/status")
+    public ApiResponse<AdminResponseDto.AccountStatus> updateAccountStatus(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String loginId,
+            @RequestBody @Valid AdminRequestDto.UpdateStatus request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminService.updateStatus(loginId, request));
+    }
+
     @PostMapping("/accounts/{loginId}/password-reissue")
     public ApiResponse<AdminResponseDto.IssuedAccount> reissuePassword(
             @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,

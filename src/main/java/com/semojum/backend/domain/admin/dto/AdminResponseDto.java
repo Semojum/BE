@@ -19,4 +19,9 @@ public class AdminResponseDto {
     public record IssuedAccounts(
             List<IssuedAccount> accounts
     ) {}
+
+    public record AccountStatus(
+            String loginId,
+            String status
+    ) {}
 }

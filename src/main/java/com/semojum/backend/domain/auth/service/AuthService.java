@@ -38,6 +38,11 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
         }
 
+        // 비활성 계정 차단 (계약 만료·퇴사 등 운영자 조치)
+        if (!user.isActive()) {
+            throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
+        }
+
         // 중복 로그인 금지: 기존 활성 세션 전부 revoke (신규 로그인이 기존을 밀어냄)
         userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
 
@@ -96,6 +101,11 @@ public class AuthService {
 
         if (!session.isValid()) {
             throw new CustomException(ErrorCode.AUTH_INVALID_TOKEN);
+        }
+
+        // 비활성 계정은 재발급도 차단 (비활성화 시 세션도 revoke되지만 이중 방어)
+        if (!user.isActive()) {
+            throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 
         // 새 액세스 토큰 발급

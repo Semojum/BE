@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.auth.entity;
 
+import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.org.entity.Organization;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -33,6 +34,11 @@ public class User {
     @Column
     private String password;
 
+    // 계정 상태 — INACTIVE면 로그인·토큰 재발급 차단 (운영자만 변경)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserStatus status;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -41,11 +47,20 @@ public class User {
         this.loginId = loginId;
         this.organization = organization;
         this.password = password;
+        this.status = UserStatus.ACTIVE;
         this.createdAt = LocalDateTime.now();
     }
 
     // 운영자 비밀번호 재발급 (사용자 스스로 변경은 불가 정책)
     public void reissuePassword(String encodedPassword) {
         this.password = encodedPassword;
+    }
+
+    public void changeStatus(UserStatus status) {
+        this.status = status;
+    }
+
+    public boolean isActive() {
+        return this.status == UserStatus.ACTIVE;
     }
 }
