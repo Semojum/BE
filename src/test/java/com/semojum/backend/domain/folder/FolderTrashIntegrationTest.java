@@ -1,7 +1,6 @@
 package com.semojum.backend.domain.folder;
 
 import com.semojum.backend.domain.auth.entity.User;
-import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.entity.Folder;
@@ -74,10 +73,7 @@ class FolderTrashIntegrationTest {
 
         int n = SEQ.incrementAndGet();
         user = userRepository.save(User.builder()
-                .email("it-" + n + "@test.local")
                 .loginId("it-user-" + n)
-                .name("통합테스트")
-                .provider(AuthProvider.EMAIL)
                 .build());
     }
 
