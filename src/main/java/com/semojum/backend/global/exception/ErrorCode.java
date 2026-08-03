@@ -22,6 +22,7 @@ public enum ErrorCode {
 
     // ========== 기관 (ORG) ==========
     ORG_NOT_FOUND(HttpStatus.NOT_FOUND, "ORG4001", "존재하지 않는 기관입니다."),
+    ORG_CODE_DUPLICATE(HttpStatus.CONFLICT, "ORG4002", "이미 사용 중인 기관 코드입니다."),
 
     // ========== 작업 (JOB) ==========
     JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4001", "존재하지 않는 작업입니다."),

@@ -25,6 +25,10 @@ public class Organization {
     @Column(nullable = false)
     private String name;
 
+    // 계정 loginId 프리픽스 (예: kblib → kblib01, kblib02…). 소문자 영숫자, 전체 유일
+    @Column(nullable = false, unique = true, length = 12)
+    private String code;
+
     // 계약 만료일 (마이페이지 보관 기간 기준)
     private LocalDate contractExpiresAt;
 
@@ -35,8 +39,9 @@ public class Organization {
     private LocalDateTime createdAt;
 
     @Builder
-    public Organization(String name, LocalDate contractExpiresAt) {
+    public Organization(String name, String code, LocalDate contractExpiresAt) {
         this.name = name;
+        this.code = code;
         this.contractExpiresAt = contractExpiresAt;
         this.status = "ACTIVE";
         this.createdAt = LocalDateTime.now();
