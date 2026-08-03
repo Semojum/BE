@@ -24,4 +24,9 @@ public class AdminResponseDto {
             String loginId,
             String status
     ) {}
+
+    public record AccountRole(
+            String loginId,
+            String role
+    ) {}
 }

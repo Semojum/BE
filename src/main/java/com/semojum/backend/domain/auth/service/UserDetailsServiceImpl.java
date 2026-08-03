@@ -21,7 +21,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 .map(user -> org.springframework.security.core.userdetails.User.builder()
                         .username(user.getId().toString())
                         .password(user.getPassword() != null ? user.getPassword() : "")
-                        .roles("USER")
+                        // 계정 role을 그대로 권한으로 (ROLE_ 접두사 포함이므로 authorities 사용)
+                        .authorities(user.getRole().name())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("유저를 찾을 수 없습니다: " + userId));
     }

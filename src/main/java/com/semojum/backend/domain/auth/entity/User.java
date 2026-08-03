@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.auth.entity;
 
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.org.entity.Organization;
 import jakarta.persistence.*;
@@ -39,6 +40,11 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    // 계정 역할 — ROLE_ADMIN은 운영·테스트용 계정 분류 (운영자만 변경)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Role role;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -48,6 +54,7 @@ public class User {
         this.organization = organization;
         this.password = password;
         this.status = UserStatus.ACTIVE;
+        this.role = Role.ROLE_USER;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -58,6 +65,10 @@ public class User {
 
     public void changeStatus(UserStatus status) {
         this.status = status;
+    }
+
+    public void changeRole(Role role) {
+        this.role = role;
     }
 
     public boolean isActive() {

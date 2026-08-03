@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.admin.dto;
 
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,5 +30,10 @@ public class AdminRequestDto {
     // 계정 상태 변경 — INACTIVE로 바꾸면 활성 세션이 전부 revoke된다
     public record UpdateStatus(
             @NotNull UserStatus status
+    ) {}
+
+    // 계정 역할 변경 — ROLE_ADMIN(운영·테스트용) / ROLE_USER(점역사)
+    public record UpdateRole(
+            @NotNull Role role
     ) {}
 }
