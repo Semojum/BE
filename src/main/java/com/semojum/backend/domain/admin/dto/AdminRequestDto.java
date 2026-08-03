@@ -1,20 +1,27 @@
 package com.semojum.backend.domain.admin.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.time.LocalDate;
 
 public class AdminRequestDto {
 
-    // 기관 생성
+    // 기관 생성 — code는 계정 loginId 프리픽스 (미입력 시 서버가 orgNN 자동 부여)
     public record CreateOrg(
             @NotBlank String name,
+            @Pattern(regexp = "^[a-z][a-z0-9]{1,11}$",
+                    message = "기관 코드는 소문자 영숫자 2~12자(첫 글자는 영문)여야 합니다.")
+            String code,
             LocalDate contractExpiresAt
     ) {}
 
-    // 계정 발급 (1인 1계정, 초기 비밀번호는 서버가 난수 생성)
-    public record IssueAccount(
+    // 계정 일괄 발급 — 서버가 {기관코드}{순번}으로 loginId를 생성 (예: kblib01)
+    public record IssueAccounts(
             @NotBlank String organizationId,
-            @NotBlank String loginId
+            @NotNull @Min(1) @Max(50) Integer count
     ) {}
 }

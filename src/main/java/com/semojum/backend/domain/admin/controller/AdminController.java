@@ -35,12 +35,12 @@ public class AdminController {
     }
 
     @PostMapping("/accounts")
-    public ApiResponse<AdminResponseDto.IssuedAccount> issueAccount(
+    public ApiResponse<AdminResponseDto.IssuedAccounts> issueAccounts(
             @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
-            @RequestBody @Valid AdminRequestDto.IssueAccount request
+            @RequestBody @Valid AdminRequestDto.IssueAccounts request
     ) {
         validateAdminKey(adminKey);
-        return ApiResponse.success(adminService.issueAccount(request));
+        return ApiResponse.success(adminService.issueAccounts(request));
     }
 
     @PostMapping("/accounts/{loginId}/password-reissue")
