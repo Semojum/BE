@@ -3,6 +3,7 @@ package com.semojum.backend.domain.admin;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.admin.service.AdminService;
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
@@ -133,6 +134,20 @@ class AdminAccountIssueTest {
                 new AdminRequestDto.UpdateStatus(UserStatus.ACTIVE));
         assertEquals("ACTIVE", on.status());
         assertTrue(userRepository.findByLoginId("orgd01").orElseThrow().isActive());
+    }
+
+    @Test
+    void 발급된_계정은_ROLE_USER이고_운영자가_ROLE_ADMIN으로_바꿀_수_있다() {
+        String orgId = createOrg("기관E", "orge");
+        adminService.issueAccounts(new AdminRequestDto.IssueAccounts(orgId, 1));
+        assertEquals(Role.ROLE_USER,
+                userRepository.findByLoginId("orge01").orElseThrow().getRole());
+
+        AdminResponseDto.AccountRole changed = adminService.updateRole("orge01",
+                new AdminRequestDto.UpdateRole(Role.ROLE_ADMIN));
+        assertEquals("ROLE_ADMIN", changed.role());
+        assertEquals(Role.ROLE_ADMIN,
+                userRepository.findByLoginId("orge01").orElseThrow().getRole());
     }
 
     @Test

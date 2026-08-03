@@ -3,6 +3,7 @@ package com.semojum.backend.domain.admin.service;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.auth.entity.User;
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
@@ -108,6 +109,15 @@ public class AdminService {
             userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
         }
         return new AdminResponseDto.AccountStatus(loginId, user.getStatus().name());
+    }
+
+    // 계정 역할 변경 — ROLE_ADMIN은 운영·테스트용 계정 분류
+    @Transactional
+    public AdminResponseDto.AccountRole updateRole(String loginId, AdminRequestDto.UpdateRole request) {
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        user.changeRole(request.role());
+        return new AdminResponseDto.AccountRole(loginId, user.getRole().name());
     }
 
     // 비밀번호 재발급 (분실·유출 대응 — 계정·작업물은 유지, PW만 교체)
