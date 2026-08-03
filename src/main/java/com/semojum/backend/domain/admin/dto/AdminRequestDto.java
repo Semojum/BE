@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.admin.dto;
 
+import com.semojum.backend.domain.auth.enums.UserStatus;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -23,5 +24,10 @@ public class AdminRequestDto {
     public record IssueAccounts(
             @NotBlank String organizationId,
             @NotNull @Min(1) @Max(50) Integer count
+    ) {}
+
+    // 계정 상태 변경 — INACTIVE로 바꾸면 활성 세션이 전부 revoke된다
+    public record UpdateStatus(
+            @NotNull UserStatus status
     ) {}
 }

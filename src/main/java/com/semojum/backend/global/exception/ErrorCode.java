@@ -21,6 +21,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER4001", "존재하지 않는 회원입니다."),
 
     // ========== 기관 (ORG) ==========
+    AUTH_INACTIVE_ACCOUNT(HttpStatus.FORBIDDEN, "AUTH4004", "비활성화된 계정입니다."),
     ORG_NOT_FOUND(HttpStatus.NOT_FOUND, "ORG4001", "존재하지 않는 기관입니다."),
     ORG_CODE_DUPLICATE(HttpStatus.CONFLICT, "ORG4002", "이미 사용 중인 기관 코드입니다."),
 

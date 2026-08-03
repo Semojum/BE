@@ -132,6 +132,7 @@ com.semojum.backend
 | AUTH4001 | 401 | 아이디/비밀번호 오류 |
 | AUTH4002 | 409 | 이미 사용 중인 로그인 ID |
 | AUTH4003 | 401 | 액세스 토큰 만료/유효하지 않음 |
+| AUTH4004 | 403 | 비활성화된 계정 (status=INACTIVE) |
 | USER4001 | 404 | 존재하지 않는 회원 |
 | ORG4001 | 404 | 존재하지 않는 기관 |
 | JOB4001 | 404 | 존재하지 않는 작업 |
@@ -155,7 +156,7 @@ com.semojum.backend
 - 자동 로그인 X: refresh 만료 30일 → **12시간**. 초기 비밀번호는 난수 발급·사용자 변경 불가(운영자 재발급만)
 - DB 세션 관리: `user_sessions` 테이블, SHA-256 해시 저장
 - **운영자 API** (`/api/admin`, `X-Admin-Key` 헤더 검증):
-  - `POST /api/admin/orgs` 기관 생성(계약 만료일·**기관 코드** — 미입력 시 orgNN 자동) / `POST /api/admin/accounts` **계정 일괄 발급**(기관 ID+수량 → 서버가 `{기관코드}{순번}`으로 생성, 난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급
+  - `POST /api/admin/orgs` 기관 생성(계약 만료일·**기관 코드** — 미입력 시 orgNN 자동) / `POST /api/admin/accounts` **계정 일괄 발급**(기관 ID+수량 → 서버가 `{기관코드}{순번}`으로 생성, 난수 PW 응답에 1회만 노출) / `POST /api/admin/accounts/{loginId}/password-reissue` PW 재발급 / `PATCH /api/admin/accounts/{loginId}/status` 계정 상태 변경(`UserStatus` enum ACTIVE·INACTIVE — INACTIVE 시 활성 세션 revoke, 로그인·refresh가 AUTH4004로 차단)
 
 #### X-Admin-Key 사용법
 관리자 페이지가 2차로 미뤄져, 그때까지 운영자 API를 보호하는 **임시 수단**이다. JWT로는 막을 수 없어(로그인한 점역사면 누구나 통과) 공유 비밀키를 헤더로 검증한다.
