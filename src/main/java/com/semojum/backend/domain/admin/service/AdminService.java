@@ -3,7 +3,6 @@ package com.semojum.backend.domain.admin.service;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.auth.entity.User;
-import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.org.entity.Organization;
 import com.semojum.backend.domain.org.repository.OrganizationRepository;
@@ -55,9 +54,7 @@ public class AdminService {
         User user = User.builder()
                 .loginId(request.loginId())
                 .organization(org)
-                .name(request.name())
                 .password(passwordEncoder.encode(rawPassword))
-                .provider(AuthProvider.EMAIL)
                 .build();
         userRepository.save(user);
 
