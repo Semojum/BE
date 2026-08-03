@@ -176,7 +176,7 @@ curl -X POST https://api.semojum.app/api/admin/orgs \
 # 계정 발급 (응답의 password는 이때 1회만 노출됨 — 서버는 BCrypt 해시만 보관)
 curl -X POST https://api.semojum.app/api/admin/accounts \
   -H "X-Admin-Key: $KEY" -H 'Content-Type: application/json' \
-  -d '{"organizationId":"<org uuid>","loginId":"kblib001","name":"점역사 이름"}'
+  -d '{"organizationId":"<org uuid>","loginId":"kblib001"}'
 
 # 비밀번호 재발급 (계정·작업물 유지, PW만 교체)
 curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissue \
@@ -186,7 +186,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 **키 회전**: EC2 `.env`의 `ADMIN_API_KEY` 수정 → `docker compose up -d` 재기동. 유출 의심 시 즉시 회전할 것.
 **한계(2차에서 교체)**: 키만 있으면 누구나 실행 가능해 **작업자 추적·감사 로그가 없고**, 권한 세분화도 불가. 관리자 페이지 구축 시 운영자 계정+역할+감사 로그로 대체한다.
 ⚠️ 키를 Git·노션·채팅에 올리지 말 것. 팀 비밀번호 관리자에 보관.
-- 레거시(이메일/소셜) users 행은 login_id가 null이라 로그인 불가 상태로 보존
+- 레거시(이메일/소셜) users 행과 그 작업 데이터는 V4 마이그레이션(`V4__users_v3_cleanup.sql`)으로 전부 삭제됨 — users는 V3 발급 계정만 존재
 
 ### Job
 - `POST /api/jobs` — Job 생성 (multipart)
@@ -317,7 +317,7 @@ ssh semojum-aws 'docker exec semojum-backend-1 openssl x509 -in /home/joha-eun/s
 ### 주요 테이블
 | 테이블 | 설명 |
 |---|---|
-| users | 회원 — V3 발급형(login_id, organization_id). 레거시 이메일/소셜 행은 보존만 |
+| users | 회원 — V3 발급형(login_id NOT NULL, organization_id, password)만. 이메일·이름·소셜 컬럼과 레거시 행은 V4 마이그레이션으로 제거됨 |
 | organizations | 기관 (계약 만료일, 상태) — V3 신규 |
 | user_sessions | 리프레시 토큰 세션 |
 | jobs | 변환 작업 (`updated_at` timestamptz 포함 — touchJob/finishJob/DB default(now())로만 갱신) |

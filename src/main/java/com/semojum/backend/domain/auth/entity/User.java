@@ -1,6 +1,5 @@
 package com.semojum.backend.domain.auth.entity;
 
-import com.semojum.backend.domain.auth.enums.AuthProvider;
 import com.semojum.backend.domain.org.entity.Organization;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -22,11 +21,8 @@ public class User {
     @Column(columnDefinition = "uuid", updatable = false)
     private UUID id;
 
-    @Column(unique = true)
-    private String email;
-
     // V3 발급형 계정 로그인 ID (운영자가 발급, 1인 1계정)
-    @Column(name = "login_id", unique = true)
+    @Column(name = "login_id", unique = true, nullable = false)
     private String loginId;
 
     // 소속 기관 (V3 발급 계정은 필수, 레거시 행은 null)
@@ -37,29 +33,14 @@ public class User {
     @Column
     private String password;
 
-    @Column
-    private String name;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private AuthProvider provider;
-
-    @Column(name = "provider_uid")
-    private String providerUid;
-
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    public User(String email, String loginId, Organization organization,
-                String password, String name, AuthProvider provider, String providerUid) {
-        this.email = email;
+    public User(String loginId, Organization organization, String password) {
         this.loginId = loginId;
         this.organization = organization;
         this.password = password;
-        this.name = name;
-        this.provider = provider;
-        this.providerUid = providerUid;
         this.createdAt = LocalDateTime.now();
     }
 

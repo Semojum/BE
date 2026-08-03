@@ -15,7 +15,6 @@ public class AdminRequestDto {
     // 계정 발급 (1인 1계정, 초기 비밀번호는 서버가 난수 생성)
     public record IssueAccount(
             @NotBlank String organizationId,
-            @NotBlank String loginId,
-            @NotBlank String name
+            @NotBlank String loginId
     ) {}
 }
