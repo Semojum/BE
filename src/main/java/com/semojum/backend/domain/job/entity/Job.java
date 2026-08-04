@@ -72,14 +72,20 @@ public class Job {
     @Column(name = "is_edited", nullable = false)
     private boolean isEdited;
 
+    // 업로드 시 선택 — 점자 판면 마지막 줄에 쪽번호를 넣을지 여부 (조판·렌더링 기준)
+    @Column(name = "insert_page_number", nullable = false)
+    private boolean insertPageNumber;
+
     @Builder
-    public Job(String id, User user, String mode, int totalPages, String originalFileName, String thumbnailUrl) {
+    public Job(String id, User user, String mode, int totalPages, String originalFileName,
+               String thumbnailUrl, boolean insertPageNumber) {
         this.id = id;
         this.user = user;
         this.mode = mode;
         this.totalPages = totalPages;
         this.originalFileName = originalFileName;
         this.thumbnailUrl = thumbnailUrl;
+        this.insertPageNumber = insertPageNumber;
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
