@@ -265,6 +265,8 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 
 ### HWP 페이지 분리 (HwpPageExtractor)
 - **실제 페이지 경계 복원**: 한글이 저장 시 계산해 둔 레이아웃 캐시(LineSeg)의 `lineVerticalPosition`(줄 세로 위치)을 사용. 같은 페이지에선 y가 증가하고 페이지가 바뀌면 상단으로 리셋되므로 **y가 작아지는 지점 = 페이지 경계**
+- **다단(멀티 칼럼) 문서 보정**: 열이 바뀔 때도 y가 리셋되므로, 단 설정(`ControlColumnDefine`의 단 개수 N)을 문서 흐름 따라 추적해 **N번째 리셋만 페이지 경계**로 판정(나머지는 열 이동). 단 정의 문단의 첫 줄 리셋은 항상 페이지 경계(새 페이지에서 단 영역 시작). 검증: 3단 요약본 33→11p, 2단 요약본 26→13p, 1단 문서들은 불변. 한계: 열 하나가 완전히 비는 비정형 문서는 어긋날 수 있음
+- 수동 검증 도구: `HwpPageExtractorDebugTest` — `HWP_DEBUG_FILE=<경로> ./gradlew test --tests HwpPageExtractorDebugTest --rerun`으로 페이지별 분리 결과 덤프(CI에선 자동 스킵)
 - ⚠️ `LineSegItemTag.isFirstLineAtPage()`는 **실제 파일에서 항상 false**(tag 하위 비트를 한글이 쓰지 않음) → 사용 금지, y 리셋 방식 유지할 것
 - **표·중첩 표 셀 문단까지 재귀 추출** — 최상위 문단만 읽으면 서식 문서 내용의 40~96%가 누락됨(검증: 논문심사의견서 21자→576자, 한이음 수행계획서 3843자→6497자)
 - 암호 설정/배포용/공인인증 암호화 문서는 `JOB4008`로 거부 (본문 대신 안내문만 들어 있어 점역 불가)
