@@ -11,12 +11,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface JobRepository extends JpaRepository<Job, String> {
+public interface JobRepository extends JpaRepository<Job, String>, JobQueryRepository {
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
 
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 끝나지 않은 Job 목록
     List<Job> findByUserIdAndStatusInOrderByStartedAtDesc(UUID userId, List<String> statuses);
+
+    // 위와 같되 휴지통 항목 제외. 복구 화면은 "가장 나중에 수정한 작업"을 골라야 하므로 lastModifiedAt 최신순
+    @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.status IN :statuses"
+            + " AND j.deletedAt IS NULL ORDER BY j.lastModifiedAt DESC, j.id DESC")
+    List<Job> findActiveByUserIdAndStatusIn(@Param("userId") UUID userId,
+                                            @Param("statuses") List<String> statuses);
 
     // ===== V3 마이페이지 디렉토리 =====
     // 벌크 이동·삭제 대상 조회 (활성만). 검증은 서비스에서 수행

@@ -81,4 +81,12 @@ public class JobManageService {
         }
         return trimmed;
     }
+
+    /** 즐겨찾기 토글 — 변환 중이어도 허용(내용 변경이 아니므로). 카드 날짜는 갱신하지 않는다. */
+    @Transactional
+    public boolean toggleFavorite(UUID userId, String jobId) {
+        Job job = jobRepository.findActiveByIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        return job.toggleFavorite();
+    }
 }

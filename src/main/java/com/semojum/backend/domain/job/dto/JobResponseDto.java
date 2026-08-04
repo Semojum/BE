@@ -24,6 +24,34 @@ public class JobResponseDto {
             Map<String, String> pages
     ) {}
 
+    // 마이페이지 목록 카드 — 확장 필드(진행률·위치·즐겨찾기·복구 정보) 포함
+    public record JobCard(
+            String jobId,
+            String mode,
+            String status,
+            int totalPages,
+            int[] failedPages,
+            String originalFileName,
+            String thumbnailUrl,
+            LocalDateTime startedAt,
+            LocalDateTime finishedAt,
+            LocalDateTime lastModifiedAt,
+            Integer lastEditedPage,
+            boolean isEdited,
+            boolean isFavorite,
+            boolean insertPageNumber,
+            Integer progress,        // 진행 중일 때만 0~100, 그 외 null
+            String folderId,
+            String folderPath        // 루트면 null
+    ) {}
+
+    // 커서 페이지네이션 응답
+    public record JobList(
+            List<JobCard> items,
+            String nextCursor,
+            boolean hasMore
+    ) {}
+
     public record JobSummary(
             String jobId,
             String mode,

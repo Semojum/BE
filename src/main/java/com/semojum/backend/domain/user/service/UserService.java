@@ -1,8 +1,12 @@
 package com.semojum.backend.domain.user.service;
 
+import com.semojum.backend.domain.folder.entity.Folder;
+import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.job.dto.JobSearchCondition;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
+import com.semojum.backend.domain.job.repository.JobQueryRepositoryImpl;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.result.entity.*;
@@ -11,18 +15,23 @@ import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final JobRepository jobRepository;
     private final PageRepository pageRepository;
+    private final FolderRepository folderRepository;
+    private final RedisTemplate<String, String> redisTemplate;
     private final S3Service s3Service;
     private final PageResultRepository pageResultRepository;
     private final TextElementRepository textElementRepository;
@@ -32,45 +41,103 @@ public class UserService {
     private final QualityCriticalErrorRepository qualityCriticalErrorRepository;
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
 
+    /**
+     * 마이페이지 작업 목록 — 폴더 범위·검색·필터·정렬·커서 페이지네이션.
+     *
+     * <p>휴지통 항목은 조건에서 제외되며, 진행률은 <b>진행 중인 작업만</b> Redis에서 읽어
+     * 목록 크기만큼 조회가 늘어나지 않게 한다.
+     */
     @Transactional(readOnly = true)
-    public List<JobResponseDto.JobSummary> getMyJobs(String userId) {
-        List<Job> jobs = jobRepository.findByUserIdOrderByStartedAtDesc(UUID.fromString(userId));
-        List<JobResponseDto.JobSummary> result = new ArrayList<>();
-        for (Job job : jobs) {
-            result.add(new JobResponseDto.JobSummary(
-                    job.getId(),
-                    job.getMode(),
-                    job.getStatus(),
-                    job.getTotalPages(),
-                    job.getFailedPages(),
-                    job.getOriginalFileName(),
-                    job.getThumbnailUrl(),
-                    job.getStartedAt(),
-                    job.getFinishedAt()
-            ));
+    public JobResponseDto.JobList getMyJobs(String userId, JobSearchCondition condition) {
+        UUID uid = UUID.fromString(userId);
+        List<Job> fetched = jobRepository.search(uid, condition);
+        JobQueryRepositoryImpl.PageSlice slice =
+                JobQueryRepositoryImpl.slice(fetched, condition.normalizedSize());
+
+        Map<UUID, String> folderPaths = buildFolderPaths(uid, slice.items());
+
+        List<JobResponseDto.JobCard> cards = new ArrayList<>();
+        for (Job job : slice.items()) {
+            cards.add(toCard(job, folderPaths));
         }
-        return result;
+        return new JobResponseDto.JobList(cards, slice.nextCursor(), slice.hasMore());
+    }
+
+    private JobResponseDto.JobCard toCard(Job job, Map<UUID, String> folderPaths) {
+        return new JobResponseDto.JobCard(
+                job.getId(),
+                job.getMode(),
+                job.getStatus(),
+                job.getTotalPages(),
+                job.getFailedPages(),
+                job.getOriginalFileName(),
+                job.getThumbnailUrl(),
+                job.getStartedAt(),
+                job.getFinishedAt(),
+                job.getLastModifiedAt(),
+                job.getLastEditedPage(),
+                job.isEdited(),
+                job.isFavorite(),
+                job.isInsertPageNumber(),
+                progressOf(job),
+                job.getFolderId() != null ? job.getFolderId().toString() : null,
+                job.getFolderId() != null ? folderPaths.get(job.getFolderId()) : null
+        );
+    }
+
+    /** 진행 중 작업의 완료 페이지 비율(0~100). 그 외에는 null. */
+    private Integer progressOf(Job job) {
+        if (!job.isInProgress()) return null;
+        try {
+            Map<Object, Object> pages = redisTemplate.opsForHash().entries("job:" + job.getId() + ":pages");
+            if (pages.isEmpty()) return 0;
+            int done = 0, total = 0;
+            for (Map.Entry<Object, Object> e : pages.entrySet()) {
+                if ("total_pages".equals(e.getKey())) continue;
+                total++;
+                if (Set.of("COMPLETED", "NEEDS_REVIEW", "BLOCKED").contains(String.valueOf(e.getValue()))) done++;
+            }
+            return total == 0 ? 0 : (int) Math.round(done * 100.0 / total);
+        } catch (Exception e) {
+            // 진행률은 부가 정보 — Redis 장애가 목록 조회 전체를 막지 않게 한다
+            log.warn("진행률 조회 실패: jobId={}", job.getId(), e);
+            return null;
+        }
+    }
+
+    /** 카드에 표시할 폴더 경로("상위/하위"). 계정당 폴더 200개 상한이라 한 번에 읽어 메모리에서 계산. */
+    private Map<UUID, String> buildFolderPaths(UUID userId, List<Job> jobs) {
+        boolean anyInFolder = jobs.stream().anyMatch(j -> j.getFolderId() != null);
+        if (!anyInFolder) return Map.of();
+
+        Map<UUID, Folder> byId = new HashMap<>();
+        for (Folder f : folderRepository.findAllActiveByUserId(userId)) {
+            byId.put(f.getId(), f);
+        }
+        Map<UUID, String> paths = new HashMap<>();
+        for (Folder f : byId.values()) {
+            paths.put(f.getId(), pathOf(f, byId, new HashSet<>()));
+        }
+        return paths;
+    }
+
+    private String pathOf(Folder folder, Map<UUID, Folder> byId, Set<UUID> visited) {
+        if (folder == null || !visited.add(folder.getId())) return "";
+        Folder parent = folder.getParentFolderId() == null ? null : byId.get(folder.getParentFolderId());
+        String parentPath = parent == null ? "" : pathOf(parent, byId, visited);
+        return parentPath.isEmpty() ? folder.getName() : parentPath + "/" + folder.getName();
     }
 
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 진행 중인 Job 목록.
     // FE는 이 목록으로 각 Job의 status를 조회하고 SSE를 다시 연결한다(탭 2개 이상 대응).
     @Transactional(readOnly = true)
-    public List<JobResponseDto.JobSummary> getActiveJobs(String userId) {
-        List<Job> jobs = jobRepository.findByUserIdAndStatusInOrderByStartedAtDesc(
-                UUID.fromString(userId), List.of("PENDING", "IN_PROGRESS"));
-        List<JobResponseDto.JobSummary> result = new ArrayList<>();
+    public List<JobResponseDto.JobCard> getActiveJobs(String userId) {
+        UUID uid = UUID.fromString(userId);
+        List<Job> jobs = jobRepository.findActiveByUserIdAndStatusIn(uid, List.of("PENDING", "IN_PROGRESS"));
+        Map<UUID, String> folderPaths = buildFolderPaths(uid, jobs);
+        List<JobResponseDto.JobCard> result = new ArrayList<>();
         for (Job job : jobs) {
-            result.add(new JobResponseDto.JobSummary(
-                    job.getId(),
-                    job.getMode(),
-                    job.getStatus(),
-                    job.getTotalPages(),
-                    job.getFailedPages(),
-                    job.getOriginalFileName(),
-                    job.getThumbnailUrl(),
-                    job.getStartedAt(),
-                    job.getFinishedAt()
-            ));
+            result.add(toCard(job, folderPaths));
         }
         return result;
     }
