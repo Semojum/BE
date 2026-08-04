@@ -76,6 +76,10 @@ public class Job {
     @Column(name = "insert_page_number", nullable = false)
     private boolean insertPageNumber;
 
+    // 마이페이지 즐겨찾기 (목록 필터·정렬용)
+    @Column(name = "is_favorite", nullable = false)
+    private boolean isFavorite;
+
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName,
                String thumbnailUrl, boolean insertPageNumber) {
@@ -86,6 +90,7 @@ public class Job {
         this.originalFileName = originalFileName;
         this.thumbnailUrl = thumbnailUrl;
         this.insertPageNumber = insertPageNumber;
+        this.isFavorite = false;
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
@@ -125,6 +130,12 @@ public class Job {
 
     public void updateStatus(String status) {
         this.status = status;
+    }
+
+    // 즐겨찾기 토글 — 카드 날짜(last_modified_at)는 건드리지 않는다(내용 변경이 아니므로)
+    public boolean toggleFavorite() {
+        this.isFavorite = !this.isFavorite;
+        return this.isFavorite;
     }
 
     public void updateThumbnailUrl(String thumbnailUrl) {

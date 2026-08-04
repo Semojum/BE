@@ -48,6 +48,17 @@ public class JobController {
         return ApiResponse.success(Map.of("jobId", job.getId(), "fileName", job.getOriginalFileName()));
     }
 
+    // 즐겨찾기 토글 (마이페이지 카드)
+    @PatchMapping("/{jobId}/favorite")
+    public ApiResponse<Map<String, Object>> toggleFavorite(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable String jobId
+    ) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        boolean isFavorite = jobManageService.toggleFavorite(userId, jobId);
+        return ApiResponse.success(Map.of("jobId", jobId, "isFavorite", isFavorite));
+    }
+
     // 작업 일괄 이동 (전체 성공 또는 전체 롤백)
     @PostMapping("/move")
     public ApiResponse<Map<String, Object>> moveJobs(
