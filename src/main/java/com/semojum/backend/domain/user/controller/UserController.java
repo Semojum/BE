@@ -1,7 +1,7 @@
 package com.semojum.backend.domain.user.controller;
 
 import com.semojum.backend.domain.job.dto.JobResponseDto;
-import com.semojum.backend.domain.job.dto.JobSearchCondition;
+import com.semojum.backend.domain.job.dto.JobSearchRequest;
 import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.global.exception.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +10,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
@@ -28,21 +27,10 @@ public class UserController {
     @GetMapping("/jobs")
     public ApiResponse<JobResponseDto.JobList> getMyJobs(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestParam(required = false) UUID folderId,
-            @RequestParam(required = false) String scope,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) List<String> status,
-            @RequestParam(required = false) List<String> mode,
-            @RequestParam(required = false) Boolean favorite,
-            @RequestParam(required = false, defaultValue = "latest") String sort,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(required = false, defaultValue = "30") int size
+            @ModelAttribute JobSearchRequest request
     ) {
-        JobSearchCondition condition = new JobSearchCondition(
-                folderId, "all".equalsIgnoreCase(scope), search,
-                status, mode, favorite,
-                "oldest".equalsIgnoreCase(sort), cursor, size);
-        return ApiResponse.success(userService.getMyJobs(userDetails.getUsername(), condition));
+        return ApiResponse.success(
+                userService.getMyJobs(userDetails.getUsername(), request.toCondition()));
     }
 
     // 앱 재시작·네트워크 재연결 시 복구용 — 진행 중(PENDING/IN_PROGRESS) Job 목록.
