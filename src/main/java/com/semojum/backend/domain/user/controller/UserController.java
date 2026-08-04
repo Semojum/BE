@@ -5,12 +5,10 @@ import com.semojum.backend.domain.job.dto.JobSearchCondition;
 import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.global.exception.ApiResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,8 +33,6 @@ public class UserController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) List<String> status,
             @RequestParam(required = false) List<String> mode,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Boolean favorite,
             @RequestParam(required = false, defaultValue = "latest") String sort,
             @RequestParam(required = false) String cursor,
@@ -44,7 +40,7 @@ public class UserController {
     ) {
         JobSearchCondition condition = new JobSearchCondition(
                 folderId, "all".equalsIgnoreCase(scope), search,
-                status, mode, from, to, favorite,
+                status, mode, favorite,
                 "oldest".equalsIgnoreCase(sort), cursor, size);
         return ApiResponse.success(userService.getMyJobs(userDetails.getUsername(), condition));
     }

@@ -56,15 +56,6 @@ public class JobQueryRepositoryImpl implements JobQueryRepository {
             jpql.append(" AND j.mode IN :modes");
             params.put("modes", condition.modes());
         }
-        if (condition.from() != null) {
-            jpql.append(" AND j.lastModifiedAt >= :from");
-            params.put("from", condition.from().atStartOfDay());
-        }
-        if (condition.to() != null) {
-            // to는 그날을 포함해야 하므로 다음날 0시 미만으로 비교
-            jpql.append(" AND j.lastModifiedAt < :to");
-            params.put("to", condition.to().plusDays(1).atStartOfDay());
-        }
         if (Boolean.TRUE.equals(condition.favoriteOnly())) {
             jpql.append(" AND j.isFavorite = true");
         }

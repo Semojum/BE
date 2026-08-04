@@ -18,7 +18,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -74,9 +73,8 @@ class JobListSearchTest {
     }
 
     private JobSearchCondition cond(UUID folderId, boolean all, String search, List<String> statuses,
-                                    List<String> modes, LocalDate from, LocalDate to,
-                                    Boolean fav, boolean oldest, String cursor, int size) {
-        return new JobSearchCondition(folderId, all, search, statuses, modes, from, to, fav, oldest, cursor, size);
+                                    List<String> modes, Boolean fav, boolean oldest, String cursor, int size) {
+        return new JobSearchCondition(folderId, all, search, statuses, modes, fav, oldest, cursor, size);
     }
 
     private List<Job> search(JobSearchCondition c) {
@@ -90,7 +88,7 @@ class JobListSearchTest {
         job("root2", "a", "COMPLETED", null, "루트2.pdf", LocalDateTime.now().minusDays(1), false);
         job("inFolder", "a", "COMPLETED", folder, "폴더안.pdf", LocalDateTime.now(), false);
 
-        List<Job> result = search(cond(null, false, null, null, null, null, null, null, false, null, 30));
+        List<Job> result = search(cond(null, false, null, null, null, null, false, null, 30));
         assertEquals(List.of("루트2.pdf", "루트1.pdf"),
                 result.stream().map(Job::getOriginalFileName).toList());
     }
@@ -102,9 +100,9 @@ class JobListSearchTest {
         job("inFolder", "a", "COMPLETED", folder, "폴더안.pdf", LocalDateTime.now(), false);
 
         assertEquals(List.of("폴더안.pdf"),
-                search(cond(folder, false, null, null, null, null, null, null, false, null, 30))
+                search(cond(folder, false, null, null, null, null, false, null, 30))
                         .stream().map(Job::getOriginalFileName).toList());
-        assertEquals(2, search(cond(null, true, null, null, null, null, null, null, false, null, 30)).size());
+        assertEquals(2, search(cond(null, true, null, null, null, null, false, null, 30)).size());
     }
 
     @Test
@@ -114,7 +112,7 @@ class JobListSearchTest {
         jobRepository.findById(trashed.getId()).orElseThrow().moveToTrash(LocalDateTime.now());
         em.flush(); em.clear();
 
-        List<Job> all = search(cond(null, true, null, null, null, null, null, null, false, null, 30));
+        List<Job> all = search(cond(null, true, null, null, null, null, false, null, 30));
         assertEquals(List.of("살아있음.pdf"), all.stream().map(Job::getOriginalFileName).toList());
     }
 
@@ -123,9 +121,9 @@ class JobListSearchTest {
         job("k1", "a", "COMPLETED", null, "Mendel_Report.pdf", LocalDateTime.now(), false);
         job("k2", "a", "COMPLETED", null, "기타자료.pdf", LocalDateTime.now().minusDays(1), false);
 
-        assertEquals(1, search(cond(null, true, "mendel", null, null, null, null, null, false, null, 30)).size());
-        assertEquals(1, search(cond(null, true, "REPORT", null, null, null, null, null, false, null, 30)).size());
-        assertEquals(0, search(cond(null, true, "없는이름", null, null, null, null, null, false, null, 30)).size());
+        assertEquals(1, search(cond(null, true, "mendel", null, null, null, false, null, 30)).size());
+        assertEquals(1, search(cond(null, true, "REPORT", null, null, null, false, null, 30)).size());
+        assertEquals(0, search(cond(null, true, "없는이름", null, null, null, false, null, 30)).size());
     }
 
     @Test
@@ -134,25 +132,11 @@ class JobListSearchTest {
         job("f2", "b", "FAILED", null, "b실패.hwp", LocalDateTime.now().minusDays(1), false);
         job("f3", "b", "COMPLETED", null, "b완료.hwp", LocalDateTime.now().minusDays(2), false);
 
-        assertEquals(2, search(cond(null, true, null, List.of("COMPLETED"), null, null, null, null, false, null, 30)).size());
-        assertEquals(2, search(cond(null, true, null, null, List.of("b"), null, null, null, false, null, 30)).size());
-        assertEquals(1, search(cond(null, true, null, null, null, null, null, true, false, null, 30)).size());
+        assertEquals(2, search(cond(null, true, null, List.of("COMPLETED"), null, null, false, null, 30)).size());
+        assertEquals(2, search(cond(null, true, null, null, List.of("b"), null, false, null, 30)).size());
+        assertEquals(1, search(cond(null, true, null, null, null, true, false, null, 30)).size());
         // 필터 조합은 AND
-        assertEquals(1, search(cond(null, true, null, List.of("COMPLETED"), List.of("b"), null, null, null, false, null, 30)).size());
-    }
-
-    @Test
-    void 기간_필터는_시작일과_종료일을_포함한다() {
-        LocalDate today = LocalDate.now();
-        job("d1", "a", "COMPLETED", null, "오늘.pdf", today.atTime(10, 0), false);
-        job("d2", "a", "COMPLETED", null, "사흘전.pdf", today.minusDays(3).atTime(10, 0), false);
-
-        // 오늘만
-        assertEquals(List.of("오늘.pdf"),
-                search(cond(null, true, null, null, null, today, today, null, false, null, 30))
-                        .stream().map(Job::getOriginalFileName).toList());
-        // 사흘전~오늘 = 둘 다
-        assertEquals(2, search(cond(null, true, null, null, null, today.minusDays(3), today, null, false, null, 30)).size());
+        assertEquals(1, search(cond(null, true, null, List.of("COMPLETED"), List.of("b"), null, false, null, 30)).size());
     }
 
     @Test
@@ -161,7 +145,7 @@ class JobListSearchTest {
         job("s2", "a", "COMPLETED", null, "나중.pdf", LocalDateTime.now(), false);
 
         assertEquals(List.of("먼저.pdf", "나중.pdf"),
-                search(cond(null, true, null, null, null, null, null, null, true, null, 30))
+                search(cond(null, true, null, null, null, null, true, null, 30))
                         .stream().map(Job::getOriginalFileName).toList());
     }
 
@@ -172,20 +156,20 @@ class JobListSearchTest {
             job("p" + i, "a", "COMPLETED", null, "파일" + i + ".pdf", base.minusMinutes(i), false);
         }
         // 1페이지 (2개)
-        List<Job> first = search(cond(null, true, null, null, null, null, null, null, false, null, 2));
+        List<Job> first = search(cond(null, true, null, null, null, null, false, null, 2));
         JobQueryRepositoryImpl.PageSlice s1 = JobQueryRepositoryImpl.slice(first, 2);
         assertTrue(s1.hasMore());
         assertEquals(List.of("파일1.pdf", "파일2.pdf"),
                 s1.items().stream().map(Job::getOriginalFileName).toList());
 
         // 2페이지
-        List<Job> second = search(cond(null, true, null, null, null, null, null, null, false, s1.nextCursor(), 2));
+        List<Job> second = search(cond(null, true, null, null, null, null, false, s1.nextCursor(), 2));
         JobQueryRepositoryImpl.PageSlice s2 = JobQueryRepositoryImpl.slice(second, 2);
         assertEquals(List.of("파일3.pdf", "파일4.pdf"),
                 s2.items().stream().map(Job::getOriginalFileName).toList());
 
         // 3페이지(마지막) — hasMore=false, nextCursor=null
-        List<Job> third = search(cond(null, true, null, null, null, null, null, null, false, s2.nextCursor(), 2));
+        List<Job> third = search(cond(null, true, null, null, null, null, false, s2.nextCursor(), 2));
         JobQueryRepositoryImpl.PageSlice s3 = JobQueryRepositoryImpl.slice(third, 2);
         assertFalse(s3.hasMore());
         assertNull(s3.nextCursor());
@@ -198,9 +182,9 @@ class JobListSearchTest {
         for (int i = 1; i <= 4; i++) {
             job("t" + i, "a", "COMPLETED", null, "동시" + i + ".pdf", same, false);
         }
-        List<Job> page1 = search(cond(null, true, null, null, null, null, null, null, false, null, 2));
+        List<Job> page1 = search(cond(null, true, null, null, null, null, false, null, 2));
         JobQueryRepositoryImpl.PageSlice s1 = JobQueryRepositoryImpl.slice(page1, 2);
-        List<Job> page2 = search(cond(null, true, null, null, null, null, null, null, false, s1.nextCursor(), 2));
+        List<Job> page2 = search(cond(null, true, null, null, null, null, false, s1.nextCursor(), 2));
         JobQueryRepositoryImpl.PageSlice s2 = JobQueryRepositoryImpl.slice(page2, 2);
 
         List<String> ids1 = s1.items().stream().map(Job::getId).toList();
@@ -213,7 +197,7 @@ class JobListSearchTest {
     @Test
     void 잘못된_커서는_무시하고_첫_페이지를_준다() {
         job("c1", "a", "COMPLETED", null, "정상.pdf", LocalDateTime.now(), false);
-        assertEquals(1, search(cond(null, true, null, null, null, null, null, null, false, "!!broken!!", 30)).size());
+        assertEquals(1, search(cond(null, true, null, null, null, null, false, "!!broken!!", 30)).size());
     }
 
     @Test
