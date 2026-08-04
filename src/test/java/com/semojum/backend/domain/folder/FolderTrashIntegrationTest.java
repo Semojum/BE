@@ -275,4 +275,57 @@ class FolderTrashIntegrationTest {
         assertNotNull(r1.getDeletedAt());
         assertEquals(r1.getDeletedAt(), r2.getDeletedAt());
     }
+
+    // ===== 즐겨찾기 =====
+
+    @Test
+    void 폴더_즐겨찾기를_토글하면_트리_필터에_반영된다() {
+        UUID a = createFolder("즐겨찾는폴더", null);
+        createFolder("일반폴더", null);
+
+        assertFalse(folderRepository.findById(a).orElseThrow().isFavorite());
+        assertTrue(folderService.toggleFavorite(user.getId(), a));
+        em.flush(); em.clear();
+
+        // 전체 트리에는 둘 다, 즐겨찾기 필터에는 하나만
+        assertEquals(2, folderService.tree(user.getId(), false, false).folders().size());
+        var favOnly = folderService.tree(user.getId(), true, false).folders();
+        assertEquals(1, favOnly.size());
+        assertEquals("즐겨찾는폴더", favOnly.get(0).name());
+        assertTrue(favOnly.get(0).isFavorite());
+
+        // 다시 토글하면 해제
+        assertFalse(folderService.toggleFavorite(user.getId(), a));
+        em.flush(); em.clear();
+        assertEquals(0, folderService.tree(user.getId(), true, false).folders().size());
+    }
+
+    @Test
+    void 트리는_생성일_기준으로_정렬된다() {
+        UUID first = createFolder("먼저만든폴더", null);
+        UUID second = createFolder("나중에만든폴더", null);
+
+        var latest = folderService.tree(user.getId(), false, false).folders();
+        assertEquals(List.of("나중에만든폴더", "먼저만든폴더"),
+                latest.stream().map(FolderDto.TreeNode::name).toList());
+
+        var oldest = folderService.tree(user.getId(), false, true).folders();
+        assertEquals(List.of("먼저만든폴더", "나중에만든폴더"),
+                oldest.stream().map(FolderDto.TreeNode::name).toList());
+        assertNotNull(latest.get(0).createdAt());
+        assertEquals(second, latest.get(0).folderId());
+        assertEquals(first, oldest.get(0).folderId());
+    }
+
+    @Test
+    void 즐겨찾기_필터에서_부모가_빠진_하위폴더는_루트로_올라온다() {
+        UUID parent = createFolder("부모", null);
+        UUID child = createFolder("자식", parent);
+        folderService.toggleFavorite(user.getId(), child);   // 자식만 즐겨찾기
+        em.flush(); em.clear();
+
+        var favOnly = folderService.tree(user.getId(), true, false).folders();
+        assertEquals(1, favOnly.size());
+        assertEquals("자식", favOnly.get(0).name());   // 고아가 되지 않고 루트에 노출
+    }
 }
