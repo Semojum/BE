@@ -10,7 +10,8 @@ public class JobResponseDto {
             String jobId,
             String mode,
             int totalPages,
-            String status
+            String status,
+            boolean insertPageNumber
     ) {}
 
     public record Status(
@@ -45,6 +46,7 @@ public class JobResponseDto {
             LocalDateTime startedAt,
             LocalDateTime finishedAt,
             int pageNo,
+            boolean insertPageNumber,
             Map<String, Object> result,
             OriginalContent original
     ) {}
