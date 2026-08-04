@@ -35,6 +35,10 @@ public class Folder {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    // 마이페이지 즐겨찾기 (파일과 동일하게 폴더도 대상)
+    @Column(name = "is_favorite", nullable = false)
+    private boolean isFavorite;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -43,7 +47,14 @@ public class Folder {
         this.user = user;
         this.parentFolderId = parentFolderId;
         this.name = name;
+        this.isFavorite = false;
         this.createdAt = LocalDateTime.now();
+    }
+
+    /** 즐겨찾기 토글 — 반환값은 토글 이후 상태. */
+    public boolean toggleFavorite() {
+        this.isFavorite = !this.isFavorite;
+        return this.isFavorite;
     }
 
     public boolean isTrashed() {

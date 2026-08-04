@@ -36,7 +36,13 @@ public class FolderDto {
 
     public record Response(UUID folderId, String name, UUID parentFolderId) {}
 
-    public record TreeNode(UUID folderId, String name, List<TreeNode> children) {}
+    public record TreeNode(
+            UUID folderId,
+            String name,
+            boolean isFavorite,
+            java.time.LocalDateTime createdAt,  // 폴더 정렬 기준
+            List<TreeNode> children
+    ) {}
 
     public record Tree(List<TreeNode> folders) {}
 }
