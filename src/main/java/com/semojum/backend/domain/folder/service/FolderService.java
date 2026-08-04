@@ -119,22 +119,49 @@ public class FolderService {
         }
     }
 
+    /**
+     * 폴더 트리 조회.
+     *
+     * <p>정렬 기준은 <b>생성일(createdAt)</b>이다 — 폴더는 파일처럼 "수정" 개념이 없어
+     * 별도의 last_modified_at을 두지 않았다. {@code favoriteOnly}면 즐겨찾기 폴더만 남긴다
+     * (이때 부모가 걸러져도 자식은 루트 레벨로 올라와 보인다).
+     */
     @Transactional(readOnly = true)
-    public FolderDto.Tree tree(UUID userId) {
-        List<Folder> folders = folderRepository.findAllActiveByUserId(userId);
+    public FolderDto.Tree tree(UUID userId, boolean favoriteOnly, boolean oldestFirst) {
+        List<Folder> folders = folderRepository.findActiveForTree(userId, favoriteOnly);
+        Set<UUID> present = new HashSet<>();
+        for (Folder f : folders) present.add(f.getId());
+
         Map<UUID, List<Folder>> byParent = new HashMap<>();
         for (Folder f : folders) {
-            byParent.computeIfAbsent(f.getParentFolderId(), k -> new ArrayList<>()).add(f);
+            // 필터로 부모가 빠진 폴더는 고아가 되므로 루트로 끌어올린다
+            UUID parent = (f.getParentFolderId() != null && present.contains(f.getParentFolderId()))
+                    ? f.getParentFolderId() : null;
+            byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(f);
         }
+        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+                .thenComparing(f -> f.getId().toString());
+        if (!oldestFirst) order = order.reversed();
+        for (List<Folder> siblings : byParent.values()) siblings.sort(order);
+
         return new FolderDto.Tree(buildNodes(null, byParent));
     }
 
     private List<FolderDto.TreeNode> buildNodes(UUID parentId, Map<UUID, List<Folder>> byParent) {
         List<FolderDto.TreeNode> nodes = new ArrayList<>();
         for (Folder f : byParent.getOrDefault(parentId, List.of())) {
-            nodes.add(new FolderDto.TreeNode(f.getId(), f.getName(), buildNodes(f.getId(), byParent)));
+            nodes.add(new FolderDto.TreeNode(f.getId(), f.getName(), f.isFavorite(),
+                    f.getCreatedAt(), buildNodes(f.getId(), byParent)));
         }
         return nodes;
+    }
+
+    /** 즐겨찾기 토글 — 폴더도 파일과 동일하게 목록 필터 대상이 된다. */
+    @Transactional
+    public boolean toggleFavorite(UUID userId, UUID folderId) {
+        Folder folder = folderRepository.findActiveByIdAndUserId(folderId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FOLDER_NOT_FOUND));
+        return folder.toggleFavorite();
     }
 
     // ===== 내부 유틸 =====

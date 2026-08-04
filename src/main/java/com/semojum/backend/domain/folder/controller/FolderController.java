@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -47,9 +48,24 @@ public class FolderController {
         return ApiResponse.success(null);
     }
 
-    @GetMapping("/tree")
-    public ApiResponse<FolderDto.Tree> tree(@AuthenticationPrincipal UserDetails userDetails) {
+    // 즐겨찾기 토글 (마이페이지 폴더 카드)
+    @PatchMapping("/{folderId}/favorite")
+    public ApiResponse<Map<String, Object>> toggleFavorite(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable UUID folderId
+    ) {
         UUID userId = UUID.fromString(userDetails.getUsername());
-        return ApiResponse.success(folderService.tree(userId));
+        boolean isFavorite = folderService.toggleFavorite(userId, folderId);
+        return ApiResponse.success(Map.of("folderId", folderId.toString(), "isFavorite", isFavorite));
+    }
+
+    @GetMapping("/tree")
+    public ApiResponse<FolderDto.Tree> tree(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false) Boolean favorite,
+            @RequestParam(required = false, defaultValue = "latest") String sort) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        return ApiResponse.success(folderService.tree(userId,
+                Boolean.TRUE.equals(favorite), "oldest".equalsIgnoreCase(sort)));
     }
 }
