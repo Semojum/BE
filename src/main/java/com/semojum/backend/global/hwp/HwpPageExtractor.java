@@ -7,7 +7,9 @@ import kr.dogfoot.hwplib.object.bodytext.Section;
 import kr.dogfoot.hwplib.object.bodytext.control.Control;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlColumnDefine;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlEndnote;
+import kr.dogfoot.hwplib.object.bodytext.control.ControlFooter;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlFootnote;
+import kr.dogfoot.hwplib.object.bodytext.control.ControlHeader;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlTable;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Cell;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Row;
@@ -42,9 +44,10 @@ import java.util.List;
  * 40~96%가 누락된다. 표는 줄글과 구분되도록 {@code [표 시작]}/{@code [표 끝]} 마커로 감싸고
  * <b>행=줄, 칸=탭</b>으로 기록해 행·열 구조를 보존한다.
  *
- * <p>각주는 원문 레이아웃과 같이 <b>그 페이지 끝에</b>, 미주는 <b>문서 끝에</b> 모아 붙인다
- * ({@code [각주]}/{@code [미주]} 마커). 머리말·꼬리말은 페이지마다 반복되는 판면 요소라
- * 본문으로 추출하지 않는다.
+ * <p>페이지에 기록되는 순서는 원문 판면과 같다 —
+ * {@code [머리말]} → 본문 → {@code [각주]} → {@code [꼬리말]}, 미주({@code [미주]})는 문서 끝.
+ * 머리말·꼬리말은 HWP 의미대로 <b>정의된 페이지부터 이후 모든 페이지에 반복</b> 적용되며,
+ * 빈 머리말·꼬리말 정의는 그 지점부터 해제로 처리한다.
  */
 @Slf4j
 @Component
@@ -55,6 +58,8 @@ public class HwpPageExtractor {
     private static final String CELL_SEPARATOR = "\t";
     private static final String FOOTNOTE_MARK = "[각주]";
     private static final String ENDNOTE_MARK = "[미주]";
+    private static final String HEADER_MARK = "[머리말]";
+    private static final String FOOTER_MARK = "[꼬리말]";
 
     /** HWP 바이트를 실제 페이지 단위 텍스트 목록으로 변환. */
     public List<String> extractPages(InputStream inputStream) {
@@ -82,13 +87,7 @@ public class HwpPageExtractor {
                 appendParagraph(section.getParagraph(i), ctx);
             }
         }
-        List<StringBuilder> pages = ctx.finish();
-
-        List<String> result = new ArrayList<>();
-        for (StringBuilder page : pages) {
-            String text = page.toString().strip();
-            if (!text.isEmpty()) result.add(text);
-        }
+        List<String> result = ctx.finish();
         // 레이아웃 정보가 전혀 없어 한 페이지도 못 만든 경우를 대비
         if (result.isEmpty()) {
             throw new CustomException(ErrorCode.JOB_HWP_PARSE_FAILED);
@@ -98,11 +97,15 @@ public class HwpPageExtractor {
         return result;
     }
 
-    /** 페이지 분리 진행 상태 — 다단 추적·각주 수집 포함 (호출 스레드 안에서만 사용). */
+    /** 페이지 분리 진행 상태 — 다단 추적·각주·머리말/꼬리말 수집 포함 (호출 스레드 안에서만 사용). */
     private static class SplitContext {
         final List<StringBuilder> pages = new ArrayList<>();
         final List<List<String>> footnotes = new ArrayList<>(); // 페이지별 각주 (인덱스가 pages와 짝)
+        final List<String> headers = new ArrayList<>();         // 페이지별 머리말
+        final List<String> footers = new ArrayList<>();         // 페이지별 꼬리말
         final List<String> endnotes = new ArrayList<>();        // 미주는 문서 끝에 모음
+        String activeHeader = "";  // 현재 유효한 머리말 (재정의 전까지 이후 페이지에 반복)
+        String activeFooter = "";
         int prevY = -1;
         int columnCount = 1; // 현재 단 개수 (단 정의를 만날 때마다 갱신)
         int columnPos = 0;   // 현재 페이지에서 몇 번째 열인지 (0부터)
@@ -114,26 +117,59 @@ public class HwpPageExtractor {
         void addPage() {
             pages.add(new StringBuilder());
             footnotes.add(new ArrayList<>());
+            headers.add(activeHeader);
+            footers.add(activeFooter);
         }
 
         List<String> currentFootnotes() {
             return footnotes.get(footnotes.size() - 1);
         }
 
-        /** 각주를 그 페이지 끝에, 미주를 문서 끝에 붙여 마무리. */
-        List<StringBuilder> finish() {
+        /** 머리말 정의는 현재 페이지부터 적용된다(빈 값이면 해제). */
+        void setHeader(String text) {
+            activeHeader = text;
+            headers.set(headers.size() - 1, text);
+        }
+
+        void setFooter(String text) {
+            activeFooter = text;
+            footers.set(footers.size() - 1, text);
+        }
+
+        /** 판면 순서(머리말 → 본문 → 각주 → 꼬리말)대로 페이지 텍스트를 완성한다. */
+        List<String> finish() {
+            // 미주가 실릴 마지막 페이지 = 본문이 있는 마지막 페이지
+            int lastWithBody = -1;
             for (int i = 0; i < pages.size(); i++) {
+                if (!pages.get(i).toString().isBlank()) lastWithBody = i;
+            }
+
+            List<String> result = new ArrayList<>();
+            for (int i = 0; i < pages.size(); i++) {
+                String body = pages.get(i).toString().strip();
+                // 본문이 없는 페이지에 머리말만 남아 유령 페이지가 생기지 않도록
+                if (body.isEmpty()) continue;
+
+                StringBuilder page = new StringBuilder();
+                appendBlock(page, HEADER_MARK, headers.get(i));
+                page.append(body).append("\n");
                 for (String note : footnotes.get(i)) {
-                    pages.get(i).append(FOOTNOTE_MARK).append("\n").append(note).append("\n");
+                    appendBlock(page, FOOTNOTE_MARK, note);
                 }
-            }
-            if (!endnotes.isEmpty()) {
-                StringBuilder last = pages.get(pages.size() - 1);
-                for (String note : endnotes) {
-                    last.append(ENDNOTE_MARK).append("\n").append(note).append("\n");
+                appendBlock(page, FOOTER_MARK, footers.get(i));
+                if (i == lastWithBody) {
+                    for (String note : endnotes) {
+                        appendBlock(page, ENDNOTE_MARK, note);
+                    }
                 }
+                result.add(page.toString().strip());
             }
-            return pages;
+            return result;
+        }
+
+        private void appendBlock(StringBuilder page, String mark, String text) {
+            if (text == null || text.isBlank()) return;
+            page.append(mark).append("\n").append(text).append("\n");
         }
     }
 
@@ -206,7 +242,7 @@ public class HwpPageExtractor {
         return found;
     }
 
-    /** 문단에 붙은 표·각주·미주를 처리한다. */
+    /** 문단에 붙은 표·각주·미주·머리말·꼬리말을 처리한다. */
     private void appendControls(Paragraph paragraph, SplitContext ctx) {
         if (paragraph.getControlList() == null) return;
 
@@ -219,6 +255,10 @@ public class HwpPageExtractor {
             } else if (control instanceof ControlEndnote endnote) {
                 String note = noteText(endnote.getParagraphList());
                 if (!note.isBlank()) ctx.endnotes.add(note);
+            } else if (control instanceof ControlHeader header) {
+                ctx.setHeader(noteText(header.getParagraphList()));
+            } else if (control instanceof ControlFooter footer) {
+                ctx.setFooter(noteText(footer.getParagraphList()));
             }
         }
     }
@@ -277,7 +317,7 @@ public class HwpPageExtractor {
         return sb.toString();
     }
 
-    /** 각주·미주 본문 — 문단을 줄바꿈으로 이어 붙인다. */
+    /** 각주·미주·머리말·꼬리말 본문 — 문단을 줄바꿈으로 이어 붙인다. */
     private String noteText(ParagraphList noteParagraphs) {
         if (noteParagraphs == null) return "";
 
