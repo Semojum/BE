@@ -6,6 +6,8 @@ import kr.dogfoot.hwplib.object.HWPFile;
 import kr.dogfoot.hwplib.object.bodytext.Section;
 import kr.dogfoot.hwplib.object.bodytext.control.Control;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlColumnDefine;
+import kr.dogfoot.hwplib.object.bodytext.control.ControlEndnote;
+import kr.dogfoot.hwplib.object.bodytext.control.ControlFootnote;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlTable;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Cell;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Row;
@@ -37,11 +39,22 @@ import java.util.List;
  * (검증 시 tag 하위 비트가 전혀 쓰이지 않음을 확인).
  *
  * <p>표(중첩 표 포함) 안의 문단도 함께 추출한다. 최상위 문단만 읽으면 서식 문서에서 내용의
- * 40~96%가 누락된다.
+ * 40~96%가 누락된다. 표는 줄글과 구분되도록 {@code [표 시작]}/{@code [표 끝]} 마커로 감싸고
+ * <b>행=줄, 칸=탭</b>으로 기록해 행·열 구조를 보존한다.
+ *
+ * <p>각주는 원문 레이아웃과 같이 <b>그 페이지 끝에</b>, 미주는 <b>문서 끝에</b> 모아 붙인다
+ * ({@code [각주]}/{@code [미주]} 마커). 머리말·꼬리말은 페이지마다 반복되는 판면 요소라
+ * 본문으로 추출하지 않는다.
  */
 @Slf4j
 @Component
 public class HwpPageExtractor {
+
+    private static final String TABLE_START = "[표 시작]";
+    private static final String TABLE_END = "[표 끝]";
+    private static final String CELL_SEPARATOR = "\t";
+    private static final String FOOTNOTE_MARK = "[각주]";
+    private static final String ENDNOTE_MARK = "[미주]";
 
     /** HWP 바이트를 실제 페이지 단위 텍스트 목록으로 변환. */
     public List<String> extractPages(InputStream inputStream) {
@@ -69,7 +82,7 @@ public class HwpPageExtractor {
                 appendParagraph(section.getParagraph(i), ctx);
             }
         }
-        List<StringBuilder> pages = ctx.pages;
+        List<StringBuilder> pages = ctx.finish();
 
         List<String> result = new ArrayList<>();
         for (StringBuilder page : pages) {
@@ -85,15 +98,42 @@ public class HwpPageExtractor {
         return result;
     }
 
-    /** 페이지 분리 진행 상태 — 다단 추적 포함 (호출 스레드 안에서만 사용). */
+    /** 페이지 분리 진행 상태 — 다단 추적·각주 수집 포함 (호출 스레드 안에서만 사용). */
     private static class SplitContext {
         final List<StringBuilder> pages = new ArrayList<>();
+        final List<List<String>> footnotes = new ArrayList<>(); // 페이지별 각주 (인덱스가 pages와 짝)
+        final List<String> endnotes = new ArrayList<>();        // 미주는 문서 끝에 모음
         int prevY = -1;
         int columnCount = 1; // 현재 단 개수 (단 정의를 만날 때마다 갱신)
         int columnPos = 0;   // 현재 페이지에서 몇 번째 열인지 (0부터)
 
         SplitContext() {
+            addPage();
+        }
+
+        void addPage() {
             pages.add(new StringBuilder());
+            footnotes.add(new ArrayList<>());
+        }
+
+        List<String> currentFootnotes() {
+            return footnotes.get(footnotes.size() - 1);
+        }
+
+        /** 각주를 그 페이지 끝에, 미주를 문서 끝에 붙여 마무리. */
+        List<StringBuilder> finish() {
+            for (int i = 0; i < pages.size(); i++) {
+                for (String note : footnotes.get(i)) {
+                    pages.get(i).append(FOOTNOTE_MARK).append("\n").append(note).append("\n");
+                }
+            }
+            if (!endnotes.isEmpty()) {
+                StringBuilder last = pages.get(pages.size() - 1);
+                for (String note : endnotes) {
+                    last.append(ENDNOTE_MARK).append("\n").append(note).append("\n");
+                }
+            }
+            return pages;
         }
     }
 
@@ -109,7 +149,7 @@ public class HwpPageExtractor {
         // 레이아웃 정보가 없는 문단은 페이지 판정 없이 현재 페이지에 이어붙임
         if (segments == null || segments.isEmpty()) {
             appendText(ctx.pages, text);
-            appendTables(paragraph, ctx.pages);
+            appendControls(paragraph, ctx);
             return;
         }
 
@@ -130,7 +170,7 @@ public class HwpPageExtractor {
                     pageBreak = ctx.columnPos == 0;
                 }
                 if (pageBreak) {
-                    ctx.pages.add(new StringBuilder());
+                    ctx.addPage();
                 }
             }
             ctx.prevY = y;
@@ -146,8 +186,8 @@ public class HwpPageExtractor {
         }
         current(ctx.pages).append("\n");
 
-        // 표는 이 문단에 앵커링되므로 문단이 끝난 페이지에 함께 기록
-        appendTables(paragraph, ctx.pages);
+        // 표·각주는 이 문단에 앵커링되므로 문단이 끝난 페이지 기준으로 기록
+        appendControls(paragraph, ctx);
     }
 
     /** 문단의 단 정의(ControlColumnDefine)를 반영. 있었으면 true. */
@@ -166,26 +206,87 @@ public class HwpPageExtractor {
         return found;
     }
 
-    /** 문단에 붙은 표의 셀 문단을 재귀적으로(중첩 표 포함) 추출. */
-    private void appendTables(Paragraph paragraph, List<StringBuilder> pages) {
+    /** 문단에 붙은 표·각주·미주를 처리한다. */
+    private void appendControls(Paragraph paragraph, SplitContext ctx) {
         if (paragraph.getControlList() == null) return;
 
         for (Control control : paragraph.getControlList()) {
-            if (!(control instanceof ControlTable table)) continue;
+            if (control instanceof ControlTable table) {
+                appendTable(table, ctx.pages);
+            } else if (control instanceof ControlFootnote footnote) {
+                String note = noteText(footnote.getParagraphList());
+                if (!note.isBlank()) ctx.currentFootnotes().add(note);
+            } else if (control instanceof ControlEndnote endnote) {
+                String note = noteText(endnote.getParagraphList());
+                if (!note.isBlank()) ctx.endnotes.add(note);
+            }
+        }
+    }
 
-            for (Row row : table.getRowList()) {
-                for (Cell cell : row.getCellList()) {
-                    ParagraphList cellParagraphs = cell.getParagraphList();
-                    if (cellParagraphs == null) continue;
+    /**
+     * 표를 마커로 감싸 기록한다 — 행은 줄, 칸은 탭으로 구분해 구조를 보존한다.
+     * 중첩 표는 바깥 표 블록이 끝난 뒤 별도 블록으로 이어 붙인다(행 구조를 깨지 않기 위함).
+     */
+    private void appendTable(ControlTable table, List<StringBuilder> pages) {
+        List<ControlTable> nestedTables = new ArrayList<>();
+        StringBuilder rows = new StringBuilder();
 
-                    for (int i = 0; i < cellParagraphs.getParagraphCount(); i++) {
-                        Paragraph cellParagraph = cellParagraphs.getParagraph(i);
-                        appendText(pages, normalString(cellParagraph));
-                        appendTables(cellParagraph, pages);
-                    }
+        for (Row row : table.getRowList()) {
+            List<String> cells = new ArrayList<>();
+            boolean hasText = false;
+            for (Cell cell : row.getCellList()) {
+                String cellText = cellText(cell, nestedTables);
+                cells.add(cellText);
+                if (!cellText.isBlank()) hasText = true;
+            }
+            // 빈 행(레이아웃용 여백 행)은 표 구조에 의미가 없어 생략
+            if (hasText) {
+                rows.append(String.join(CELL_SEPARATOR, cells)).append("\n");
+            }
+        }
+
+        if (rows.length() > 0) {
+            current(pages).append(TABLE_START).append("\n")
+                    .append(rows)
+                    .append(TABLE_END).append("\n");
+        }
+        for (ControlTable nested : nestedTables) {
+            appendTable(nested, pages);
+        }
+    }
+
+    /** 셀 하나의 텍스트 — 여러 문단은 공백으로 이어 붙여 한 칸이 한 줄을 넘지 않게 한다. */
+    private String cellText(Cell cell, List<ControlTable> nestedTables) {
+        ParagraphList cellParagraphs = cell.getParagraphList();
+        if (cellParagraphs == null) return "";
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < cellParagraphs.getParagraphCount(); i++) {
+            Paragraph cellParagraph = cellParagraphs.getParagraph(i);
+            String text = normalString(cellParagraph).strip();
+            if (!text.isEmpty()) {
+                if (sb.length() > 0) sb.append(' ');
+                sb.append(text);
+            }
+            if (cellParagraph.getControlList() != null) {
+                for (Control control : cellParagraph.getControlList()) {
+                    if (control instanceof ControlTable nested) nestedTables.add(nested);
                 }
             }
         }
+        return sb.toString();
+    }
+
+    /** 각주·미주 본문 — 문단을 줄바꿈으로 이어 붙인다. */
+    private String noteText(ParagraphList noteParagraphs) {
+        if (noteParagraphs == null) return "";
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < noteParagraphs.getParagraphCount(); i++) {
+            String text = normalString(noteParagraphs.getParagraph(i)).strip();
+            if (!text.isEmpty()) sb.append(text).append("\n");
+        }
+        return sb.toString().strip();
     }
 
     private void appendText(List<StringBuilder> pages, String text) {
