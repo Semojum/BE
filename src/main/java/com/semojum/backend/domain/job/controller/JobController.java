@@ -77,9 +77,12 @@ public class JobController {
     public ApiResponse<JobResponseDto.Create> createJob(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestPart("file") MultipartFile file,
-            @RequestParam("mode") String mode
+            @RequestParam("mode") String mode,
+            // 점자 판면 마지막 줄에 쪽번호를 넣을지 — 업로드 시 선택 (미전송 시 false)
+            @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber
     ) throws Exception {
-        return ApiResponse.success(jobService.createJob(userDetails.getUsername(), file, mode));
+        return ApiResponse.success(
+                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber));
     }
 
     // job 상태 확인 API

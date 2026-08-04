@@ -99,6 +99,7 @@ public class UserService {
                 job.getStartedAt(),
                 job.getFinishedAt(),
                 pageNo,
+                job.isInsertPageNumber(),
                 buildResult(pageResult),
                 original
         );

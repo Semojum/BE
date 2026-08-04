@@ -191,7 +191,8 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - 레거시(이메일/소셜) users 행과 그 작업 데이터는 V4 마이그레이션(`V4__users_v3_cleanup.sql`)으로 전부 삭제됨 — users는 V3 발급 계정만 존재
 
 ### Job
-- `POST /api/jobs` — Job 생성 (multipart)
+- `POST /api/jobs` — Job 생성 (multipart, `mode` + **`insertPageNumber`**(선택, 기본 false))
+  - **페이지 번호 삽입 여부는 업로드 시 결정**(에디터 토글 폐지, 2026-08-04 확정) → `jobs.insert_page_number`(V8)에 기록. 점자 판면 마지막 줄 쪽번호 표기 기준이라 조판·에디터 렌더링(26줄 전체 vs 본문 25줄)이 이 값을 따름. Create 응답과 페이지 조회(JobDetail) 응답에 포함
   - 모드 a/c: PDF 페이지별 분리 → S3 업로드
   - 모드 b: **HWP는 실제 페이지 단위**(레이아웃 기반, 표 내용 포함) / TXT는 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
