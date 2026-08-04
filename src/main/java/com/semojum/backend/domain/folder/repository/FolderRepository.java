@@ -19,6 +19,12 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
     @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.deletedAt IS NULL ORDER BY f.name ASC")
     List<Folder> findAllActiveByUserId(@Param("userId") UUID userId);
 
+    // 목록 화면용 — 즐겨찾기 필터 + 생성일 정렬(폴더는 수정 개념이 없어 createdAt이 기준)
+    @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.deletedAt IS NULL"
+            + " AND (:favoriteOnly = false OR f.isFavorite = true)")
+    List<Folder> findActiveForTree(@Param("userId") UUID userId,
+                                   @Param("favoriteOnly") boolean favoriteOnly);
+
     @Query("""
             SELECT COUNT(f) > 0 FROM Folder f
             WHERE f.user.id = :userId AND f.deletedAt IS NULL AND f.name = :name
