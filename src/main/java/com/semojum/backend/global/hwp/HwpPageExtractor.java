@@ -5,6 +5,7 @@ import com.semojum.backend.global.exception.ErrorCode;
 import kr.dogfoot.hwplib.object.HWPFile;
 import kr.dogfoot.hwplib.object.bodytext.Section;
 import kr.dogfoot.hwplib.object.bodytext.control.Control;
+import kr.dogfoot.hwplib.object.bodytext.control.ControlColumnDefine;
 import kr.dogfoot.hwplib.object.bodytext.control.ControlTable;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Cell;
 import kr.dogfoot.hwplib.object.bodytext.control.table.Row;
@@ -25,6 +26,12 @@ import java.util.List;
  * <p>페이지 경계 판정: 한글이 저장 시 계산해 둔 레이아웃 캐시(LineSeg)의
  * {@code lineVerticalPosition}(줄 세로 위치)을 이용한다. 같은 페이지 안에서는 y가 증가하고,
  * 페이지가 바뀌면 y가 페이지 상단으로 리셋되므로 <b>y가 작아지는 지점 = 페이지 경계</b>다.
+ *
+ * <p><b>다단(멀티 칼럼) 문서</b>는 열이 바뀔 때도 y가 리셋되므로, 단 설정
+ * ({@code ControlColumnDefine}의 단 개수 N)을 문서 흐름을 따라 추적해
+ * <b>N번째 리셋만 페이지 경계</b>로 센다(나머지는 열 이동). 단 정의가 있는 문단의
+ * 첫 줄에서 난 리셋은 새 페이지에서 단 영역이 시작된 것이므로 항상 페이지 경계다.
+ * 한계: 열 하나가 완전히 비는 비정형 문서는 카운터가 어긋날 수 있다.
  *
  * <p>{@code LineSegItemTag.isFirstLineAtPage()}는 실제 파일에서 항상 false로 저장되어 사용할 수 없다
  * (검증 시 tag 하위 비트가 전혀 쓰이지 않음을 확인).
@@ -55,15 +62,14 @@ public class HwpPageExtractor {
             throw new CustomException(ErrorCode.JOB_HWP_UNSUPPORTED);
         }
 
-        List<StringBuilder> pages = new ArrayList<>();
-        pages.add(new StringBuilder());
-        int prevY = -1;
+        SplitContext ctx = new SplitContext();
 
         for (Section section : hwp.getBodyText().getSectionList()) {
             for (int i = 0; i < section.getParagraphCount(); i++) {
-                prevY = appendParagraph(section.getParagraph(i), pages, prevY);
+                appendParagraph(section.getParagraph(i), ctx);
             }
         }
+        List<StringBuilder> pages = ctx.pages;
 
         List<String> result = new ArrayList<>();
         for (StringBuilder page : pages) {
@@ -79,28 +85,55 @@ public class HwpPageExtractor {
         return result;
     }
 
+    /** 페이지 분리 진행 상태 — 다단 추적 포함 (호출 스레드 안에서만 사용). */
+    private static class SplitContext {
+        final List<StringBuilder> pages = new ArrayList<>();
+        int prevY = -1;
+        int columnCount = 1; // 현재 단 개수 (단 정의를 만날 때마다 갱신)
+        int columnPos = 0;   // 현재 페이지에서 몇 번째 열인지 (0부터)
+
+        SplitContext() {
+            pages.add(new StringBuilder());
+        }
+    }
+
     /** 문단 하나를 현재 페이지에 붙이며, 줄 단위로 페이지 경계(y 리셋)를 감지한다. */
-    private int appendParagraph(Paragraph paragraph, List<StringBuilder> pages, int prevY) {
+    private void appendParagraph(Paragraph paragraph, SplitContext ctx) {
+        // 단 설정이 이 문단부터 바뀌면 단 개수 갱신 + 열 카운터 리셋
+        boolean columnDefined = applyColumnDefine(paragraph, ctx);
+
         String text = normalString(paragraph);
         List<LineSegItem> segments = paragraph.getLineSeg() == null
                 ? null : paragraph.getLineSeg().getLineSegItemList();
 
         // 레이아웃 정보가 없는 문단은 페이지 판정 없이 현재 페이지에 이어붙임
         if (segments == null || segments.isEmpty()) {
-            appendText(pages, text);
-            appendTables(paragraph, pages);
-            return prevY;
+            appendText(ctx.pages, text);
+            appendTables(paragraph, ctx.pages);
+            return;
         }
 
         for (int s = 0; s < segments.size(); s++) {
             LineSegItem segment = segments.get(s);
             int y = segment.getLineVerticalPosition();
 
-            // y가 작아짐 = 페이지 상단으로 돌아감 = 새 페이지 시작
-            if (prevY >= 0 && y < prevY) {
-                pages.add(new StringBuilder());
+            // y가 작아짐 = 상단으로 돌아감 = 열 이동 또는 새 페이지
+            if (ctx.prevY >= 0 && y < ctx.prevY) {
+                boolean pageBreak;
+                if (columnDefined && s == 0) {
+                    // 단 정의 문단의 첫 줄에서 난 리셋 = 새 페이지에서 단 영역 시작
+                    pageBreak = true;
+                    ctx.columnPos = 0;
+                } else {
+                    // N번째 리셋만 페이지 경계, 그 전까지는 열 이동 (1단이면 매번 페이지)
+                    ctx.columnPos = (ctx.columnPos + 1) % ctx.columnCount;
+                    pageBreak = ctx.columnPos == 0;
+                }
+                if (pageBreak) {
+                    ctx.pages.add(new StringBuilder());
+                }
             }
-            prevY = y;
+            ctx.prevY = y;
 
             // 이 줄이 담당하는 텍스트 구간만 현재 페이지에 기록 (문단이 페이지를 걸쳐도 분리됨)
             int start = clamp(segment.getTextStartPosition(), text.length());
@@ -108,14 +141,29 @@ public class HwpPageExtractor {
                     ? clamp(segments.get(s + 1).getTextStartPosition(), text.length())
                     : text.length();
             if (end > start) {
-                current(pages).append(text, start, end);
+                current(ctx.pages).append(text, start, end);
             }
         }
-        current(pages).append("\n");
+        current(ctx.pages).append("\n");
 
         // 표는 이 문단에 앵커링되므로 문단이 끝난 페이지에 함께 기록
-        appendTables(paragraph, pages);
-        return prevY;
+        appendTables(paragraph, ctx.pages);
+    }
+
+    /** 문단의 단 정의(ControlColumnDefine)를 반영. 있었으면 true. */
+    private boolean applyColumnDefine(Paragraph paragraph, SplitContext ctx) {
+        if (paragraph.getControlList() == null) return false;
+
+        boolean found = false;
+        for (Control control : paragraph.getControlList()) {
+            if (control instanceof ControlColumnDefine columnDefine) {
+                ctx.columnCount = Math.max(1,
+                        columnDefine.getHeader().getProperty().getColumnCount());
+                ctx.columnPos = 0;
+                found = true;
+            }
+        }
+        return found;
     }
 
     /** 문단에 붙은 표의 셀 문단을 재귀적으로(중첩 표 포함) 추출. */
