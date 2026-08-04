@@ -1,6 +1,5 @@
 package com.semojum.backend.domain.job.dto;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,8 +16,6 @@ public record JobSearchCondition(
         String search,       // 파일 이름 부분 일치 (대소문자 무시)
         List<String> statuses,
         List<String> modes,
-        LocalDate from,      // 카드 날짜(last_modified_at) 기준 기간 필터
-        LocalDate to,
         Boolean favoriteOnly,
         boolean oldestFirst,
         String cursor,       // 이전 페이지 마지막 항목 (Base64 "epochMillis|jobId")
