@@ -35,11 +35,12 @@ public class PageResultSerializer {
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
 
     /**
-     * 모드별 result 구성.
-     * - a: 이미지→텍스트  · 결과물은 text_list
-     * - b: 텍스트→점자    · 결과물은 braille_text_list, text_list는 원문(대조용, id로 1:1 매칭)
-     * - c: 이미지→점자    · 결과물은 braille_text_list, text_list는 중간 산물 원문(대조용)
-     * 이미지 정보(image_resolution·bounding_box_list)는 AI가 주는 mode a·c에만 넣는다.
+     * 모드별 result 구성 — 에디터(V3-03) 화면이 실제로 쓰는 값만 담는다.
+     * - a: 이미지→텍스트 · 결과물은 text_list. 좌측 원본은 PDF 이미지로 보여준다
+     * - b: 텍스트→점자   · 결과물은 braille_text_list. text_list는 좌측 원문 대조용(같은 id로 1:1 매칭)
+     * - c: 이미지→점자   · 결과물은 braille_text_list. 좌측이 PDF 이미지라 원문 텍스트는 필요 없음
+     *      (AI는 mode c에도 text_list를 주고 DB에도 저장되지만, 화면에 쓰이지 않아 응답에서 제외)
+     * 이미지 정보(image_resolution·bounding_box_list)는 원본이 PDF인 mode a·c에만 넣는다.
      */
     @Transactional(readOnly = true)
     public Map<String, Object> buildResult(PageResult pageResult) {
@@ -67,13 +68,14 @@ public class PageResultSerializer {
             // 결과물이므로 전체 필드
             result.put("text_list", buildTextListFull(textElements));
         } else {
-            // b·c: 원문은 대조·매칭용이라 id + contents만. 점자가 결과물
-            result.put("text_list", buildTextListSimple(textElements));
+            if ("b".equals(mode)) {
+                // 좌측 패널에 원문을 띄우고 점자와 나란히 대조한다 — id + contents만
+                result.put("text_list", buildTextListSimple(textElements));
+            }
             result.put("braille_text_list", buildBrailleListFull(brailleElements));
         }
 
-        result.put("quality_report", buildQualityReport(pageResult, criticalErrors, reviewFlags));
-        result.put("processing_meta", buildProcessingMeta(pageResult));
+        result.put("quality_report", buildQualityReport(criticalErrors, reviewFlags));
         return result;
     }
 
@@ -170,12 +172,13 @@ public class PageResultSerializer {
         return list;
     }
 
-    // proto 08-05에서 line_overflow_rate가 폐기됨(32칸 초과 판정은 조판하는 쪽 담당) → 내보내지 않는다
-    private Map<String, Object> buildQualityReport(PageResult pageResult,
-                                                   List<QualityCriticalError> criticalErrors,
+    /**
+     * 점역사에게 보여줄 오류·검토 항목만 담는다.
+     * 제외: line_overflow_rate(proto 08-05 폐기), ocr_confidence_avg(화면에 쓰지 않는 내부 지표)
+     */
+    private Map<String, Object> buildQualityReport(List<QualityCriticalError> criticalErrors,
                                                    List<QualityReviewFlag> reviewFlags) {
         Map<String, Object> report = new LinkedHashMap<>();
-        report.put("ocr_confidence_avg", pageResult.getOcrConfidenceAvg());
 
         List<Map<String, Object>> errors = new ArrayList<>();
         for (QualityCriticalError e : criticalErrors) {
@@ -198,16 +201,6 @@ public class PageResultSerializer {
         report.put("review_flags", flags);
 
         return report;
-    }
-
-    /** AI가 준 처리 메타(proto ProcessingMeta) — 저장만 하고 FE엔 안 나가던 값 */
-    private Map<String, Object> buildProcessingMeta(PageResult pageResult) {
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("processing_time_ms", pageResult.getProcessingTimeMs());
-        meta.put("pdf_layer_confidence", pageResult.getPdfLayerConfidence());
-        meta.put("routing_tier_used", pageResult.getRoutingTierUsed());
-        meta.put("scan_only", pageResult.getScanOnly());
-        return meta;
     }
 
     private static <T> List<T> orEmpty(List<T> value) {

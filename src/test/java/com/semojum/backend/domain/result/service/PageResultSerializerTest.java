@@ -74,47 +74,38 @@ class PageResultSerializerTest {
         assertEquals(List.of(), box.get("flags"), "flags는 빈 배열");
     }
 
-    /** AI는 mode c에도 원문(text_list)을 주고 BE가 저장한다 — 응답에서 누락되면 안 된다 */
+    /** mode c는 좌측이 PDF 이미지라 원문 텍스트가 화면에 안 쓰임 — AI가 줘도 응답에서 뺀다 */
     @Test
-    void mode_c도_원문_text_list를_내보낸다() {
+    void mode_c는_원문_text_list를_내보내지_않는다() {
         when(textRepo.findByPageResult(any())).thenReturn(List.of(
-                TextElement.builder().elementId("el-1").contents(List.of("원문 텍스트")).build()));
+                TextElement.builder().elementId("el-1").contents(List.of("중간 산물 원문")).build()));
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(
                 BrailleElement.builder().elementId("el-1").content(List.of("⠚⠒")).build()));
 
         Map<String, Object> result = serializer.buildResult(pageResult("c"));
 
-        List<Map<?, ?>> textList = (List<Map<?, ?>>) result.get("text_list");
-        assertEquals(1, textList.size());
-        assertEquals("el-1", textList.get(0).get("id"));
-        assertEquals(List.of("원문 텍스트"), textList.get(0).get("contents"));
-        // 점자 요소와 같은 id로 1:1 매칭된다
-        List<Map<?, ?>> brailleList = (List<Map<?, ?>>) result.get("braille_text_list");
-        assertEquals(textList.get(0).get("id"), brailleList.get(0).get("id"));
+        assertFalse(result.containsKey("text_list"), "mode c엔 text_list 없음");
+        assertTrue(result.containsKey("braille_text_list"));
+        assertTrue(result.containsKey("bounding_box_list"), "좌측 이미지 대조용 bbox는 필요");
     }
 
-    /** proto 08-05에서 폐기 — 항상 null이던 필드를 계속 내보내지 않는다 */
+    /** 화면에 쓰지 않는 지표는 빼고, 점역사에게 보여줄 항목만 남긴다 */
     @Test
-    void 폐기된_line_overflow_rate는_내보내지_않는다() {
+    void quality_report는_오류_검토항목만_담는다() {
         Map<String, Object> result = serializer.buildResult(pageResult("b"));
         Map<?, ?> report = (Map<?, ?>) result.get("quality_report");
 
-        assertFalse(report.containsKey("line_overflow_rate"));
-        assertTrue(report.containsKey("ocr_confidence_avg"));
-        assertTrue(report.containsKey("critical_errors"));
-        assertTrue(report.containsKey("review_flags"));
+        assertFalse(report.containsKey("line_overflow_rate"), "proto 08-05 폐기");
+        assertFalse(report.containsKey("ocr_confidence_avg"), "화면에 쓰지 않는 내부 지표");
+        assertTrue(report.containsKey("critical_errors"), "점역사에게 보여줄 오류");
+        assertTrue(report.containsKey("review_flags"), "점역사 검토 항목");
     }
 
-    /** AI가 주지만 저장만 하고 FE엔 안 나가던 값 */
+    /** AI가 주지만 에디터 화면에서 쓰지 않는 내부 메타 — 내보내지 않는다 */
     @Test
-    void processing_meta를_내보낸다() {
+    void processing_meta는_내보내지_않는다() {
         Map<String, Object> result = serializer.buildResult(pageResult("a"));
-        Map<?, ?> meta = (Map<?, ?>) result.get("processing_meta");
-
-        assertEquals(11, meta.get("processing_time_ms"));
-        assertEquals("ZERO", meta.get("routing_tier_used"));
-        assertEquals(0.9, meta.get("pdf_layer_confidence"));
-        assertEquals(false, meta.get("scan_only"));
+        assertFalse(result.containsKey("processing_meta"));
     }
 
     /** 이미지 정보는 AI가 주는 mode a·c에만 (mode b는 이미지 자체가 없음) */
@@ -130,7 +121,7 @@ class PageResultSerializerTest {
         assertTrue(modeB.containsKey("braille_text_list"));
     }
 
-    /** mode a는 결과물이 텍스트라 전체 필드, b·c는 원문 대조용이라 id+contents만 */
+    /** mode a는 결과물이 텍스트라 전체 필드, b는 원문 대조용이라 id+contents만 */
     @Test
     void mode별_text_list_상세도가_다르다() {
         when(textRepo.findByPageResult(any())).thenReturn(List.of(
