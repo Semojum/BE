@@ -5,7 +5,10 @@ import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.entity.Folder;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.entity.Job;
+import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.job.dto.JobSearchCondition;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +29,7 @@ public class FolderService {
     private final FolderRepository folderRepository;
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
+    private final UserService userService;
 
     @Transactional
     public FolderDto.Response create(UUID userId, FolderDto.Create request) {
@@ -120,6 +124,48 @@ public class FolderService {
     }
 
     /**
+     * 폴더 내부 화면(S2)·첫 화면(S1)이 쓰는 단일 조회 — 하위 폴더와 파일을 함께 준다.
+     *
+     * <p>{@code folderId}가 null이면 최상위 폴더 + 루트 파일이다. 화면 하나를 그리는 데
+     * 호출 두 번이 필요하던 것을 하나로 합친다. 파일 쪽 필터·정렬·커서는 목록 조회와 동일하다.
+     */
+    @Transactional(readOnly = true)
+    public FolderDto.Contents contents(UUID userId, UUID folderId, boolean favoriteOnly,
+                                       boolean oldestFirst, JobSearchCondition fileCondition) {
+        JobResponseDto.JobList files = userService.getMyJobs(userId.toString(), fileCondition);
+
+        // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
+        // (윈도우 탐색기 원칙: 필터는 그 속성을 가진 항목만 남긴다)
+        boolean fileOnlyFilter = notEmpty(fileCondition.statuses()) || notEmpty(fileCondition.modes());
+        if (fileOnlyFilter) {
+            // 폴더 유효성은 그대로 검사해야 없는 폴더가 빈 화면으로 보이지 않는다
+            requireActiveFolder(userId, folderId);
+            return new FolderDto.Contents(List.of(), files);
+        }
+
+        List<FolderDto.Item> folders = children(userId, folderId, favoriteOnly, oldestFirst).folders();
+        // 검색은 폴더 이름에도 적용한다(탐색기와 동일)
+        String keyword = fileCondition.search();
+        if (keyword != null && !keyword.isBlank()) {
+            String needle = keyword.toLowerCase().strip();
+            folders = folders.stream()
+                    .filter(f -> f.name().toLowerCase().contains(needle))
+                    .toList();
+        }
+        return new FolderDto.Contents(folders, files);
+    }
+
+    private static boolean notEmpty(List<String> values) {
+        return values != null && !values.isEmpty();
+    }
+
+    private void requireActiveFolder(UUID userId, UUID folderId) {
+        if (folderId != null && folderRepository.findActiveByIdAndUserId(folderId, userId).isEmpty()) {
+            throw new CustomException(ErrorCode.FOLDER_NOT_FOUND);
+        }
+    }
+
+    /**
      * 한 단계 자식 폴더 목록. {@code parentId}가 null이면 최상위 폴더를 준다.
      *
      * <p>폴더 내부 화면(S2)과 마이페이지 첫 화면이 쓴다 — 폴더 하나 보려고 전체 트리를
@@ -128,9 +174,7 @@ public class FolderService {
     @Transactional(readOnly = true)
     public FolderDto.Items children(UUID userId, UUID parentId, boolean favoriteOnly, boolean oldestFirst) {
         // 없는 폴더·타인 폴더·휴지통 폴더를 빈 목록으로 얼버무리지 않는다
-        if (parentId != null && folderRepository.findActiveByIdAndUserId(parentId, userId).isEmpty()) {
-            throw new CustomException(ErrorCode.FOLDER_NOT_FOUND);
-        }
+        requireActiveFolder(userId, parentId);
         List<Folder> folders = folderRepository.findActiveChildren(userId, parentId, favoriteOnly);
         Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
                 .thenComparing(f -> f.getId().toString());

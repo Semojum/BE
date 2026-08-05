@@ -235,7 +235,8 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 
 ### 마이페이지 (User)
 - `GET /api/users/jobs` — 내 Job 목록 조회 (최신순, thumbnailUrl 포함)
-- **폴더 목록 API 두 종류**: `GET /api/folders?parentId=` (한 단계 자식 — 폴더 내부 화면 S2·첫 화면. 생략 시 최상위) / `GET /api/folders/tree` (전체 중첩 트리 — 이동 모달처럼 구조 전체가 필요한 화면). S2는 이 API + `GET /api/users/jobs?folderId=`로 폴더와 파일을 각각 받는다
+- **폴더 화면 API 두 종류**: `GET /api/folders/contents?folderId=` (**폴더+파일 한 번에** — 폴더 내부 화면 S2·마이페이지 첫 화면 S1. folderId 생략 시 최상위 폴더+루트 파일. 파일 쪽 필터·정렬·커서는 목록 조회와 동일) / `GET /api/folders/tree` (전체 중첩 트리 — 이동 모달처럼 구조 전체가 필요한 화면)
+- `contents`의 **필터 규칙**(윈도우 탐색기 원칙): 상태·모드 필터가 걸리면 **폴더는 결과에서 빠진다**(폴더에 없는 속성) / 즐겨찾기·정렬은 폴더+파일 모두 적용 / 검색어는 파일명과 **폴더명 양쪽**에 적용
 - **목록 카드(`JobCard`) 필드**: `jobId·mode·status·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`. 진행률은 담지 않는다(카드는 "변환 중"만 표시, 실시간은 SSE 담당). `lastModifiedAt` 원본 시각도 담지 않는다(화면은 `displayDate`, 다음 페이지는 불투명 `nextCursor`). **`folderId`/`folderPath`는 제거 금지** — 전체보기(S9)·검색 결과의 위치 표시와 "폴더로 이동"에 쓰인다
 - **`jobs.last_edited_page`** = 마지막으로 편집한 페이지 번호(재시작 복구용 — FE는 가장 최근 수정 작업의 이 페이지로 이동). `markContentEdited(pageNo)`가 `last_modified_at`·`is_edited`와 함께 기록한다
 - **`jobs.last_modified_at` = "파일 내용이 마지막으로 바뀐 시각"** (카드 날짜·목록 정렬·커서 키·재시작 복구 기준). 점역사의 페이지 편집에서만 `Job.markContentEdited()`로 갱신하고 `is_edited`도 함께 세운다. 이름 변경·폴더 이동·휴지통 복원·즐겨찾기 토글은 **내용이 안 바뀌므로 갱신하지 않는다**(윈도우 탐색기의 '수정한 날짜'와 동일). 변환 진행 상황은 `updated_at`(StaleJobScheduler 전용)이 따로 담당 — 두 컬럼을 섞지 말 것
