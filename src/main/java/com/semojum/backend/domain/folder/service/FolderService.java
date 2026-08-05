@@ -140,7 +140,7 @@ public class FolderService {
         if (fileOnlyFilter) {
             // 폴더 유효성은 그대로 검사해야 없는 폴더가 빈 화면으로 보이지 않는다
             requireActiveFolder(userId, folderId);
-            return new FolderDto.Contents(List.of(), files.items(), files.nextCursor(), files.hasMore());
+            return new FolderDto.Contents(List.of(), files);
         }
 
         List<FolderDto.Item> folders = children(userId, folderId, favoriteOnly, oldestFirst).folders();
@@ -152,7 +152,7 @@ public class FolderService {
                     .filter(f -> f.name().toLowerCase().contains(needle))
                     .toList();
         }
-        return new FolderDto.Contents(folders, files.items(), files.nextCursor(), files.hasMore());
+        return new FolderDto.Contents(folders, files);
     }
 
     private static boolean notEmpty(List<String> values) {
