@@ -235,6 +235,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 
 ### 마이페이지 (User)
 - `GET /api/users/jobs` — **전체보기·검색(전역)**. 폴더+파일을 `{folders, files}`로 함께 반환. 조회 범위는 항상 전역이며 `folderId`·`scope` 파라미터는 없다(폴더 범위 조회는 `/api/folders/{folderId}/contents` 담당)
+- `GET /api/users/jobs/recent` — **최근 작업(파일만)**. 위치 무관 전역·최신순 고정·필터 없음. 첫 화면의 "최근 작업" 스트립(`size=5`)과 전체보기(S9)가 쓴다. 두 화면 모두 폴더를 그리지 않아 폴더를 담지 않는다
 - **탐색 vs 검색 분리**: 폴더를 타고 들어가는 화면(S1·S2)은 `/api/folders/.../contents`, 위치 무관 전역 나열(S9·검색)은 `/api/users/jobs`. **세 경로 모두 응답 구조가 `{folders, files:{items, nextCursor, hasMore}}`로 동일**해 FE가 같은 방식으로 그린다. 커서를 files 안에 두는 것은 의도적 — 커서는 파일에만 해당하고(폴더는 200개 상한이라 항상 전부 반환) 소속이 구조로 드러나야 한다
 - **폴더 화면 API 두 종류**: `GET /api/folders/{folderId}/contents` (**폴더+파일 한 번에** — 폴더 내부 화면 S2) / `GET /api/folders/contents` (최상위 폴더+루트 파일 — 마이페이지 첫 화면 S1). 파일 쪽 필터·정렬·커서는 목록 조회와 동일하고, **조회 범위는 경로가 정한다**(쿼리의 folderId·scope는 무시) / `GET /api/folders/tree` (전체 중첩 트리 — 이동 모달처럼 구조 전체가 필요한 화면)
 - **폴더 정렬 기준은 `folders.last_modified_at`**(V12) — 생성일이 아니다. **윈도우 탐색기 규칙**을 따라 직속 항목의 **추가·삭제·이름변경**에만 갱신한다. **파일 내용 편집·즐겨찾기 토글은 갱신하지 않고**(NTFS도 파일 내용만 바뀌면 상위 폴더를 건드리지 않음), **상위 폴더로 전파하지도 않는다**. 갱신은 `FolderTouch` 한곳에 모여 있으니 폴더 안 항목을 바꾸는 코드를 추가하면 여기도 호출할 것
