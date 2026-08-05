@@ -5,7 +5,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -34,6 +37,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.JOB_FILE_TOO_LARGE.getHttpStatus())
                 .body(ApiResponse.failure(ErrorCode.JOB_FILE_TOO_LARGE));
+    }
+
+    // 매핑되지 않은 경로 — 아래 catch-all이 삼키면 500으로 나가 클라이언트가 오타인지 장애인지 구분할 수 없다
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(Exception e) {
+        return ResponseEntity
+                .status(ErrorCode.COMMON_NOT_FOUND.getHttpStatus())
+                .body(ApiResponse.failure(ErrorCode.COMMON_NOT_FOUND));
+    }
+
+    // 경로는 있으나 메서드가 다른 경우 (예: PATCH만 있는 경로에 DELETE)
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity
+                .status(ErrorCode.COMMON_METHOD_NOT_ALLOWED.getHttpStatus())
+                .body(ApiResponse.failure(ErrorCode.COMMON_METHOD_NOT_ALLOWED));
     }
 
     // 그 외 예외
