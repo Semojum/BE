@@ -107,14 +107,13 @@ public class Job {
         return deletedAt != null;
     }
 
+    // 이름·위치 변경은 파일 내용이 바뀌는 게 아니므로 카드 날짜를 건드리지 않는다(윈도우 탐색기와 동일)
     public void rename(String fileName) {
         this.originalFileName = fileName;
-        this.lastModifiedAt = LocalDateTime.now();
     }
 
     public void moveToFolder(UUID folderId) {
         this.folderId = folderId;
-        this.lastModifiedAt = LocalDateTime.now();
     }
 
     // 폴더째 삭제 시 폴더와 같은 시각을 공유해야 배치 복원이 가능하므로 시각을 받는다
@@ -125,7 +124,18 @@ public class Job {
     public void restoreTo(UUID folderId) {
         this.deletedAt = null;
         this.folderId = folderId;
+    }
+
+    /**
+     * 점역사가 페이지 내용을 편집했을 때 카드 날짜를 갱신한다.
+     *
+     * <p>{@code last_modified_at}은 "파일 내용이 마지막으로 바뀐 시각"이다. 이름 변경·폴더 이동·
+     * 휴지통 복원처럼 내용이 그대로인 동작은 갱신하지 않는다. 변환 진행 상황은 별도로
+     * {@code updated_at}이 담당하므로 여기서 건드리지 않는다.
+     */
+    public void markContentEdited() {
         this.lastModifiedAt = LocalDateTime.now();
+        this.isEdited = true;
     }
 
     public void updateStatus(String status) {
