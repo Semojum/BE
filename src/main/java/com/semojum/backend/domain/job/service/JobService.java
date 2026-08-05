@@ -42,6 +42,7 @@ public class JobService {
     private final UserRepository userRepository;
     private final S3Service s3Service;
     private final RedisTemplate<String, String> redisTemplate;
+    private final com.semojum.backend.domain.job.scheduler.JobDispatcher jobDispatcher;
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
     private final com.semojum.backend.global.hwp.HwpPageExtractor hwpPageExtractor;
 
@@ -80,6 +81,7 @@ public class JobService {
         String jobId = "job_" + timestamp + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
 
         List<Page> pages = new ArrayList<>();
+        List<String> tasks = new ArrayList<>();
 
         if (mode.equals("b")) {
             // 5-b. txt/hwp → 페이지 단위로 분리하여 S3 업로드
@@ -142,19 +144,20 @@ public class JobService {
                         .build();
                 pages.add(page);
 
-                // Redis task_queue에 등록
+                // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                 String task = String.format(
-                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d}",
-                        jobId, pageNo, fullPath, mode, totalPages
+                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\"}",
+                        jobId, pageNo, fullPath, mode, totalPages, user.getId()
                 );
-                redisTemplate.opsForList().leftPush("task_queue", task);
+                tasks.add(task);
 
                 // Redis 상태 초기화
                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
             }
 
-            // 8-b. Page 일괄 저장
+            // 8-b. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
             pageRepository.saveAll(pages);
+            jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
             return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber);
 
@@ -211,19 +214,20 @@ public class JobService {
                             .build();
                     pages.add(page);
 
-                    // Redis task_queue에 등록
+                    // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                     String task = String.format(
-                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d}",
-                            jobId, i, fullPath, mode, totalPages
+                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\"}",
+                            jobId, i, fullPath, mode, totalPages, user.getId()
                     );
-                    redisTemplate.opsForList().leftPush("task_queue", task);
+                    tasks.add(task);
 
                     // Redis 상태 초기화
                     redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
                 }
 
-                // 8. Page 일괄 저장
+                // 8. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
                 pageRepository.saveAll(pages);
+                jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
                 return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber);
             }
@@ -237,6 +241,9 @@ public class JobService {
         if (redisData.isEmpty()) {
             throw new CustomException(ErrorCode.JOB_NOT_FOUND);
         }
+
+        // 상태를 폴링한다 = 사용자가 보고 있다 → FG 리스 갱신 (공정 스케줄러 우선순위)
+        jobDispatcher.touchForeground(jobId);
 
         int totalPages = Integer.parseInt((String) redisData.get("total_pages"));
         int completedPages = 0;

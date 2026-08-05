@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.job.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.semojum.backend.domain.job.scheduler.JobDispatcher;
 import com.semojum.backend.domain.result.service.ResultService;
 import com.semojum.backend.global.s3.S3Service;
 import com.semojum.backend.global.grpc.AiServerPool;
@@ -33,8 +34,7 @@ public class PageWorker {
     private final ObjectMapper objectMapper;
     private final ResultService resultService;
     private final AiServerPool aiServerPool;
-
-    private static final String TASK_QUEUE = "task_queue";
+    private final JobDispatcher jobDispatcher;
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
@@ -75,8 +75,8 @@ public class PageWorker {
         while (running) {
             String task = null;
             try {
-                // task_queue에서 작업 꺼내기
-                task = redisTemplate.opsForList().rightPop(TASK_QUEUE);
+                // 공정 스케줄러에서 다음 태스크 선택 (유저→작업 라운드로빈 + FG/BG 4:1)
+                task = jobDispatcher.poll();
                 if (task == null) {
                     Thread.sleep(100);
                     continue;
@@ -131,6 +131,7 @@ public class PageWorker {
                         try {
                             Map<String, Object> taskMap = new HashMap<>(objectMapper.readValue(task, Map.class));
                             String jobId = (String) taskMap.get("jobId");
+                            String taskUserId = (String) taskMap.get("userId");
                             int pageNo = (int) taskMap.get("pageNo");
                             int retryCount = taskMap.get("retryCount") != null ? (int) taskMap.get("retryCount") : 0;
                             int backpressureCount = taskMap.get("backpressureCount") != null ? (int) taskMap.get("backpressureCount") : 0;
@@ -142,16 +143,16 @@ public class PageWorker {
                                 taskMap.put("backpressureCount", backpressureCount + 1);
                                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
                                 Thread.sleep(300); // 해제 지연 창을 넘긴 뒤 재등록 (즉시 재등록하면 다른 워커가 바로 또 튕김)
-                                redisTemplate.opsForList().leftPush(TASK_QUEUE, objectMapper.writeValueAsString(taskMap));
+                                jobDispatcher.requeue(taskUserId, jobId, objectMapper.writeValueAsString(taskMap));
                                 log.warn("Worker-{} AI 백프레셔, 잠시 후 재등록 ({}/10): jobId={}, pageNo={}", workerId, backpressureCount + 1, jobId, pageNo);
                                 continue;
                             }
 
                             if (retryCount < 3) {
-                                // 재시도 횟수 증가 후 큐에 재등록
+                                // 재시도 횟수 증가 후 자기 작업 큐 뒤에 재등록
                                 taskMap.put("retryCount", retryCount + 1);
                                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
-                                redisTemplate.opsForList().leftPush(TASK_QUEUE, objectMapper.writeValueAsString(taskMap));
+                                jobDispatcher.requeue(taskUserId, jobId, objectMapper.writeValueAsString(taskMap));
                                 log.error("Worker-{} 오류 발생, 재시도 큐에 등록 ({}/3): {}", workerId, retryCount + 1, e.getMessage());
                             } else {
                                 // 최대 재시도 초과 → DB Page=BLOCKED + Job 종료 판정.
