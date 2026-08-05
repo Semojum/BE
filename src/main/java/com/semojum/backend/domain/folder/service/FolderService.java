@@ -208,8 +208,8 @@ public class FolderService {
     /**
      * 폴더 트리 조회.
      *
-     * <p>정렬 기준은 <b>생성일(createdAt)</b>이다 — 폴더는 파일처럼 "수정" 개념이 없어
-     * 별도의 last_modified_at을 두지 않았다. {@code favoriteOnly}면 즐겨찾기 폴더만 남긴다
+     * <p>정렬 기준은 <b>last_modified_at</b>이다(V12) — 윈도우 탐색기처럼 직속 항목의
+     * 추가·삭제·이름변경에 갱신된다. {@code favoriteOnly}면 즐겨찾기 폴더만 남긴다
      * (이때 부모가 걸러져도 자식은 루트 레벨로 올라와 보인다).
      */
     @Transactional(readOnly = true)
@@ -237,7 +237,7 @@ public class FolderService {
         List<FolderDto.TreeNode> nodes = new ArrayList<>();
         for (Folder f : byParent.getOrDefault(parentId, List.of())) {
             nodes.add(new FolderDto.TreeNode(f.getId(), f.getName(), f.isFavorite(),
-                    f.getCreatedAt(), buildNodes(f.getId(), byParent)));
+                    f.getCreatedAt(), f.getLastModifiedAt(), buildNodes(f.getId(), byParent)));
         }
         return nodes;
     }
