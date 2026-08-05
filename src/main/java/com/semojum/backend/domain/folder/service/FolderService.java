@@ -137,7 +137,9 @@ public class FolderService {
         // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
         // (윈도우 탐색기 원칙: 필터는 그 속성을 가진 항목만 남긴다)
         boolean fileOnlyFilter = notEmpty(fileCondition.statuses()) || notEmpty(fileCondition.modes());
-        if (fileOnlyFilter) {
+        // 2페이지 이후에는 폴더를 다시 보내지 않는다 — 폴더는 페이지네이션이 없어 매번
+        // 전체가 실려 오므로, 클라이언트가 그대로 누적하면 중복 표시된다
+        if (fileOnlyFilter || isPagedRequest(fileCondition)) {
             // 폴더 유효성은 그대로 검사해야 없는 폴더가 빈 화면으로 보이지 않는다
             requireActiveFolder(userId, folderId);
             return new FolderDto.Contents(List.of(), files);
@@ -157,6 +159,11 @@ public class FolderService {
 
     private static boolean notEmpty(List<String> values) {
         return values != null && !values.isEmpty();
+    }
+
+    /** 커서가 있으면 2페이지 이후 요청이다(첫 페이지는 커서 없이 온다). */
+    private static boolean isPagedRequest(JobSearchCondition condition) {
+        return condition.cursor() != null && !condition.cursor().isBlank();
     }
 
     private void requireActiveFolder(UUID userId, UUID folderId) {

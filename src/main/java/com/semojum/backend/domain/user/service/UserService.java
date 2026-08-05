@@ -57,8 +57,11 @@ public class UserService {
         JobResponseDto.JobList files = getMyJobs(userId, condition);
 
         // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
+        // 2페이지 이후에는 폴더를 다시 보내지 않는다 — 폴더는 페이지네이션이 없어 매번
+        // 전체가 실려 오므로, 클라이언트가 그대로 누적하면 중복 표시된다
         boolean fileOnlyFilter = notEmpty(condition.statuses()) || notEmpty(condition.modes());
-        if (fileOnlyFilter) return new FolderDto.Contents(List.of(), files);
+        boolean paged = condition.cursor() != null && !condition.cursor().isBlank();
+        if (fileOnlyFilter || paged) return new FolderDto.Contents(List.of(), files);
 
         List<Folder> folders = new ArrayList<>(folderRepository.findActiveForTree(uid, favoriteOnly));
         String keyword = condition.search();
