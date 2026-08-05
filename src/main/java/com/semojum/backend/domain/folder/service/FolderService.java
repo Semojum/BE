@@ -183,7 +183,8 @@ public class FolderService {
 
         List<FolderDto.Item> items = new ArrayList<>();
         for (Folder f : folders) {
-            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt()));
+            // 탐색 화면은 이미 그 폴더 안에 들어와 있으므로 위치 표시가 필요 없다
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt(), null));
         }
         return new FolderDto.Items(items);
     }
