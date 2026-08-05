@@ -45,4 +45,14 @@ public class FolderDto {
     ) {}
 
     public record Tree(List<TreeNode> folders) {}
+
+    /** 한 단계 자식 폴더 — 트리와 달리 children 없이 평면 목록으로 준다 */
+    public record Item(
+            UUID folderId,
+            String name,
+            boolean isFavorite,
+            java.time.LocalDateTime createdAt   // 폴더 정렬 기준(폴더는 수정 개념이 없음)
+    ) {}
+
+    public record Items(List<Item> folders) {}
 }

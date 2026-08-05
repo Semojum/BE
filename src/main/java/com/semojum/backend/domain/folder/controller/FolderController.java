@@ -59,6 +59,18 @@ public class FolderController {
         return ApiResponse.success(Map.of("folderId", folderId.toString(), "isFavorite", isFavorite));
     }
 
+    // 폴더 내부 화면(S2)·첫 화면 목록 — parentId 생략 시 최상위 폴더
+    @GetMapping
+    public ApiResponse<FolderDto.Items> children(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false) UUID parentId,
+            @RequestParam(required = false) Boolean favorite,
+            @RequestParam(required = false, defaultValue = "latest") String sort) {
+        UUID userId = UUID.fromString(userDetails.getUsername());
+        return ApiResponse.success(folderService.children(userId, parentId,
+                Boolean.TRUE.equals(favorite), "oldest".equalsIgnoreCase(sort)));
+    }
+
     @GetMapping("/tree")
     public ApiResponse<FolderDto.Tree> tree(
             @AuthenticationPrincipal UserDetails userDetails,
