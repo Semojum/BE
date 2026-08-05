@@ -32,8 +32,8 @@ dependencies {
 	testImplementation 'org.testcontainers:postgresql'
 	testImplementation 'org.testcontainers:junit-jupiter'
 
-	// gRPC
-	implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
+	// gRPC — AiServerPool이 채널을 직접 생성하므로 starter 대신 전송체만 사용
+	implementation 'io.grpc:grpc-netty-shaded:1.63.0'
 	implementation 'io.grpc:grpc-protobuf:1.63.0'
 	implementation 'io.grpc:grpc-stub:1.63.0'
 	// BrailleResponse → JSON 직렬화(JsonFormat). 기존엔 google-cloud-storage에 묻어오던 의존성
