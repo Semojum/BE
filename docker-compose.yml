@@ -23,6 +23,10 @@ services:
       - ADMIN_API_KEY=${ADMIN_API_KEY}
       - S3_BUCKET=${S3_BUCKET}
       - AWS_REGION=${AWS_REGION}
+      # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.
+      # UTC로 두면 LocalDateTime.now()가 9시간 이른 값을 써서 "어제/오늘" 판정이 어긋난다.
+      - TZ=Asia/Seoul
+      - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Seoul
     depends_on:
       - redis
     volumes:

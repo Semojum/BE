@@ -14,6 +14,7 @@ import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.s3.S3Service;
+import com.semojum.backend.global.util.RelativeDateFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Slf4j
@@ -56,30 +58,25 @@ public class UserService {
 
         Map<UUID, String> folderPaths = buildFolderPaths(uid, slice.items());
 
+        LocalDateTime now = LocalDateTime.now();
         List<JobResponseDto.JobCard> cards = new ArrayList<>();
         for (Job job : slice.items()) {
-            cards.add(toCard(job, folderPaths));
+            cards.add(toCard(job, folderPaths, now));
         }
         return new JobResponseDto.JobList(cards, slice.nextCursor(), slice.hasMore());
     }
 
-    private JobResponseDto.JobCard toCard(Job job, Map<UUID, String> folderPaths) {
+    private JobResponseDto.JobCard toCard(Job job, Map<UUID, String> folderPaths, LocalDateTime now) {
         return new JobResponseDto.JobCard(
                 job.getId(),
                 job.getMode(),
                 job.getStatus(),
-                job.getTotalPages(),
-                job.getFailedPages(),
+                progressOf(job),
                 job.getOriginalFileName(),
                 job.getThumbnailUrl(),
-                job.getStartedAt(),
-                job.getFinishedAt(),
+                RelativeDateFormatter.format(job.getLastModifiedAt(), now),
                 job.getLastModifiedAt(),
-                job.getLastEditedPage(),
-                job.isEdited(),
                 job.isFavorite(),
-                job.isInsertPageNumber(),
-                progressOf(job),
                 job.getFolderId() != null ? job.getFolderId().toString() : null,
                 job.getFolderId() != null ? folderPaths.get(job.getFolderId()) : null
         );
@@ -131,13 +128,21 @@ public class UserService {
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 진행 중인 Job 목록.
     // FE는 이 목록으로 각 Job의 status를 조회하고 SSE를 다시 연결한다(탭 2개 이상 대응).
     @Transactional(readOnly = true)
-    public List<JobResponseDto.JobCard> getActiveJobs(String userId) {
+    public List<JobResponseDto.ActiveJob> getActiveJobs(String userId) {
         UUID uid = UUID.fromString(userId);
         List<Job> jobs = jobRepository.findActiveByUserIdAndStatusIn(uid, List.of("PENDING", "IN_PROGRESS"));
-        Map<UUID, String> folderPaths = buildFolderPaths(uid, jobs);
-        List<JobResponseDto.JobCard> result = new ArrayList<>();
+        List<JobResponseDto.ActiveJob> result = new ArrayList<>();
         for (Job job : jobs) {
-            result.add(toCard(job, folderPaths));
+            result.add(new JobResponseDto.ActiveJob(
+                    job.getId(),
+                    job.getMode(),
+                    job.getStatus(),
+                    job.getTotalPages(),
+                    progressOf(job),
+                    job.getOriginalFileName(),
+                    job.getLastModifiedAt(),
+                    job.getLastEditedPage()
+            ));
         }
         return result;
     }
