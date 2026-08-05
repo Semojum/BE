@@ -71,6 +71,7 @@ class FolderContentsTest {
 
         assertEquals(2, result.folders().size());
         assertNotNull(result.files());
+        assertFalse(result.hasMore());
     }
 
     @Test
@@ -81,7 +82,7 @@ class FolderContentsTest {
                 userId, null, false, false, cond(List.of("COMPLETED"), null, null));
 
         assertTrue(result.folders().isEmpty(), "폴더에는 상태 속성이 없으므로 결과에서 빠져야 한다");
-        assertNotNull(result.files());
+        assertNotNull(result.files(), "파일 목록은 폴더와 같은 깊이에 있다");
     }
 
     @Test
