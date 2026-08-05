@@ -51,8 +51,9 @@ public class FolderDto {
             UUID folderId,
             String name,
             boolean isFavorite,
-            java.time.LocalDateTime createdAt,  // 폴더 정렬 기준(폴더는 수정 개념이 없음)
-            String folderPath                   // 상위 경로. 최상위면 null (전체보기·검색의 위치 표시용)
+            java.time.LocalDateTime createdAt,
+            java.time.LocalDateTime lastModifiedAt,  // 폴더 정렬 기준 — 안의 항목이 바뀐 시각
+            String folderPath                        // 상위 경로. 최상위면 null (전체보기·검색의 위치 표시용)
     ) {}
 
     public record Items(List<Item> folders) {}

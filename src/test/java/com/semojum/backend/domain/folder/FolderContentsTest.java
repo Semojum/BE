@@ -40,7 +40,8 @@ class FolderContentsTest {
                 folderRepository,
                 mock(com.semojum.backend.domain.job.repository.JobRepository.class),
                 mock(com.semojum.backend.domain.auth.repository.UserRepository.class),
-                userService);
+                userService,
+                new com.semojum.backend.domain.folder.service.FolderTouch(folderRepository));
 
         when(userService.getMyJobs(anyString(), any())).thenReturn(emptyFiles);
     }
@@ -54,6 +55,7 @@ class FolderContentsTest {
             when(f.getName()).thenReturn(name);
             when(f.isFavorite()).thenReturn(false);
             when(f.getCreatedAt()).thenReturn(LocalDateTime.now());
+            when(f.getLastModifiedAt()).thenReturn(LocalDateTime.now());
             folders.add(f);
         }
         when(folderRepository.findActiveChildren(any(), any(), anyBoolean())).thenReturn(folders);

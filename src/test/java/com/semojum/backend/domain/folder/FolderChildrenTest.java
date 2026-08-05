@@ -5,6 +5,7 @@ import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.folder.service.FolderService;
+import com.semojum.backend.domain.folder.service.FolderTouch;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.global.exception.CustomException;
@@ -55,7 +56,8 @@ class FolderChildrenTest {
 
     @BeforeEach
     void setUp() {
-        folderService = new FolderService(folderRepository, jobRepository, userRepository, mock(UserService.class));
+        folderService = new FolderService(folderRepository, jobRepository, userRepository, mock(UserService.class),
+                new FolderTouch(folderRepository));
         user = userRepository.save(User.builder()
                 .loginId("children-user-" + SEQ.incrementAndGet())
                 .build());
@@ -86,8 +88,12 @@ class FolderChildrenTest {
         mkFolder("수학교재", null);
         mkFolder("1학기", root1);   // 하위 폴더는 최상위 목록에 없어야 한다
 
+        // 정렬 기준은 lastModifiedAt이고 "1학기" 생성이 상위("국어교재")를 갱신하므로
+        // 순서는 이 테스트의 관심사가 아니다 — 최상위만 나오는지만 본다
         List<String> result = names(folderService.children(user.getId(), null, false, true));
-        assertEquals(List.of("국어교재", "수학교재"), result);
+        assertEquals(2, result.size());
+        assertTrue(result.containsAll(List.of("국어교재", "수학교재")));
+        assertFalse(result.contains("1학기"), "하위 폴더는 최상위 목록에 없어야 한다");
     }
 
     @Test

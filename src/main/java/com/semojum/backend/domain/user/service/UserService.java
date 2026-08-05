@@ -69,7 +69,7 @@ public class UserService {
             String needle = keyword.toLowerCase().strip();
             folders.removeIf(f -> !f.getName().toLowerCase().contains(needle));
         }
-        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+        Comparator<Folder> order = Comparator.comparing(Folder::getLastModifiedAt)
                 .thenComparing(f -> f.getId().toString());
         if (!oldestFirst) order = order.reversed();
         folders.sort(order);
@@ -79,7 +79,8 @@ public class UserService {
         for (Folder f : folders) {
             // 폴더의 "위치"는 상위 경로다 — 최상위면 null
             String parentPath = f.getParentFolderId() != null ? paths.get(f.getParentFolderId()) : null;
-            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt(), parentPath));
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(),
+                    f.getCreatedAt(), f.getLastModifiedAt(), parentPath));
         }
         return new FolderDto.Contents(items, files);
     }
