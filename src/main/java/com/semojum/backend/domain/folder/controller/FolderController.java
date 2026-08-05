@@ -61,24 +61,38 @@ public class FolderController {
     }
 
     /**
-     * 폴더 내부 화면(S2)·마이페이지 첫 화면(S1) — 하위 폴더와 파일을 한 번에 준다.
+     * 폴더 내부 화면(S2) — 그 폴더의 하위 폴더와 파일을 한 번에 준다.
      *
-     * <p>{@code folderId}를 생략하면 최상위 폴더 + 루트 파일이다. 파일 쪽 필터·정렬·커서
-     * 파라미터는 목록 조회({@code GET /api/users/jobs})와 동일하게 받는다.
+     * <p>파일 쪽 필터·정렬·커서 파라미터는 목록 조회({@code GET /api/users/jobs})와 동일하다.
      */
-    @GetMapping("/contents")
+    @GetMapping("/{folderId}/contents")
     public ApiResponse<FolderDto.Contents> contents(
             @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable UUID folderId,
             @ModelAttribute JobSearchRequest request) {
+        return ApiResponse.success(loadContents(userDetails, folderId, request));
+    }
+
+    /** 마이페이지 첫 화면(S1) — 최상위 폴더 + 루트 파일. 위와 같은 응답 구조다. */
+    @GetMapping("/contents")
+    public ApiResponse<FolderDto.Contents> rootContents(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @ModelAttribute JobSearchRequest request) {
+        return ApiResponse.success(loadContents(userDetails, null, request));
+    }
+
+    private FolderDto.Contents loadContents(UserDetails userDetails, UUID folderId,
+                                            JobSearchRequest request) {
         UUID userId = UUID.fromString(userDetails.getUsername());
-        // 파일은 이 폴더 안만 본다 — 전역 조회(scope=all)는 전체보기·검색 화면 몫이다
+        // 조회 범위는 경로가 정한다 — 쿼리로 들어온 folderId·scope는 무시한다
         request.setScope(null);
-        return ApiResponse.success(folderService.contents(
+        request.setFolderId(folderId);
+        return folderService.contents(
                 userId,
-                request.getFolderId(),
+                folderId,
                 Boolean.TRUE.equals(request.getFavorite()),
                 "oldest".equalsIgnoreCase(request.getSort()),
-                request.toCondition()));
+                request.toCondition());
     }
 
     @GetMapping("/tree")
