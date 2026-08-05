@@ -34,8 +34,13 @@ public class JobQueryRepositoryImpl implements JobQueryRepository {
         Map<String, Object> params = new HashMap<>();
         params.put("userId", userId);
 
-        // 범위: 전역 / 특정 폴더 / 루트
-        if (!condition.allScope()) {
+        // 범위: 전역 / 하위 폴더 전체(검색) / 특정 폴더 / 루트
+        if (condition.folderIds() != null) {
+            // 검색은 현재 위치 아래 전체를 훑는다 — 빈 목록이면 매칭 결과도 없어야 한다
+            if (condition.folderIds().isEmpty()) return List.of();
+            jpql.append(" AND j.folderId IN :folderIds");
+            params.put("folderIds", condition.folderIds());
+        } else if (!condition.allScope()) {
             if (condition.folderId() != null) {
                 jpql.append(" AND j.folderId = :folderId");
                 params.put("folderId", condition.folderId());

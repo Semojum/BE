@@ -241,6 +241,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - **폴더 정렬 기준은 `folders.last_modified_at`**(V12) — 생성일이 아니다. **윈도우 탐색기 규칙**을 따라 직속 항목의 **추가·삭제·이름변경**에만 갱신한다. **파일 내용 편집·즐겨찾기 토글은 갱신하지 않고**(NTFS도 파일 내용만 바뀌면 상위 폴더를 건드리지 않음), **상위 폴더로 전파하지도 않는다**. 갱신은 `FolderTouch` 한곳에 모여 있으니 폴더 안 항목을 바꾸는 코드를 추가하면 여기도 호출할 것
   - ⚠️ V12 SQL 파일 주석에는 "내용 편집도 포함"이라고 적혀 있으나 **현재 동작과 다르다**. 이미 적용된 마이그레이션이라 checksum 때문에 수정할 수 없어 남겨둔 것 — 기준은 이 문서와 `Folder.touchModified()` 주석이다
 - **커서(2페이지 이후) 요청에는 `folders`가 빈 배열**로 나간다 — 폴더는 페이지네이션이 없어 매번 전체가 실려 오므로, FE가 그대로 누적하면 폴더가 중복 표시된다. 세 경로 모두 동일
+- **검색은 현재 위치 "아래 전체"를 훑는다**(깊이 무관, 탐색기와 동일). 루트에서는 전역, 폴더 안에서는 그 폴더의 **서브트리 전체**(손자 이하 포함, 자기 자신은 제외). 검색이 아닐 때는 한 층만. 파일 범위는 `JobSearchCondition.withFolderScope(서브트리 id들)`로 넘어간다
 - `contents`의 **필터 규칙**(윈도우 탐색기 원칙): 상태·모드 필터가 걸리면 **폴더는 결과에서 빠진다**(폴더에 없는 속성) / 즐겨찾기·정렬은 폴더+파일 모두 적용 / 검색어는 파일명과 **폴더명 양쪽**에 적용
 - **목록 카드(`JobCard`) 필드**: `jobId·mode·status·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`. 진행률은 담지 않는다(카드는 "변환 중"만 표시, 실시간은 SSE 담당). `lastModifiedAt` 원본 시각도 담지 않는다(화면은 `displayDate`, 다음 페이지는 불투명 `nextCursor`). **`folderId`/`folderPath`는 제거 금지** — 전체보기(S9)·검색 결과의 위치 표시와 "폴더로 이동"에 쓰인다
 - **`jobs.last_edited_page`** = 마지막으로 편집한 페이지 번호(재시작 복구용 — FE는 가장 최근 수정 작업의 이 페이지로 이동). `markContentEdited(pageNo)`가 `last_modified_at`·`is_edited`와 함께 기록한다

@@ -7,6 +7,8 @@ import com.semojum.backend.domain.folder.entity.Folder;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.folder.service.FolderService;
 import com.semojum.backend.domain.folder.service.FolderTouch;
+import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.job.dto.JobSearchCondition;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.user.service.UserService;
@@ -70,8 +72,12 @@ class FolderTrashIntegrationTest {
     @BeforeEach
     void setUp() {
         FolderTouch folderTouch = new FolderTouch(folderRepository);
+        UserService userService = mock(UserService.class);
+        // 이 테스트는 폴더 쪽만 본다 — 파일 목록은 빈 값으로 고정
+        when(userService.getMyJobs(anyString(), any()))
+                .thenReturn(new JobResponseDto.JobList(List.of(), null, false));
         folderService = new FolderService(folderRepository, jobRepository, userRepository,
-                mock(UserService.class), folderTouch);
+                userService, folderTouch);
         jobManageService = new JobManageService(jobRepository, folderRepository, folderTouch);
         s3Service = mock(S3Service.class);
         trashService = new TrashService(folderRepository, jobRepository, purgeRepository, s3Service, folderTouch);
@@ -118,6 +124,69 @@ class FolderTrashIntegrationTest {
     }
 
     // ===== 폴더 규칙 =====
+
+    // ===== 검색 범위 =====
+
+    private JobSearchCondition searchCond(String keyword) {
+        return new JobSearchCondition(null, false, keyword, null, null, null, false, null, 30);
+    }
+
+    private List<String> searchFolderNames(UUID folderId, String keyword) {
+        return folderService.contents(user.getId(), folderId, false, false, searchCond(keyword))
+                .folders().stream().map(FolderDto.Item::name).toList();
+    }
+
+    @Test
+    void 폴더_안에서_검색하면_모든_깊이의_하위_폴더가_나온다() {
+        UUID root = createFolder("국어교재", null);
+        UUID child = createFolder("1학기 국어", root);
+        createFolder("1단원 국어", child);          // 손자
+        createFolder("2학기 수학", root);
+        createFolder("남의가지 국어", null);          // 다른 가지 — 나오면 안 된다
+
+        List<String> found = searchFolderNames(root, "국어");
+
+        assertEquals(2, found.size(), "자식·손자만: " + found);
+        assertTrue(found.containsAll(List.of("1학기 국어", "1단원 국어")));
+        assertFalse(found.contains("국어교재"), "검색 위치인 자기 자신은 제외");
+        assertFalse(found.contains("남의가지 국어"), "다른 가지는 제외");
+    }
+
+    @Test
+    void 검색이_아니면_한_층만_본다() {
+        UUID root = createFolder("국어교재", null);
+        UUID child = createFolder("1학기", root);
+        createFolder("1단원", child);
+
+        List<String> found = folderService.contents(user.getId(), root, false, false,
+                        new JobSearchCondition(null, false, null, null, null, null, false, null, 30))
+                .folders().stream().map(FolderDto.Item::name).toList();
+
+        assertEquals(List.of("1학기"), found, "손자는 포함되지 않는다");
+    }
+
+    @Test
+    void 루트에서_검색하면_전_범위를_본다() {
+        UUID root = createFolder("국어교재", null);
+        UUID child = createFolder("1학기 국어", root);
+        createFolder("1단원 국어", child);
+
+        List<String> found = searchFolderNames(null, "국어");
+
+        assertEquals(3, found.size(), "깊이 무관 전부: " + found);
+        assertTrue(found.contains("국어교재"));
+    }
+
+    @Test
+    void 검색_결과의_폴더에는_위치가_붙는다() {
+        UUID root = createFolder("국어교재", null);
+        createFolder("1학기 국어", root);
+
+        FolderDto.Item item = folderService.contents(user.getId(), root, false, false, searchCond("1학기"))
+                .folders().get(0);
+
+        assertEquals("국어교재", item.folderPath(), "같은 이름의 폴더를 구분하려면 위치가 필요하다");
+    }
 
     // ===== 폴더 "수정한 날짜" =====
 

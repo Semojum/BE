@@ -59,6 +59,8 @@ class FolderContentsTest {
             folders.add(f);
         }
         when(folderRepository.findActiveChildren(any(), any(), anyBoolean())).thenReturn(folders);
+        // 검색은 다른 경로(서브트리 전체 조회)를 탄다 — 그쪽도 같은 폴더들을 보게 한다
+        when(folderRepository.findAllActiveByUserId(any())).thenReturn(folders);
     }
 
     private JobSearchCondition cond(List<String> statuses, List<String> modes, String search) {
@@ -131,5 +133,16 @@ class FolderContentsTest {
         FolderDto.Contents result = folderService.contents(userId, null, false, false, cond(null, null, "국어"));
 
         assertEquals(List.of("국어교재"), result.folders().stream().map(FolderDto.Item::name).toList());
+    }
+
+    @Test
+    void 검색은_한_층이_아니라_전체를_훑는_경로를_탄다() {
+        givenRootFolders("국어교재");
+
+        folderService.contents(userId, null, false, false, cond(null, null, "국어"));
+
+        // 검색일 때는 한 단계 자식 조회가 아니라 서브트리 전체 조회를 써야 한다
+        verify(folderRepository).findAllActiveByUserId(any());
+        verify(folderRepository, never()).findActiveChildren(any(), any(), anyBoolean());
     }
 }

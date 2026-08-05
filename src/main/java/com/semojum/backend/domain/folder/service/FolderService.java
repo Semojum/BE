@@ -140,7 +140,16 @@ public class FolderService {
     @Transactional(readOnly = true)
     public FolderDto.Contents contents(UUID userId, UUID folderId, boolean favoriteOnly,
                                        boolean oldestFirst, JobSearchCondition fileCondition) {
-        JobResponseDto.JobList files = userService.getMyJobs(userId.toString(), fileCondition);
+        String keyword = fileCondition.search();
+        boolean searching = keyword != null && !keyword.isBlank();
+
+        // 검색은 현재 위치 "아래 전체"를 훑는다(깊이 무관, 탐색기와 동일).
+        // 루트에서는 전역이 되고, 폴더 안에서는 그 폴더의 서브트리가 범위다.
+        JobSearchCondition effective = fileCondition;
+        if (searching && folderId != null) {
+            effective = fileCondition.withFolderScope(collectSubtreeIds(folderId, activeFolderMap(userId)));
+        }
+        JobResponseDto.JobList files = userService.getMyJobs(userId.toString(), effective);
 
         // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
         // (윈도우 탐색기 원칙: 필터는 그 속성을 가진 항목만 남긴다)
@@ -153,16 +162,48 @@ public class FolderService {
             return new FolderDto.Contents(List.of(), files);
         }
 
-        List<FolderDto.Item> folders = children(userId, folderId, favoriteOnly, oldestFirst).folders();
-        // 검색은 폴더 이름에도 적용한다(탐색기와 동일)
-        String keyword = fileCondition.search();
-        if (keyword != null && !keyword.isBlank()) {
-            String needle = keyword.toLowerCase().strip();
-            folders = folders.stream()
-                    .filter(f -> f.name().toLowerCase().contains(needle))
-                    .toList();
-        }
+        List<FolderDto.Item> folders = searching
+                ? searchFolders(userId, folderId, favoriteOnly, oldestFirst, keyword)
+                : children(userId, folderId, favoriteOnly, oldestFirst).folders();
         return new FolderDto.Contents(folders, files);
+    }
+
+    /** 검색용 폴더 조회 — 현재 위치 아래 <b>모든 깊이</b>의 폴더를 이름으로 거른다. */
+    private List<FolderDto.Item> searchFolders(UUID userId, UUID folderId, boolean favoriteOnly,
+                                               boolean oldestFirst, String keyword) {
+        requireActiveFolder(userId, folderId);
+        Map<UUID, Folder> active = activeFolderMap(userId);
+
+        List<Folder> candidates;
+        if (folderId == null) {
+            candidates = new ArrayList<>(active.values());          // 루트 검색 = 전역
+        } else {
+            // 서브트리에서 자기 자신은 뺀다 — 이미 그 폴더 안에 들어와 있다
+            candidates = new ArrayList<>();
+            for (UUID id : collectSubtreeIds(folderId, active)) {
+                if (!id.equals(folderId)) candidates.add(active.get(id));
+            }
+        }
+
+        String needle = keyword.toLowerCase().strip();
+        candidates.removeIf(f -> !f.getName().toLowerCase().contains(needle));
+        if (favoriteOnly) candidates.removeIf(f -> !f.isFavorite());
+
+        Comparator<Folder> order = Comparator.comparing(Folder::getLastModifiedAt)
+                .thenComparing(f -> f.getId().toString());
+        if (!oldestFirst) order = order.reversed();
+        candidates.sort(order);
+
+        // 검색 결과는 위치를 보여줘야 같은 이름의 폴더를 구분할 수 있다
+        Map<UUID, String> paths = FolderPaths.buildAll(active);
+
+        List<FolderDto.Item> items = new ArrayList<>();
+        for (Folder f : candidates) {
+            String parentPath = f.getParentFolderId() != null ? paths.get(f.getParentFolderId()) : null;
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(),
+                    f.getCreatedAt(), f.getLastModifiedAt(), parentPath));
+        }
+        return items;
     }
 
     private static boolean notEmpty(List<String> values) {
