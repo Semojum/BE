@@ -173,6 +173,22 @@ class FolderTrashIntegrationTest {
     }
 
     @Test
+    void 파일_내용_편집은_폴더를_갱신하지_않는다() {
+        UUID folderId = createFolder("교재", null);
+        Job job = createJob("edit", "COMPLETED", folderId);
+        LocalDateTime before = modifiedAt(folderId);
+
+        // 점역사가 페이지 내용을 고침 — 파일의 날짜만 바뀐다
+        jobRepository.findById(job.getId()).orElseThrow().markContentEdited(1);
+        em.flush(); em.clear();
+
+        assertEquals(before, modifiedAt(folderId),
+                "윈도우 탐색기와 동일 — 파일 내용만 바뀌면 상위 폴더는 건드리지 않는다");
+        assertTrue(jobRepository.findById(job.getId()).orElseThrow().isEdited(),
+                "파일 쪽에는 편집 이력이 남는다");
+    }
+
+    @Test
     void 하위_폴더_안의_변화는_상위로_전파되지_않는다() {
         UUID parent = createFolder("상위", null);
         UUID child = createFolder("하위", parent);
