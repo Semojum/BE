@@ -1,17 +1,15 @@
 syntax = "proto3";
 
 package braille;
-
 option java_package = "com.semojum.backend.grpc";
 option java_outer_classname = "BrailleServiceProto";
 option java_multiple_files = true;
 
-// V3.0.0 (2026-08-04) — AI팀 확정본. 노션 "braille_service.proto" 페이지 08.04 (V3.0.0) 기준.
 service BrailleService {
   rpc ProcessPage (BrailleRequest) returns (BrailleResponse);
 }
 
-// ── 요청 (BE → AI) ──────────────────────────────────────────────
+// ── 요청 (BE → AI) ──────────────────────────────────────
 message BrailleRequest {
   string job_id      = 1;
   int32  page_no     = 2;
@@ -21,17 +19,18 @@ message BrailleRequest {
   string source_text = 6;   // mode b 전용: 점역할 원본 텍스트
 }
 
-// ── 서브메시지 ───────────────────────────────────────────────────
+// ── 공통 서브메시지 ──────────────────────────────────────
+
 message BoundingBox {
-  string          id            = 1;
-  int32           x             = 2;
-  int32           y             = 3;
-  int32           x2            = 4;
-  int32           y2            = 5;
-  string          type          = 6;   // text|title|caption|table|image|formula|list_item|header_footer|page_number|footnote|sidebar
-  int32           heading_level = 7;   // 0 = null
-  string          caption_ref   = 8;   // "" = null (참조하는 element_id)
-  repeated string flags         = 9;
+  string id            = 1;
+  int32  x             = 2;
+  int32  y             = 3;
+  int32  x2            = 4;
+  int32  y2            = 5;
+  string type          = 6;   // 11종: text|title|caption|table|image|formula|list_item|header_footer|page_number|footnote|sidebar
+  int32  heading_level = 7;   // 0 = null
+  string caption_ref   = 8;   // "" = null (참조하는 element_id)
+  repeated string flags = 9;
 }
 
 message RuleTrail {
@@ -41,12 +40,12 @@ message RuleTrail {
   string title    = 4;
   string excerpt  = 5;
   string priority = 6;   // "primary" | "secondary"
-  // 요소-로컬 좌표(조판 후) — AI 서버가 완성, FE/BE 계산 없음.
+  // ── 요소-로컬 좌표(조판 후) — AI 서버가 완성, FE/BE 계산 없음 ──────────────
   // 좌표계 = 이 블록의 contents 배열. FE는 contents[line_no][col_start:col_end]만 하이라이트.
-  int32  line_no   = 7;  // 규정이 적용된 줄 (contents 인덱스, 0-based. -1 = 요소 전체)
-  int32  col_start = 8;  // 그 줄 안의 시작 칸 (0-based)
-  int32  col_end   = 9;  // 끝 칸 (미포함)
-  string tag       = 10; // 변환 종류 (number_sign / contraction / symbol / line_wrap ...)
+  int32  line_no   = 7;  // contents 줄 인덱스(0-based). -1 = 요소 전체(블록 전체 하이라이트)
+  int32  col_start = 8;  // 그 줄 안의 시작 칸(0-based)
+  int32  col_end   = 9;  // 끝 칸(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
+  string tag       = 10; // 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
 }
 
 message TactileGraphic {
@@ -56,22 +55,22 @@ message TactileGraphic {
 }
 
 message CriticalError {
-  string type       = 1;  // C1~C9 (C9 = 무거운 페이지 추출 중단 → 폴백)
+  string type       = 1;   // C1~C7
   string element_id = 2;
   string message    = 3;
 }
 
 message ReviewFlag {
-  string type       = 1;  // R1~R12
+  string type       = 1;   // R1~R12
   string element_id = 2;
   string message    = 3;
 }
 
 message QualityReport {
-  float                   ocr_confidence_avg  = 1;
-  float                   line_overflow_rate  = 2;
-  repeated CriticalError  critical_errors     = 3;
-  repeated ReviewFlag     review_flags        = 4;
+  float  ocr_confidence_avg  = 1;
+  float  line_overflow_rate  = 2;
+  repeated CriticalError critical_errors = 3;
+  repeated ReviewFlag    review_flags    = 4;
 }
 
 message ProcessingMeta {
@@ -81,36 +80,40 @@ message ProcessingMeta {
   bool   scan_only            = 4;
 }
 
-// 시각 요소(표·차트·이미지·만화)의 대체 점역 초안 1개.
+// 시각 요소(표·차트·이미지·만화) 점역사주 복수 초안 1개 — 단계4 T4-2.
 // 같은 자료를 다른 방식으로 점역한 대안. 점역사가 에디터에서 골라 쓴다.
+// (표·차트 = 레이아웃/표현 차이, 이미지·만화 = 설명 초점 차이. 셀 값·내부 텍스트·수치는 모든 초안 동일.)
 message Draft {
-  string          text     = 1;   // 초안 원문(한글). 점역사가 읽고 비교하는 텍스트.
-  repeated string contents = 2;   // 이 초안의 점자 줄 목록(32칸). 선택 시 이 값이 본문 점자가 됨.
-  string          label    = 3;   // 피커 표시명 ("격자형" / "행↔열 전치" / "요약" ...)
+  string text     = 1;            // 점역사주 원문(한글). 점역사가 읽고 비교하는 텍스트.
+  repeated string contents = 2;   // 이 초안의 점자 줄 목록(32칸 단위). 선택 시 이 값이 본문 점자가 됨.
+  string label    = 3;            // 피커에 표시할 방식명. 예: "격자형"/"행↔열 전치"/"위치 중심"/"요약"
 }
 
 message TextElement {
-  string          id                 = 1;
-  string          type               = 2;
-  int32           order              = 3;
-  int32           heading_level      = 4;
-  float           ocr_confidence     = 5;
-  string          tn_text            = 6;
-  bool            is_blocked         = 7;
-  string          render_mode        = 8;
-  string          visual_subtype     = 9;
-  float           subtype_confidence = 10;
-  string          latex_string       = 11;  // formula 전용
-  TactileGraphic  tactile            = 12;  // image/table 전용
+  string id                 = 1;
+  string type               = 2;
+  int32  order              = 3;
+  int32  heading_level      = 4;
+  float  ocr_confidence     = 5;
+  string tn_text            = 6;
+  bool   is_blocked         = 7;
+  string render_mode        = 8;
+  string visual_subtype     = 9;
+  float  subtype_confidence = 10;
+  string latex_string       = 11;  // formula 전용
+  TactileGraphic tactile    = 12;  // image/table 전용 (단계 3+)
   // 기본(선택) 점자 줄 목록. 모든 블록 공통(텍스트·수식은 이 필드만 사용).
   // 시각 블록은 drafts[selected_idx].contents 와 같은 값(중복) → BE는 타입 구분 없이 항상 이걸로 렌더.
-  repeated string contents           = 13;
-  repeated RuleTrail rule_trail      = 14;  // 이 블록에 적용된 점자 규정 목록 (선택 초안 기준)
-  repeated Draft  drafts             = 15;  // 시각 요소 복수 초안 (텍스트·수식은 빈 배열)
-  int32           selected_idx       = 16;  // 기본 선택 초안 (0-based). contents == drafts[selected_idx].contents
+  repeated string contents      = 13;
+  repeated RuleTrail rule_trail = 14;  // 이 블록에 적용된 점자 규정 목록 (선택 초안 기준)
+  // ── 시각 요소(표·차트·이미지·만화) 복수 초안 — 단계4 T4-2 ──
+  // 점역사가 에디터에서 고를 수 있는 대체 초안들. 텍스트·수식 블록은 비어 있음([]).
+  // 피커를 지원하는 FE만 추가로 읽으면 됨(기본 렌더는 위 contents로 충분).
+  repeated Draft drafts     = 15;
+  int32  selected_idx       = 16;  // 기본 초안 번호(0-based). contents == drafts[selected_idx].contents
 }
 
-// ── 응답 (AI → BE) ──────────────────────────────────────────────
+// ── 응답 (AI → BE) ──────────────────────────────────────
 message BrailleResponse {
   string job_id      = 1;
   string status      = 2;   // COMPLETED | NEEDS_REVIEW | BLOCKED
@@ -119,13 +122,15 @@ message BrailleResponse {
   ProcessingMeta processing_meta = 4;
 
   // mode a, c
-  string                  image_resolution    = 5;   // "2480x3505" 형식 (구 image_width/height 대체)
-  repeated BoundingBox    bounding_box_list   = 6;
+  int32  image_width              = 5;
+  int32  image_height             = 6;
+  repeated BoundingBox bounding_box_list = 7;
 
-  repeated TextElement    text_list           = 7;   // mode a, c (mode b는 braille_text_list만 — 원본은 BE가 보낸 source_text)
+  // mode a, b, c
+  repeated TextElement text_list  = 8;
 
   // mode b, c
-  repeated TextElement    braille_text_list   = 8;
+  repeated TextElement braille_text_list = 9;
 
-  QualityReport quality_report = 9;
+  QualityReport quality_report = 10;
 }

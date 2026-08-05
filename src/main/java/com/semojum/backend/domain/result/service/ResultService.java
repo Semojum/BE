@@ -72,16 +72,6 @@ public class ResultService {
             scanOnly = meta.getScanOnly();
         }
 
-        // 이미지 해상도 파싱 — proto V3.0.0부터 "2480x3505" 문자열로 옴 (mode b는 빈 문자열).
-        // DB 컬럼(image_width/height)과 FE 응답 형태는 기존 그대로 유지한다.
-        int[] resolution = parseImageResolution(response.getImageResolution());
-        if (resolution == null && !response.getImageResolution().isEmpty()) {
-            log.warn("image_resolution 파싱 실패, null로 저장: jobId={}, pageNo={}, value={}",
-                    response.getJobId(), pageNumber, response.getImageResolution());
-        }
-        Integer imageWidth = resolution != null ? resolution[0] : null;
-        Integer imageHeight = resolution != null ? resolution[1] : null;
-
         // PageResult 저장
         PageResult pageResult = PageResult.builder()
                 .job(job)
@@ -89,8 +79,8 @@ public class ResultService {
                 .pageNumber(pageNumber)
                 .mode(job.getMode())
                 .status(status)
-                .imageWidth(imageWidth)
-                .imageHeight(imageHeight)
+                .imageWidth(response.getImageWidth() > 0 ? response.getImageWidth() : null)
+                .imageHeight(response.getImageHeight() > 0 ? response.getImageHeight() : null)
                 .ocrConfidenceAvg(response.hasQualityReport() ? (double) response.getQualityReport().getOcrConfidenceAvg() : null)
                 .lineOverflowRate(response.hasQualityReport() ? (double) response.getQualityReport().getLineOverflowRate() : null)
                 .processingTimeMs(processingTimeMs)
@@ -298,19 +288,5 @@ public class ResultService {
         return drafts;
     }
 
-    // "2480x3505" → [width, height]. 빈 문자열(mode b)·형식 불일치·비양수 값은 null (기존 컬럼 의미 유지)
-    static int[] parseImageResolution(String imageResolution) {
-        if (imageResolution == null || imageResolution.isEmpty()) return null;
-        String[] parts = imageResolution.split("x");
-        if (parts.length != 2) return null;
-        try {
-            int width = Integer.parseInt(parts[0].trim());
-            int height = Integer.parseInt(parts[1].trim());
-            if (width <= 0 || height <= 0) return null;
-            return new int[]{width, height};
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
 
 }
