@@ -195,6 +195,34 @@ class JobListSearchTest {
     }
 
     @Test
+    void 폴더_범위를_주면_그_폴더들의_파일만_나온다() {
+        UUID parent = UUID.randomUUID();
+        UUID child = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        job("p", "a", "COMPLETED", parent, "상위안.pdf", LocalDateTime.now(), false);
+        job("c", "a", "COMPLETED", child, "하위안.pdf", LocalDateTime.now().minusMinutes(1), false);
+        job("o", "a", "COMPLETED", other, "다른가지.pdf", LocalDateTime.now().minusMinutes(2), false);
+        job("r", "a", "COMPLETED", null, "루트.pdf", LocalDateTime.now().minusMinutes(3), false);
+
+        // 검색 시 서브트리 전체(상위+하위)를 범위로 준다
+        JobSearchCondition scoped = cond(null, false, null, null, null, null, false, null, 30)
+                .withFolderScope(List.of(parent, child));
+
+        assertEquals(List.of("상위안.pdf", "하위안.pdf"),
+                search(scoped).stream().map(Job::getOriginalFileName).toList());
+    }
+
+    @Test
+    void 폴더_범위가_비면_결과도_비어야_한다() {
+        job("x", "a", "COMPLETED", UUID.randomUUID(), "어딘가.pdf", LocalDateTime.now(), false);
+
+        JobSearchCondition empty = cond(null, false, null, null, null, null, false, null, 30)
+                .withFolderScope(List.of());
+
+        assertTrue(search(empty).isEmpty());
+    }
+
+    @Test
     void 잘못된_커서는_무시하고_첫_페이지를_준다() {
         job("c1", "a", "COMPLETED", null, "정상.pdf", LocalDateTime.now(), false);
         assertEquals(1, search(cond(null, true, null, null, null, null, false, "!!broken!!", 30)).size());

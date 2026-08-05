@@ -2,6 +2,7 @@ package com.semojum.backend.domain.user.service;
 
 import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.entity.Folder;
+import com.semojum.backend.domain.folder.service.FolderPaths;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.dto.JobSearchCondition;
@@ -93,9 +94,7 @@ public class UserService {
     private Map<UUID, String> allFolderPaths(UUID userId) {
         Map<UUID, Folder> byId = new HashMap<>();
         for (Folder f : folderRepository.findAllActiveByUserId(userId)) byId.put(f.getId(), f);
-        Map<UUID, String> paths = new HashMap<>();
-        for (Folder f : byId.values()) paths.put(f.getId(), pathOf(f, byId, new HashSet<>()));
-        return paths;
+        return FolderPaths.buildAll(byId);
     }
 
     /**
@@ -166,18 +165,7 @@ public class UserService {
         for (Folder f : folderRepository.findAllActiveByUserId(userId)) {
             byId.put(f.getId(), f);
         }
-        Map<UUID, String> paths = new HashMap<>();
-        for (Folder f : byId.values()) {
-            paths.put(f.getId(), pathOf(f, byId, new HashSet<>()));
-        }
-        return paths;
-    }
-
-    private String pathOf(Folder folder, Map<UUID, Folder> byId, Set<UUID> visited) {
-        if (folder == null || !visited.add(folder.getId())) return "";
-        Folder parent = folder.getParentFolderId() == null ? null : byId.get(folder.getParentFolderId());
-        String parentPath = parent == null ? "" : pathOf(parent, byId, visited);
-        return parentPath.isEmpty() ? folder.getName() : parentPath + "/" + folder.getName();
+        return FolderPaths.buildAll(byId);
     }
 
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 진행 중인 Job 목록.
