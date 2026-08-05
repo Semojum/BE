@@ -120,6 +120,31 @@ public class FolderService {
     }
 
     /**
+     * 한 단계 자식 폴더 목록. {@code parentId}가 null이면 최상위 폴더를 준다.
+     *
+     * <p>폴더 내부 화면(S2)과 마이페이지 첫 화면이 쓴다 — 폴더 하나 보려고 전체 트리를
+     * 받지 않게 한다. 전체 구조가 필요한 화면(이동 모달)은 {@code tree()}를 쓴다.
+     */
+    @Transactional(readOnly = true)
+    public FolderDto.Items children(UUID userId, UUID parentId, boolean favoriteOnly, boolean oldestFirst) {
+        // 없는 폴더·타인 폴더·휴지통 폴더를 빈 목록으로 얼버무리지 않는다
+        if (parentId != null && folderRepository.findActiveByIdAndUserId(parentId, userId).isEmpty()) {
+            throw new CustomException(ErrorCode.FOLDER_NOT_FOUND);
+        }
+        List<Folder> folders = folderRepository.findActiveChildren(userId, parentId, favoriteOnly);
+        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+                .thenComparing(f -> f.getId().toString());
+        if (!oldestFirst) order = order.reversed();
+        folders.sort(order);
+
+        List<FolderDto.Item> items = new ArrayList<>();
+        for (Folder f : folders) {
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt()));
+        }
+        return new FolderDto.Items(items);
+    }
+
+    /**
      * 폴더 트리 조회.
      *
      * <p>정렬 기준은 <b>생성일(createdAt)</b>이다 — 폴더는 파일처럼 "수정" 개념이 없어

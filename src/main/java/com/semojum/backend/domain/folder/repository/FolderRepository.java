@@ -25,6 +25,14 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
     List<Folder> findActiveForTree(@Param("userId") UUID userId,
                                    @Param("favoriteOnly") boolean favoriteOnly);
 
+    // 폴더 내부 화면(S2)·마이페이지 첫 화면 목록용 — 한 단계 자식만. parentId가 null이면 최상위
+    @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.deletedAt IS NULL"
+            + " AND (:parentId IS NULL AND f.parentFolderId IS NULL OR f.parentFolderId = :parentId)"
+            + " AND (:favoriteOnly = false OR f.isFavorite = true)")
+    List<Folder> findActiveChildren(@Param("userId") UUID userId,
+                                    @Param("parentId") UUID parentId,
+                                    @Param("favoriteOnly") boolean favoriteOnly);
+
     @Query("""
             SELECT COUNT(f) > 0 FROM Folder f
             WHERE f.user.id = :userId AND f.deletedAt IS NULL AND f.name = :name
