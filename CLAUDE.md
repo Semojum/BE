@@ -399,6 +399,7 @@ ssh semojum-aws 'docker exec semojum-backend-1 openssl x509 -in /home/joha-eun/s
 - PageWorker `WORKER_COUNT = 1` (임시) — AI 서버 병렬처리 확인 후 6으로 복구
 - `jobs.updated_at`(timestamptz)은 `ddl-auto:none`이라 수동 ALTER 필요. 엔티티는 `insertable/updatable=false`이고 DB default(now()) + touchJob/finishJob으로만 갱신 → 코드 배포 전에 DDL(컬럼 추가 → 백필 → NOT NULL → DEFAULT) 먼저 실행
 - stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
+- **시간대는 한국 표준시(KST) 고정**: ① `BackendApplication`이 기동 시 `TimeZone.setDefault(Asia/Seoul)` ② `application.yaml`의 `spring.jackson.time-zone`(응답 직렬화)·`hibernate.jdbc.time_zone`(DB 세션) ③ docker-compose의 `TZ`/`JAVA_TOOL_OPTIONS` — 3중으로 고정돼 있으니 **어느 하나도 제거하지 말 것**. 컨테이너가 UTC로 돌던 구간에 작업 시각이 9시간 이르게 저장돼 마이페이지 카드 날짜("1시간 전"/"어제")가 어긋난 적이 있다. V11 이후 모든 시각 컬럼은 `timestamptz`(절대시각)이므로 새 컬럼도 반드시 `timestamptz`로 만들 것
 - V3 인증 개편 배포 전 `ddl/v3_auth.sql` 수동 실행 필요 (organizations 생성 + users에 login_id/organization_id 추가)
 - `edit_logs` 테이블은 `ddl-auto:none`이라 자동 생성 안 됨 → 수정 API 배포 전에 DataGrip에서 `CREATE TABLE edit_logs (...)` 먼저 실행
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정
