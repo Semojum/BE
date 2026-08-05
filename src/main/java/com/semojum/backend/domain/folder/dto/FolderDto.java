@@ -40,7 +40,8 @@ public class FolderDto {
             UUID folderId,
             String name,
             boolean isFavorite,
-            java.time.LocalDateTime createdAt,  // 폴더 정렬 기준
+            java.time.LocalDateTime createdAt,
+            java.time.LocalDateTime lastModifiedAt,  // 폴더 정렬 기준 — 안의 항목이 바뀐 시각
             List<TreeNode> children
     ) {}
 
