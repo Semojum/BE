@@ -6,6 +6,7 @@ import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.folder.service.FolderService;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -53,7 +55,7 @@ class FolderChildrenTest {
 
     @BeforeEach
     void setUp() {
-        folderService = new FolderService(folderRepository, jobRepository, userRepository);
+        folderService = new FolderService(folderRepository, jobRepository, userRepository, mock(UserService.class));
         user = userRepository.save(User.builder()
                 .loginId("children-user-" + SEQ.incrementAndGet())
                 .build());

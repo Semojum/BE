@@ -55,4 +55,15 @@ public class FolderDto {
     ) {}
 
     public record Items(List<Item> folders) {}
+
+    /**
+     * 폴더 내부 화면(S2)·마이페이지 첫 화면(S1) 한 번에 — 폴더 먼저, 그다음 파일.
+     *
+     * <p>화면에서 폴더가 항상 파일보다 앞에 오므로 응답 순서도 그대로 맞춘다.
+     * 폴더는 계정당 200개 상한이라 페이지네이션이 없고, 파일만 커서로 나눠 받는다.
+     */
+    public record Contents(
+            List<Item> folders,
+            com.semojum.backend.domain.job.dto.JobResponseDto.JobList files
+    ) {}
 }

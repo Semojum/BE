@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.folder.controller;
 
 import com.semojum.backend.domain.folder.dto.FolderDto;
+import com.semojum.backend.domain.job.dto.JobSearchRequest;
 import com.semojum.backend.domain.folder.service.FolderService;
 import com.semojum.backend.global.exception.ApiResponse;
 import jakarta.validation.Valid;
@@ -59,16 +60,25 @@ public class FolderController {
         return ApiResponse.success(Map.of("folderId", folderId.toString(), "isFavorite", isFavorite));
     }
 
-    // 폴더 내부 화면(S2)·첫 화면 목록 — parentId 생략 시 최상위 폴더
-    @GetMapping
-    public ApiResponse<FolderDto.Items> children(
+    /**
+     * 폴더 내부 화면(S2)·마이페이지 첫 화면(S1) — 하위 폴더와 파일을 한 번에 준다.
+     *
+     * <p>{@code folderId}를 생략하면 최상위 폴더 + 루트 파일이다. 파일 쪽 필터·정렬·커서
+     * 파라미터는 목록 조회({@code GET /api/users/jobs})와 동일하게 받는다.
+     */
+    @GetMapping("/contents")
+    public ApiResponse<FolderDto.Contents> contents(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestParam(required = false) UUID parentId,
-            @RequestParam(required = false) Boolean favorite,
-            @RequestParam(required = false, defaultValue = "latest") String sort) {
+            @ModelAttribute JobSearchRequest request) {
         UUID userId = UUID.fromString(userDetails.getUsername());
-        return ApiResponse.success(folderService.children(userId, parentId,
-                Boolean.TRUE.equals(favorite), "oldest".equalsIgnoreCase(sort)));
+        // 파일은 이 폴더 안만 본다 — 전역 조회(scope=all)는 전체보기·검색 화면 몫이다
+        request.setScope(null);
+        return ApiResponse.success(folderService.contents(
+                userId,
+                request.getFolderId(),
+                Boolean.TRUE.equals(request.getFavorite()),
+                "oldest".equalsIgnoreCase(request.getSort()),
+                request.toCondition()));
     }
 
     @GetMapping("/tree")

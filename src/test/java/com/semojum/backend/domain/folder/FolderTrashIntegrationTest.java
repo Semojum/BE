@@ -8,6 +8,7 @@ import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.folder.service.FolderService;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.user.service.UserService;
 import com.semojum.backend.domain.job.service.JobManageService;
 import com.semojum.backend.domain.trash.dto.TrashDto;
 import com.semojum.backend.domain.trash.repository.TrashPurgeRepository;
@@ -66,7 +67,7 @@ class FolderTrashIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        folderService = new FolderService(folderRepository, jobRepository, userRepository);
+        folderService = new FolderService(folderRepository, jobRepository, userRepository, mock(UserService.class));
         jobManageService = new JobManageService(jobRepository, folderRepository);
         s3Service = mock(S3Service.class);
         trashService = new TrashService(folderRepository, jobRepository, purgeRepository, s3Service);
