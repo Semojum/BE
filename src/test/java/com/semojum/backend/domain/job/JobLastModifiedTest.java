@@ -31,11 +31,13 @@ class JobLastModifiedTest {
         LocalDateTime before = job.getLastModifiedAt();
         assertFalse(job.isEdited(), "생성 직후에는 편집 이력이 없다");
 
-        job.markContentEdited();
+        assertNull(job.getLastEditedPage(), "편집 전에는 마지막 편집 페이지가 없다");
 
-        assertTrue(job.getLastModifiedAt().isAfter(before) || job.getLastModifiedAt().isEqual(before));
+        job.markContentEdited(7);
+
         assertNotEquals(before, job.getLastModifiedAt(), "편집 시각이 새로 찍혀야 한다");
         assertTrue(job.isEdited(), "편집 여부가 기록돼야 한다");
+        assertEquals(7, job.getLastEditedPage(), "재시작 복구용 페이지 번호가 남아야 한다");
     }
 
     @Test
@@ -54,6 +56,7 @@ class JobLastModifiedTest {
         assertEquals(original, job.getLastModifiedAt(), "휴지통 복원은 내용 변경이 아니다");
 
         assertFalse(job.isEdited(), "관리 동작만으로 편집 이력이 생기면 안 된다");
+        assertNull(job.getLastEditedPage(), "관리 동작은 편집 페이지를 남기지 않는다");
     }
 
     @Test

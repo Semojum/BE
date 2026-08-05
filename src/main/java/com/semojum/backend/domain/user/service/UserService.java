@@ -71,11 +71,11 @@ public class UserService {
                 job.getId(),
                 job.getMode(),
                 job.getStatus(),
-                progressOf(job),
                 job.getOriginalFileName(),
                 job.getThumbnailUrl(),
                 RelativeDateFormatter.format(job.getLastModifiedAt(), now),
-                job.getLastModifiedAt(),
+                job.getTotalPages(),
+                job.getLastEditedPage(),
                 job.isFavorite(),
                 job.getFolderId() != null ? job.getFolderId().toString() : null,
                 job.getFolderId() != null ? folderPaths.get(job.getFolderId()) : null
