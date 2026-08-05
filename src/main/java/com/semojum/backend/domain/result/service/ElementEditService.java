@@ -47,6 +47,8 @@ public class ElementEditService {
         // 1. 본인 Job 검증 (타인 접근 403)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
+        job.markContentEdited();
 
         // 2. 해당 페이지 결과
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
@@ -90,6 +92,8 @@ public class ElementEditService {
         // 1. 본인 Job 검증(403) + 페이지 결과(404)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
+        job.markContentEdited();
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -136,6 +140,8 @@ public class ElementEditService {
                                           String afterElementId, String type) {
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
+        job.markContentEdited();
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -264,6 +270,8 @@ public class ElementEditService {
         // 1. 본인 Job 검증 (타인 접근 403)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
+        job.markContentEdited();
 
         // 2. 해당 페이지 결과
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
