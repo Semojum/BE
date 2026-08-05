@@ -3,6 +3,7 @@ package com.semojum.backend.domain.job.worker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.result.service.ResultService;
 import com.semojum.backend.global.s3.S3Service;
+import com.semojum.backend.global.grpc.AiServerPool;
 import com.semojum.backend.global.grpc.BrailleGrpcClient;
 import com.semojum.backend.grpc.BrailleRequest;
 import com.semojum.backend.grpc.BrailleResponse;
@@ -29,23 +30,26 @@ public class PageWorker {
     private final BrailleGrpcClient grpcClient;
     private final ObjectMapper objectMapper;
     private final ResultService resultService;
+    private final AiServerPool aiServerPool;
 
     private static final String TASK_QUEUE = "task_queue";
-    private static final int WORKER_COUNT = 1; // TODO: AI 서버가 병렬 처리 지원하면 다시 6으로 복구
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
     private ExecutorService executor;
 
     // 애플리케이션 시작 시 워커 스레드 실행
+    // 워커 수 = AI 서버 총 슬롯 수 — 각 워커가 슬롯 하나를 점유해 블로킹 gRPC를 보내는 구조라
+    // 워커가 슬롯보다 많으면 슬롯 대기로 큐가 헛돌고, 적으면 슬롯이 논다.
     @PostConstruct
     public void startWorkers() {
-        executor = Executors.newFixedThreadPool(WORKER_COUNT);
-        for (int i = 0; i < WORKER_COUNT; i++) {
+        int workerCount = aiServerPool.getTotalSlots();
+        executor = Executors.newFixedThreadPool(workerCount);
+        for (int i = 0; i < workerCount; i++) {
             final int workerId = i + 1;
             executor.submit(() -> runWorker(workerId));
         }
-        log.info("PageWorker {}개 시작", WORKER_COUNT);
+        log.info("PageWorker {}개 시작 (AI 서버 총 슬롯 수)", workerCount);
     }
 
     // 애플리케이션 종료 시 워커 스레드 정리

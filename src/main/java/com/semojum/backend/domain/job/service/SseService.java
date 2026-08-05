@@ -5,6 +5,7 @@ import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
+import com.semojum.backend.global.grpc.AiServerPool;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -34,6 +35,7 @@ public class SseService {
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final AiServerPool aiServerPool;
 
     private static final long EMITTER_TIMEOUT = 3 * 60 * 60 * 1000L; // 3시간 (대용량 문서 직렬 처리 대비 SSE 최대 수명)
 
@@ -111,7 +113,8 @@ public class SseService {
                     Map<String, Object> queueEvent = new LinkedHashMap<>();
                     queueEvent.put("type", "queue_position");
                     queueEvent.put("position", pendingCount);
-                    queueEvent.put("estimated_wait_sec", pendingCount * 30);
+                    // 페이지당 약 30초 가정, 총 슬롯 수만큼 동시 처리되므로 슬롯 수로 나눈다
+                    queueEvent.put("estimated_wait_sec", (int) Math.ceil(pendingCount * 30.0 / aiServerPool.getTotalSlots()));
                     emitter.send(SseEmitter.event().name("queue_position").data(objectMapper.writeValueAsString(queueEvent)));
                 }
 
