@@ -3,6 +3,7 @@ package com.semojum.backend.domain.job.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.job.scheduler.JobDispatcher;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.grpc.AiServerPool;
@@ -36,6 +37,7 @@ public class SseService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
     private final AiServerPool aiServerPool;
+    private final JobDispatcher jobDispatcher;
 
     private static final long EMITTER_TIMEOUT = 3 * 60 * 60 * 1000L; // 3시간 (대용량 문서 직렬 처리 대비 SSE 최대 수명)
 
@@ -68,6 +70,10 @@ public class SseService {
         while (running.get()) {
             try {
                 Thread.sleep(1000);
+
+                // SSE가 살아 있다 = 사용자가 보고 있다 → FG 리스(30s) 갱신.
+                // 연결이 끊기면 루프가 멈춰 갱신이 중단되고, TTL 만료로 자연히 BG 강등된다.
+                jobDispatcher.touchForeground(jobId);
 
                 Map<Object, Object> redisData = redisTemplate.opsForHash().entries("job:" + jobId + ":pages");
                 if (redisData.isEmpty()) continue;
