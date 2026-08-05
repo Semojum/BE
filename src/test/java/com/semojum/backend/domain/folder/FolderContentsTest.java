@@ -136,6 +136,32 @@ class FolderContentsTest {
     }
 
     @Test
+    void 루트에서_검색하면_파일도_전역으로_찾는다() {
+        givenRootFolders("국어교재");
+        org.mockito.ArgumentCaptor<JobSearchCondition> captor =
+                org.mockito.ArgumentCaptor.forClass(JobSearchCondition.class);
+
+        folderService.contents(userId, null, false, false, cond(null, null, "국어"));
+
+        verify(userService).getMyJobs(anyString(), captor.capture());
+        JobSearchCondition used = captor.getValue();
+        assertTrue(used.allScope(), "루트 검색은 폴더 밖 파일까지 찾아야 한다");
+        assertNull(used.folderId());
+    }
+
+    @Test
+    void 검색이_아니면_루트_범위_그대로_조회한다() {
+        givenRootFolders("국어교재");
+        org.mockito.ArgumentCaptor<JobSearchCondition> captor =
+                org.mockito.ArgumentCaptor.forClass(JobSearchCondition.class);
+
+        folderService.contents(userId, null, false, false, cond(null, null, null));
+
+        verify(userService).getMyJobs(anyString(), captor.capture());
+        assertFalse(captor.getValue().allScope(), "탐색은 루트 한 층만 본다");
+    }
+
+    @Test
     void 검색은_한_층이_아니라_전체를_훑는_경로를_탄다() {
         givenRootFolders("국어교재");
 

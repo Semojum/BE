@@ -146,8 +146,10 @@ public class FolderService {
         // 검색은 현재 위치 "아래 전체"를 훑는다(깊이 무관, 탐색기와 동일).
         // 루트에서는 전역이 되고, 폴더 안에서는 그 폴더의 서브트리가 범위다.
         JobSearchCondition effective = fileCondition;
-        if (searching && folderId != null) {
-            effective = fileCondition.withFolderScope(collectSubtreeIds(folderId, activeFolderMap(userId)));
+        if (searching) {
+            effective = folderId == null
+                    ? fileCondition.withGlobalScope()   // 루트에서 검색 = 계정 전체
+                    : fileCondition.withFolderScope(collectSubtreeIds(folderId, activeFolderMap(userId)));
         }
         JobResponseDto.JobList files = userService.getMyJobs(userId.toString(), effective);
 

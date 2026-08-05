@@ -31,6 +31,12 @@ public record JobSearchCondition(
         this(folderId, allScope, search, statuses, modes, favoriteOnly, oldestFirst, cursor, size, null);
     }
 
+    /** 이 조건을 유지한 채 조회 범위를 전역으로 넓힌다(루트에서 검색할 때). */
+    public JobSearchCondition withGlobalScope() {
+        return new JobSearchCondition(null, true, search, statuses, modes,
+                favoriteOnly, oldestFirst, cursor, size, null);
+    }
+
     /** 이 조건을 유지한 채 조회 범위만 하위 폴더 전체로 넓힌다. */
     public JobSearchCondition withFolderScope(List<UUID> scope) {
         return new JobSearchCondition(folderId, allScope, search, statuses, modes,
