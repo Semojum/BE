@@ -36,7 +36,7 @@ public class UserController {
     // 앱 재시작·네트워크 재연결 시 복구용 — 진행 중(PENDING/IN_PROGRESS) Job 목록.
     // FE는 lastModifiedAt이 가장 최신인 작업의 lastEditedPage로 이동한다.
     @GetMapping("/jobs/active")
-    public ApiResponse<List<JobResponseDto.JobCard>> getActiveJobs(
+    public ApiResponse<List<JobResponseDto.ActiveJob>> getActiveJobs(
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         return ApiResponse.success(userService.getActiveJobs(userDetails.getUsername()));
