@@ -82,7 +82,7 @@ public class ResultService {
                 .imageWidth(response.getImageWidth() > 0 ? response.getImageWidth() : null)
                 .imageHeight(response.getImageHeight() > 0 ? response.getImageHeight() : null)
                 .ocrConfidenceAvg(response.hasQualityReport() ? (double) response.getQualityReport().getOcrConfidenceAvg() : null)
-                .lineOverflowRate(response.hasQualityReport() ? (double) response.getQualityReport().getLineOverflowRate() : null)
+                // line_overflow_rate: proto 08-05에서 폐기(32칸 초과 판정은 조판 쪽 담당) — 신규 행은 null, 기존 V2 행 값은 보존
                 .processingTimeMs(processingTimeMs)
                 .pdfLayerConfidence(pdfLayerConfidence)
                 .routingTierUsed(routingTierUsed)
