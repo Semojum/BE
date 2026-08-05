@@ -58,7 +58,7 @@ public class UserService {
 
         // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
         boolean fileOnlyFilter = notEmpty(condition.statuses()) || notEmpty(condition.modes());
-        if (fileOnlyFilter) return new FolderDto.Contents(List.of(), files.items(), files.nextCursor(), files.hasMore());
+        if (fileOnlyFilter) return new FolderDto.Contents(List.of(), files);
 
         List<Folder> folders = new ArrayList<>(folderRepository.findActiveForTree(uid, favoriteOnly));
         String keyword = condition.search();
@@ -78,7 +78,7 @@ public class UserService {
             String parentPath = f.getParentFolderId() != null ? paths.get(f.getParentFolderId()) : null;
             items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt(), parentPath));
         }
-        return new FolderDto.Contents(items, files.items(), files.nextCursor(), files.hasMore());
+        return new FolderDto.Contents(items, files);
     }
 
     private static boolean notEmpty(List<String> values) {

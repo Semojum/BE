@@ -61,15 +61,14 @@ public class FolderDto {
      * 폴더 화면 응답 — 폴더 먼저, 그다음 파일.
      *
      * <p>화면에서 폴더가 항상 파일보다 앞에 오므로 응답 순서도 그대로 맞춘다.
-     * 두 목록을 같은 깊이에 두어 클라이언트가 같은 방식으로 순회할 수 있게 한다.
      *
-     * <p>{@code nextCursor}/{@code hasMore}는 <b>파일에만</b> 해당한다 — 폴더는 계정당
-     * 200개 상한이라 항상 전부 내려가고 페이지네이션이 없다.
+     * <p>파일만 {@code {items, nextCursor, hasMore}}로 한 겹 감싸는 것은 의도적이다.
+     * 커서는 <b>파일에만</b> 해당하므로(폴더는 계정당 200개 상한이라 항상 전부 내려간다)
+     * 커서를 파일 안에 두어야 무엇을 가리키는지가 구조로 드러난다. 최상위로 올리면
+     * 두 목록의 모양은 같아지지만 커서의 소속이 사라져 문서로만 설명해야 한다.
      */
     public record Contents(
             List<Item> folders,
-            List<com.semojum.backend.domain.job.dto.JobResponseDto.JobCard> files,
-            String nextCursor,
-            boolean hasMore
+            com.semojum.backend.domain.job.dto.JobResponseDto.JobList files
     ) {}
 }
