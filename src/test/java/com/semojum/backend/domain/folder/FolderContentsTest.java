@@ -63,6 +63,11 @@ class FolderContentsTest {
         return new JobSearchCondition(null, false, search, statuses, modes, null, false, null, 30);
     }
 
+    /** 2페이지 이후 요청 — 커서가 실려 온다 */
+    private JobSearchCondition pagedCond(String cursor) {
+        return new JobSearchCondition(null, false, null, null, null, null, false, cursor, 30);
+    }
+
     @Test
     void 필터가_없으면_폴더와_파일을_함께_준다() {
         givenRootFolders("국어교재", "수학교재");
@@ -92,6 +97,29 @@ class FolderContentsTest {
                 userId, null, false, false, cond(null, List.of("b"), null));
 
         assertTrue(result.folders().isEmpty());
+    }
+
+    @Test
+    void 커서가_있으면_폴더를_다시_보내지_않는다() {
+        givenRootFolders("국어교재", "수학교재");
+
+        // 첫 페이지 — 폴더가 온다
+        assertEquals(2, folderService.contents(userId, null, false, false, cond(null, null, null))
+                .folders().size());
+
+        // 2페이지 — 폴더는 빈 배열(클라이언트가 누적해도 중복되지 않게)
+        FolderDto.Contents paged = folderService.contents(
+                userId, null, false, false, pagedCond("eyJhdCI6IjIwMjYifQ"));
+        assertTrue(paged.folders().isEmpty(), "커서 요청에는 폴더를 다시 보내지 않는다");
+        assertNotNull(paged.files(), "파일은 이어서 준다");
+    }
+
+    @Test
+    void 빈_커서는_첫_페이지로_보고_폴더를_준다() {
+        givenRootFolders("국어교재");
+
+        assertEquals(1, folderService.contents(userId, null, false, false, pagedCond("")).folders().size());
+        assertEquals(1, folderService.contents(userId, null, false, false, pagedCond(null)).folders().size());
     }
 
     @Test
