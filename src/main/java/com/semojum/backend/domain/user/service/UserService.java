@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.user.service;
 
+import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.entity.Folder;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
@@ -44,10 +45,60 @@ public class UserService {
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
 
     /**
-     * 마이페이지 작업 목록 — 폴더 범위·검색·필터·정렬·커서 페이지네이션.
+     * 전체보기·검색 화면 — 폴더 구분 없이 <b>전역</b>으로 폴더와 파일을 모두 준다.
      *
-     * <p>휴지통 항목은 조건에서 제외되며, 진행률은 <b>진행 중인 작업만</b> Redis에서 읽어
-     * 목록 크기만큼 조회가 늘어나지 않게 한다.
+     * <p>탐색(폴더를 타고 들어가는 화면)은 {@code GET /api/folders/.../contents}가 맡는다.
+     * 응답 구조는 그쪽과 같아, 화면이 폴더·파일을 같은 방식으로 그릴 수 있다.
+     */
+    @Transactional(readOnly = true)
+    public FolderDto.Contents searchEverything(String userId, JobSearchCondition condition,
+                                               boolean favoriteOnly, boolean oldestFirst) {
+        UUID uid = UUID.fromString(userId);
+        JobResponseDto.JobList files = getMyJobs(userId, condition);
+
+        // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
+        boolean fileOnlyFilter = notEmpty(condition.statuses()) || notEmpty(condition.modes());
+        if (fileOnlyFilter) return new FolderDto.Contents(List.of(), files);
+
+        List<Folder> folders = new ArrayList<>(folderRepository.findActiveForTree(uid, favoriteOnly));
+        String keyword = condition.search();
+        if (keyword != null && !keyword.isBlank()) {
+            String needle = keyword.toLowerCase().strip();
+            folders.removeIf(f -> !f.getName().toLowerCase().contains(needle));
+        }
+        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+                .thenComparing(f -> f.getId().toString());
+        if (!oldestFirst) order = order.reversed();
+        folders.sort(order);
+
+        Map<UUID, String> paths = allFolderPaths(uid);
+        List<FolderDto.Item> items = new ArrayList<>();
+        for (Folder f : folders) {
+            // 폴더의 "위치"는 상위 경로다 — 최상위면 null
+            String parentPath = f.getParentFolderId() != null ? paths.get(f.getParentFolderId()) : null;
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt(), parentPath));
+        }
+        return new FolderDto.Contents(items, files);
+    }
+
+    private static boolean notEmpty(List<String> values) {
+        return values != null && !values.isEmpty();
+    }
+
+    /** 폴더 id → 전체 경로("국어교재/1학기") */
+    private Map<UUID, String> allFolderPaths(UUID userId) {
+        Map<UUID, Folder> byId = new HashMap<>();
+        for (Folder f : folderRepository.findAllActiveByUserId(userId)) byId.put(f.getId(), f);
+        Map<UUID, String> paths = new HashMap<>();
+        for (Folder f : byId.values()) paths.put(f.getId(), pathOf(f, byId, new HashSet<>()));
+        return paths;
+    }
+
+    /**
+     * 조건에 맞는 <b>파일</b> 목록 (커서 페이지네이션).
+     *
+     * <p>휴지통 항목은 조건에서 제외된다. 폴더까지 함께 필요한 화면은
+     * {@link #searchEverything} 또는 폴더 내부 조회를 쓴다.
      */
     @Transactional(readOnly = true)
     public JobResponseDto.JobList getMyJobs(String userId, JobSearchCondition condition) {

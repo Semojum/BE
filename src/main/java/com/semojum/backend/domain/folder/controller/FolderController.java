@@ -84,15 +84,13 @@ public class FolderController {
     private FolderDto.Contents loadContents(UserDetails userDetails, UUID folderId,
                                             JobSearchRequest request) {
         UUID userId = UUID.fromString(userDetails.getUsername());
-        // 조회 범위는 경로가 정한다 — 쿼리로 들어온 folderId·scope는 무시한다
-        request.setScope(null);
-        request.setFolderId(folderId);
+        // 조회 범위는 경로가 정한다 — 쿼리로는 범위를 바꿀 수 없다
         return folderService.contents(
                 userId,
                 folderId,
                 Boolean.TRUE.equals(request.getFavorite()),
                 "oldest".equalsIgnoreCase(request.getSort()),
-                request.toCondition());
+                request.toCondition(folderId, false));
     }
 
     @GetMapping("/tree")

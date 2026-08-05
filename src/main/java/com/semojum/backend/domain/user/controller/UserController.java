@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.user.controller;
 
+import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.dto.JobSearchRequest;
 import com.semojum.backend.domain.user.service.UserService;
@@ -25,12 +26,17 @@ public class UserController {
      * 아니면 {@code folderId}가 있으면 그 폴더 안, 없으면 루트만. 휴지통 항목은 항상 제외.
      */
     @GetMapping("/jobs")
-    public ApiResponse<JobResponseDto.JobList> getMyJobs(
+    public ApiResponse<FolderDto.Contents> getMyJobs(
             @AuthenticationPrincipal UserDetails userDetails,
             @ModelAttribute JobSearchRequest request
     ) {
         return ApiResponse.success(
-                userService.getMyJobs(userDetails.getUsername(), request.toCondition()));
+                userService.searchEverything(
+                        userDetails.getUsername(),
+                        // 전체보기·검색은 항상 전역 — 폴더 범위 조회는 /api/folders/{folderId}/contents
+                        request.toCondition(null, true),
+                        Boolean.TRUE.equals(request.getFavorite()),
+                        "oldest".equalsIgnoreCase(request.getSort())));
     }
 
     // 앱 재시작·네트워크 재연결 시 복구용 — 진행 중(PENDING/IN_PROGRESS) Job 목록.
