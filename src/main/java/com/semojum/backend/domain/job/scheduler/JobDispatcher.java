@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -47,8 +49,25 @@ public class JobDispatcher {
     static String userJobsKey(String userId) { return "sched:user:" + userId + ":jobs"; }
     static String fgLeaseKey(String jobId) { return "sched:job:" + jobId + ":fg"; }
 
-    /** Job 생성 시: 페이지 태스크 적재 + 링 등록. 방금 만든 사람은 보고 있으므로 FG로 시작 */
+    /**
+     * Job 생성 시: 페이지 태스크 적재 + 링 등록. 방금 만든 사람은 보고 있으므로 FG로 시작.
+     * 호출부(createJob)가 @Transactional이라 커밋 전에 적재하면 워커가 아직 커밋 안 된
+     * Job/Page 행을 조회하다 "not found"로 재시도 1회를 태운다(실측) → 커밋 후로 미룬다.
+     */
     public void enqueueJob(String userId, String jobId, List<String> tasks) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    doEnqueueJob(userId, jobId, tasks);
+                }
+            });
+        } else {
+            doEnqueueJob(userId, jobId, tasks);
+        }
+    }
+
+    private void doEnqueueJob(String userId, String jobId, List<String> tasks) {
         redisTemplate.opsForList().rightPushAll(jobQueueKey(jobId), tasks);
         register(userId, jobId);
         touchForeground(jobId);
