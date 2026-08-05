@@ -127,14 +127,18 @@ public class Job {
     }
 
     /**
-     * 점역사가 페이지 내용을 편집했을 때 카드 날짜를 갱신한다.
+     * 점역사가 페이지 내용을 편집했을 때 카드 날짜·마지막 편집 페이지를 갱신한다.
      *
      * <p>{@code last_modified_at}은 "파일 내용이 마지막으로 바뀐 시각"이다. 이름 변경·폴더 이동·
      * 휴지통 복원처럼 내용이 그대로인 동작은 갱신하지 않는다. 변환 진행 상황은 별도로
      * {@code updated_at}이 담당하므로 여기서 건드리지 않는다.
+     *
+     * <p>{@code last_edited_page}는 재시작 복구용이다 — FE는 가장 최근에 수정한 작업의
+     * 이 페이지로 바로 이동한다.
      */
-    public void markContentEdited() {
+    public void markContentEdited(int pageNo) {
         this.lastModifiedAt = LocalDateTime.now();
+        this.lastEditedPage = pageNo;
         this.isEdited = true;
     }
 

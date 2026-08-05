@@ -27,21 +27,27 @@ public class JobResponseDto {
     /**
      * 마이페이지 목록 카드 — 화면에 실제로 그려지는 값만 담는다.
      *
-     * <p>totalPages·failedPages·startedAt·finishedAt·isEdited·insertPageNumber 같은 값은
-     * 카드에 표시되지 않아 제외했다. 필요한 화면(에디터·다운로드)에서 상세 조회로 받는다.
+     * <p>failedPages·startedAt·finishedAt·insertPageNumber 같은 값은 카드에 표시되지 않아
+     * 제외했다. 필요한 화면(에디터·다운로드)에서 상세 조회로 받는다.
+     *
+     * <p>진행률(0~100)도 담지 않는다 — 카드는 퍼센트 없이 "변환 중"만 표시하고,
+     * 실시간 진행률은 SSE가 담당한다.
+     *
+     * <p>정렬 기준인 last_modified_at 원본 시각도 담지 않는다 — 화면에는 완성된 문자열
+     * displayDate가 쓰이고, 다음 페이지 요청은 불투명한 nextCursor로 한다.
      */
     public record JobCard(
             String jobId,
             String mode,             // 배지 색·문구
             String status,           // "변환 중" 판정
-            Integer progress,        // 진행 중일 때만 0~100, 그 외 null
             String originalFileName,
             String thumbnailUrl,
             String displayDate,      // "1시간 전" / "어제" / "7. 28." / "2025. 12. 3."
-            LocalDateTime lastModifiedAt,  // 정렬·툴팁용 원본 시각
+            int totalPages,
+            Integer lastEditedPage,  // 마지막으로 편집한 페이지. 편집 이력이 없으면 null
             boolean isFavorite,
-            String folderId,
-            String folderPath        // 루트면 null
+            String folderId,         // 전체보기·검색 결과의 "폴더로 이동"용. 루트면 null
+            String folderPath        // 전체보기·검색 결과의 위치 표시("국어교재/1학기"). 루트면 null
     ) {}
 
     /**

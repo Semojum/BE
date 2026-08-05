@@ -235,6 +235,8 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 
 ### 마이페이지 (User)
 - `GET /api/users/jobs` — 내 Job 목록 조회 (최신순, thumbnailUrl 포함)
+- **목록 카드(`JobCard`) 필드**: `jobId·mode·status·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`. 진행률은 담지 않는다(카드는 "변환 중"만 표시, 실시간은 SSE 담당). `lastModifiedAt` 원본 시각도 담지 않는다(화면은 `displayDate`, 다음 페이지는 불투명 `nextCursor`). **`folderId`/`folderPath`는 제거 금지** — 전체보기(S9)·검색 결과의 위치 표시와 "폴더로 이동"에 쓰인다
+- **`jobs.last_edited_page`** = 마지막으로 편집한 페이지 번호(재시작 복구용 — FE는 가장 최근 수정 작업의 이 페이지로 이동). `markContentEdited(pageNo)`가 `last_modified_at`·`is_edited`와 함께 기록한다
 - **`jobs.last_modified_at` = "파일 내용이 마지막으로 바뀐 시각"** (카드 날짜·목록 정렬·커서 키·재시작 복구 기준). 점역사의 페이지 편집에서만 `Job.markContentEdited()`로 갱신하고 `is_edited`도 함께 세운다. 이름 변경·폴더 이동·휴지통 복원·즐겨찾기 토글은 **내용이 안 바뀌므로 갱신하지 않는다**(윈도우 탐색기의 '수정한 날짜'와 동일). 변환 진행 상황은 `updated_at`(StaleJobScheduler 전용)이 따로 담당 — 두 컬럼을 섞지 말 것
 - `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
   - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<공개 URL>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (S3의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**)
