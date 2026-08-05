@@ -30,6 +30,7 @@ public class FolderService {
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
     private final UserService userService;
+    private final FolderTouch folderTouch;
 
     @Transactional
     public FolderDto.Response create(UUID userId, FolderDto.Create request) {
@@ -56,6 +57,7 @@ public class FolderService {
                 .name(name)
                 .build();
         folderRepository.save(folder);
+        folderTouch.touch(userId, parentId);   // 부모에 항목이 추가됨
         return new FolderDto.Response(folder.getId(), folder.getName(), folder.getParentFolderId());
     }
 
@@ -90,11 +92,15 @@ public class FolderService {
             throw new CustomException(ErrorCode.FOLDER_NAME_DUPLICATE);
         }
 
+        UUID previousParentId = folder.getParentFolderId();
         if (request.getName() != null) {
             folder.rename(targetName);
+            folderTouch.touch(userId, previousParentId);   // 상위의 항목 정보가 바뀜
         }
         if (request.isParentFolderIdPresent()) {
             folder.moveTo(targetParentId);
+            // 뺀 쪽·넣은 쪽 모두 항목 구성이 바뀐다 (루트면 null — FolderTouch가 걸러낸다)
+            folderTouch.touchAll(userId, Arrays.asList(previousParentId, targetParentId));
         }
         return new FolderDto.Response(folder.getId(), folder.getName(), folder.getParentFolderId());
     }
@@ -115,12 +121,14 @@ public class FolderService {
         }
 
         LocalDateTime batchAt = LocalDateTime.now();
+        UUID parentId = folder.getParentFolderId();
         for (UUID id : subtreeIds) {
             active.get(id).moveToTrash(batchAt);
         }
         for (Job job : jobs) {
             job.moveToTrash(batchAt);
         }
+        folderTouch.touch(userId, parentId);   // 상위에서 항목이 빠짐
     }
 
     /**
@@ -183,7 +191,7 @@ public class FolderService {
         // 없는 폴더·타인 폴더·휴지통 폴더를 빈 목록으로 얼버무리지 않는다
         requireActiveFolder(userId, parentId);
         List<Folder> folders = folderRepository.findActiveChildren(userId, parentId, favoriteOnly);
-        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+        Comparator<Folder> order = Comparator.comparing(Folder::getLastModifiedAt)
                 .thenComparing(f -> f.getId().toString());
         if (!oldestFirst) order = order.reversed();
         folders.sort(order);
@@ -191,7 +199,8 @@ public class FolderService {
         List<FolderDto.Item> items = new ArrayList<>();
         for (Folder f : folders) {
             // 탐색 화면은 이미 그 폴더 안에 들어와 있으므로 위치 표시가 필요 없다
-            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(), f.getCreatedAt(), null));
+            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(),
+                    f.getCreatedAt(), f.getLastModifiedAt(), null));
         }
         return new FolderDto.Items(items);
     }
@@ -216,7 +225,7 @@ public class FolderService {
                     ? f.getParentFolderId() : null;
             byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(f);
         }
-        Comparator<Folder> order = Comparator.comparing(Folder::getCreatedAt)
+        Comparator<Folder> order = Comparator.comparing(Folder::getLastModifiedAt)
                 .thenComparing(f -> f.getId().toString());
         if (!oldestFirst) order = order.reversed();
         for (List<Folder> siblings : byParent.values()) siblings.sort(order);

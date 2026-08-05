@@ -6,6 +6,7 @@ import com.semojum.backend.domain.folder.dto.FolderDto;
 import com.semojum.backend.domain.folder.entity.Folder;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.folder.service.FolderService;
+import com.semojum.backend.domain.folder.service.FolderTouch;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.user.service.UserService;
@@ -28,6 +29,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,10 +69,12 @@ class FolderTrashIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        folderService = new FolderService(folderRepository, jobRepository, userRepository, mock(UserService.class));
-        jobManageService = new JobManageService(jobRepository, folderRepository);
+        FolderTouch folderTouch = new FolderTouch(folderRepository);
+        folderService = new FolderService(folderRepository, jobRepository, userRepository,
+                mock(UserService.class), folderTouch);
+        jobManageService = new JobManageService(jobRepository, folderRepository, folderTouch);
         s3Service = mock(S3Service.class);
-        trashService = new TrashService(folderRepository, jobRepository, purgeRepository, s3Service);
+        trashService = new TrashService(folderRepository, jobRepository, purgeRepository, s3Service, folderTouch);
 
         int n = SEQ.incrementAndGet();
         user = userRepository.save(User.builder()
@@ -114,6 +118,73 @@ class FolderTrashIntegrationTest {
     }
 
     // ===== 폴더 규칙 =====
+
+    // ===== 폴더 "수정한 날짜" =====
+
+    private LocalDateTime modifiedAt(UUID folderId) {
+        em.flush(); em.clear();
+        return folderRepository.findById(folderId).orElseThrow().getLastModifiedAt();
+    }
+
+    @Test
+    void 항목이_추가되면_상위_폴더의_수정_날짜가_갱신된다() {
+        UUID parent = createFolder("상위", null);
+        LocalDateTime before = modifiedAt(parent);
+
+        createFolder("하위", parent);
+
+        assertTrue(modifiedAt(parent).isAfter(before));
+    }
+
+    @Test
+    void 파일을_옮기면_뺀_폴더와_넣은_폴더_모두_갱신된다() {
+        UUID from = createFolder("보낸쪽", null);
+        UUID to = createFolder("받은쪽", null);
+        Job job = createJob("move", "COMPLETED", from);
+        LocalDateTime fromBefore = modifiedAt(from);
+        LocalDateTime toBefore = modifiedAt(to);
+
+        jobManageService.moveAll(user.getId(), List.of(job.getId()), to);
+
+        assertTrue(modifiedAt(from).isAfter(fromBefore), "파일이 빠진 폴더도 갱신된다");
+        assertTrue(modifiedAt(to).isAfter(toBefore), "파일이 들어온 폴더도 갱신된다");
+    }
+
+    @Test
+    void 파일_이름_변경도_그_폴더를_갱신한다() {
+        UUID folderId = createFolder("교재", null);
+        Job job = createJob("rename", "COMPLETED", folderId);
+        LocalDateTime before = modifiedAt(folderId);
+
+        jobManageService.rename(user.getId(), job.getId(), "새이름.pdf");
+
+        assertTrue(modifiedAt(folderId).isAfter(before));
+    }
+
+    @Test
+    void 파일을_휴지통에_넣으면_그_폴더가_갱신된다() {
+        UUID folderId = createFolder("교재", null);
+        Job job = createJob("trash", "COMPLETED", folderId);
+        LocalDateTime before = modifiedAt(folderId);
+
+        jobManageService.trashAll(user.getId(), List.of(job.getId()));
+
+        assertTrue(modifiedAt(folderId).isAfter(before));
+    }
+
+    @Test
+    void 하위_폴더_안의_변화는_상위로_전파되지_않는다() {
+        UUID parent = createFolder("상위", null);
+        UUID child = createFolder("하위", parent);
+        Job job = createJob("nested", "COMPLETED", null);
+        LocalDateTime parentBefore = modifiedAt(parent);
+        LocalDateTime childBefore = modifiedAt(child);
+
+        jobManageService.moveAll(user.getId(), List.of(job.getId()), child);
+
+        assertTrue(modifiedAt(child).isAfter(childBefore), "직속 폴더는 갱신된다");
+        assertEquals(parentBefore, modifiedAt(parent), "상위 폴더는 그대로여야 한다");
+    }
 
     @Test
     void 같은_위치_같은_이름_폴더는_거부된다() {

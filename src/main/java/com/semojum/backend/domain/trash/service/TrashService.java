@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.trash.service;
 
 import com.semojum.backend.domain.folder.entity.Folder;
+import com.semojum.backend.domain.folder.service.FolderTouch;
 import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
@@ -28,6 +29,7 @@ public class TrashService {
     private final JobRepository jobRepository;
     private final TrashPurgeRepository purgeRepository;
     private final S3Service s3Service;
+    private final FolderTouch folderTouch;
 
     // 휴지통 목록 — 폴더는 삭제 진입점만 한 줄로, 작업은 폴더째 삭제된 것(같은 배치)을 제외하고 표시
     @Transactional(readOnly = true)
@@ -77,6 +79,7 @@ public class TrashService {
             target = null; // 원래 폴더가 없으면 루트로
         }
         job.restoreTo(target);
+        folderTouch.touch(userId, target);   // 폴더에 항목이 되돌아옴
         return new TrashDto.RestoreResult(target);
     }
 
@@ -105,6 +108,7 @@ public class TrashService {
         for (Job j : jobRepository.findByUserIdAndDeletedAt(userId, batchAt)) {
             j.restoreTo(j.getFolderId());
         }
+        folderTouch.touch(userId, target);   // 복원 위치 폴더에 항목이 되돌아옴
         return new TrashDto.RestoreResult(target);
     }
 

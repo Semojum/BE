@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.result.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.semojum.backend.domain.folder.service.FolderTouch;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
@@ -32,6 +33,7 @@ import java.util.UUID;
 public class ElementEditService {
 
     private final JobRepository jobRepository;
+    private final FolderTouch folderTouch;
     private final PageRepository pageRepository;
     private final PageResultRepository pageResultRepository;
     private final TextElementRepository textElementRepository;
@@ -49,6 +51,8 @@ public class ElementEditService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
+        // 폴더 목록의 "최신순"이 실제 작업을 반영하도록 직속 폴더도 갱신 (상위로 전파하지 않음)
+        folderTouch.touch(UUID.fromString(userId), job.getFolderId());
 
         // 2. 해당 페이지 결과
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
@@ -94,6 +98,8 @@ public class ElementEditService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
+        // 폴더 목록의 "최신순"이 실제 작업을 반영하도록 직속 폴더도 갱신 (상위로 전파하지 않음)
+        folderTouch.touch(UUID.fromString(userId), job.getFolderId());
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -142,6 +148,8 @@ public class ElementEditService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
+        // 폴더 목록의 "최신순"이 실제 작업을 반영하도록 직속 폴더도 갱신 (상위로 전파하지 않음)
+        folderTouch.touch(UUID.fromString(userId), job.getFolderId());
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -272,6 +280,8 @@ public class ElementEditService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         // 내용이 바뀌었으므로 카드 날짜 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
+        // 폴더 목록의 "최신순"이 실제 작업을 반영하도록 직속 폴더도 갱신 (상위로 전파하지 않음)
+        folderTouch.touch(UUID.fromString(userId), job.getFolderId());
 
         // 2. 해당 페이지 결과
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)

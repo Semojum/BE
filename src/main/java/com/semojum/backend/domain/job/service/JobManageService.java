@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.job.service;
 
 import com.semojum.backend.domain.folder.repository.FolderRepository;
+import com.semojum.backend.domain.folder.service.FolderTouch;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.global.exception.CustomException;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +25,7 @@ public class JobManageService {
 
     private final JobRepository jobRepository;
     private final FolderRepository folderRepository;
+    private final FolderTouch folderTouch;
 
     @Transactional
     public Job rename(UUID userId, String jobId, String fileName) {
@@ -33,6 +36,7 @@ public class JobManageService {
             throw new CustomException(ErrorCode.JOB_IN_PROGRESS);
         }
         job.rename(name);
+        folderTouch.touch(userId, job.getFolderId());   // 폴더 안 항목 이름이 바뀜
         return job;
     }
 
@@ -43,9 +47,14 @@ public class JobManageService {
                 && folderRepository.findActiveByIdAndUserId(targetFolderId, userId).isEmpty()) {
             throw new CustomException(ErrorCode.FOLDER_NOT_FOUND);
         }
+        // 뺀 폴더·넣은 폴더 모두 항목 구성이 바뀐다
+        List<UUID> touched = new ArrayList<>();
         for (Job job : jobs) {
+            touched.add(job.getFolderId());
             job.moveToFolder(targetFolderId);
         }
+        touched.add(targetFolderId);
+        folderTouch.touchAll(userId, touched);
         return jobs.size();
     }
 
@@ -53,9 +62,12 @@ public class JobManageService {
     public int trashAll(UUID userId, List<String> jobIds) {
         List<Job> jobs = loadAndValidate(userId, jobIds);
         LocalDateTime batchAt = LocalDateTime.now();
+        List<UUID> touched = new ArrayList<>();
         for (Job job : jobs) {
+            touched.add(job.getFolderId());
             job.moveToTrash(batchAt);
         }
+        folderTouch.touchAll(userId, touched);   // 폴더에서 항목이 빠짐
         return jobs.size();
     }
 
