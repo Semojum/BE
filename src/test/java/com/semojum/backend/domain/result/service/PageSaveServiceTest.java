@@ -204,6 +204,105 @@ class PageSaveServiceTest {
         verify(textRepo, never()).findByPageResult(any());
     }
 
+    private static Map<String, Object> draft(String label, String text, List<String> contents) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("text", text);
+        m.put("contents", contents);
+        m.put("label", label);
+        return m;
+    }
+
+    /** mode b·c는 결과물이 점자라 초안의 contents를 그대로 본문에 넣는다 */
+    @Test
+    void 초안_선택은_본문과_selected_idx를_함께_바꾼다() {
+        givenJob("c");
+        BrailleElement el = BrailleElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(1).content(List.of("⠈⠪ 기존"))
+                .selectedIdx(2)
+                .drafts(List.of(draft("생략", "그래프 생략", List.of("⠠⠄생략⠠⠄")),
+                                draft("개조식 설명", "그래프: …", List.of("⠠⠄개조식⠠⠄"))))
+                .isBlocked(false).build();
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(el));
+
+        Map<String, Object> result = service.selectDraft(USER_ID, "job1", 1, "v1", 0);
+
+        assertEquals(List.of("⠠⠄생략⠠⠄"), result.get("contents"));
+        assertEquals(0, result.get("selectedIdx"));
+        assertEquals(List.of("⠠⠄생략⠠⠄"), el.getCurrentContent(), "본문 교체");
+        assertEquals(0, el.getSelectedIdx());
+        assertTrue(job.isEdited(), "내용이 바뀌었으므로 카드 날짜 갱신");
+
+        Map<?, ?> changed = (Map<?, ?>) savedLog().getChanged();
+        Map<?, ?> sel = (Map<?, ?>) ((List<?>) changed.get("draft_selected")).get(0);
+        assertEquals("v1", sel.get("element_id"));
+        assertEquals(2, sel.get("from"));
+        assertEquals(0, sel.get("to"));
+        assertEquals("생략", sel.get("label"), "어느 초안을 골랐는지가 RLHF 신호");
+    }
+
+    /** mode a는 결과물이 텍스트라 초안 contents가 비어 있다 → text를 쓰고 점역자주 마커 형태를 보존한다 */
+    @Test
+    void mode_a는_초안_text를_쓰고_점역자주_마커를_보존한다() {
+        givenJob("a");
+        TextElement el = TextElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(1)
+                .contents(List.of("<!점역자주>기존 설명<!/점역자주>"))
+                .selectedIdx(0)
+                .drafts(List.of(draft("줄글 설명", "새 설명", List.of())))
+                .isBlocked(false).build();
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(el));
+
+        service.selectDraft(USER_ID, "job1", 1, "v1", 0);
+
+        assertEquals(List.of("<!점역자주>새 설명<!/점역자주>"), el.getCurrentContents(),
+                "점자가 없으므로 text를 쓰되 마커는 그대로 감싼다");
+    }
+
+    /** -1은 선택 해제 — AI 원본(original)으로 되돌린다 */
+    @Test
+    void selectedIdx_음수1은_AI_원본으로_되돌린다() {
+        givenJob("c");
+        BrailleElement el = BrailleElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(1).content(List.of("⠠⠄AI 원본⠠⠄"))
+                .selectedIdx(2)
+                .drafts(List.of(draft("생략", "그래프 생략", List.of("⠠⠄생략⠠⠄"))))
+                .isBlocked(false).build();
+        el.updateCurrentContent(List.of("⠠⠄사용자가 고른 초안⠠⠄")); // original은 보존됨
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(el));
+
+        Map<String, Object> result = service.selectDraft(USER_ID, "job1", 1, "v1", -1);
+
+        assertEquals(List.of("⠠⠄AI 원본⠠⠄"), el.getCurrentContent(), "original로 복귀");
+        assertEquals(-1, el.getSelectedIdx());
+        assertEquals(-1, result.get("selectedIdx"));
+    }
+
+    /** 초안이 없는 요소, 범위 밖 번호는 400 */
+    @Test
+    void 초안_없거나_범위_밖이면_400() {
+        givenJob("c");
+        BrailleElement noDraft = BrailleElement.builder().pageResult(pageResult).elementId("t1")
+                .type("text").readingOrder(1).content(List.of("⠈⠪")).isBlocked(false).build();
+        BrailleElement withDraft = BrailleElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(2).content(List.of("⠈⠪"))
+                .drafts(List.of(draft("생략", "그래프 생략", List.of("⠠⠄생략⠠⠄"))))
+                .isBlocked(false).build();
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(noDraft, withDraft));
+
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST,
+                assertThrows(CustomException.class,
+                        () -> service.selectDraft(USER_ID, "job1", 1, "t1", 0)).getErrorCode(),
+                "초안 없는 요소");
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST,
+                assertThrows(CustomException.class,
+                        () -> service.selectDraft(USER_ID, "job1", 1, "v1", 5)).getErrorCode(),
+                "범위 밖 번호");
+        assertEquals(ErrorCode.ELEMENT_NOT_FOUND,
+                assertThrows(CustomException.class,
+                        () -> service.selectDraft(USER_ID, "job1", 1, "없는id", 0)).getErrorCode());
+        verify(logRepo, never()).save(any());
+    }
+
     /** mode a/c 스냅샷엔 요소별 bounding_box가 포함된다 (자기완결 학습 데이터) */
     @Test
     void mode_a_스냅샷엔_bbox와_이미지_크기가_담긴다() {
