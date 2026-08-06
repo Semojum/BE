@@ -32,8 +32,8 @@ public enum ErrorCode {
     JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "mode a/c는 PDF, mode b는 TXT/HWP 파일만 업로드 가능합니다."),
     JOB_INVALID_MODE(HttpStatus.BAD_REQUEST, "JOB4003", "지원하지 않는 모드입니다."),
     ELEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4004", "존재하지 않는 요소입니다."),
-    ELEMENT_INVALID_TYPE(HttpStatus.BAD_REQUEST, "JOB4005", "elementType은 TEXT 또는 BRAILLE만 허용됩니다."),
-    ELEMENT_ORDER_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "순서 목록이 현재 페이지의 요소와 일치하지 않습니다."),
+    // JOB4005(elementType 검증)는 페이지 일괄 저장 도입으로 폐기 — 편집 대상 테이블은 mode가 정한다
+    ELEMENT_LIST_MISMATCH(HttpStatus.BAD_REQUEST, "JOB4006", "요소 목록이 현재 페이지의 요소와 일치하지 않습니다."),
     JOB_HWP_PARSE_FAILED(HttpStatus.BAD_REQUEST, "JOB4007", "HWP 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식입니다."),
     JOB_HWP_UNSUPPORTED(HttpStatus.BAD_REQUEST, "JOB4008", "암호가 설정되었거나 배포용으로 저장된 HWP 파일은 변환할 수 없습니다."),
     JOB_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "JOB4009", "업로드 가능한 파일 최대 용량(100MB)을 초과했습니다."),

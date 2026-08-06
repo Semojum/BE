@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.job.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -12,24 +13,16 @@ public class JobRequestDto {
             @NotBlank String mode
     ) {}
 
-    // 점역사 요소 수정 요청 (elementType으로 TEXT/BRAILLE 테이블 구분)
-    public record EditElement(
-            @NotBlank String elementType,
+    // 페이지 일괄 저장 — 페이지 최종 상태 전체를 순서대로. 편집 대상은 mode가 정한다(a=text, b·c=braille)
+    public record SavePage(
+            @NotNull List<@Valid SaveElement> elements
+    ) {}
+
+    // id=null이면 사용자 작성 새 블록(서버가 id 발급). type은 블록 종류(기본 "text"), 기존 요소는 무시.
+    public record SaveElement(
+            String id,
+            String type,
             @NotNull List<String> contents
-    ) {}
-
-    // 블록 순서변경 요청: 그 페이지의 최종 element_id 순서 전체를 받아 reading_order를 1..N으로 재작성
-    public record ReorderElements(
-            @NotBlank String elementType,
-            @NotNull List<String> orderedElementIds
-    ) {}
-
-    // 블록 추가 요청: afterElementId 뒤에 삽입(null이면 맨 앞). type은 블록 종류(기본 "text").
-    public record AddElement(
-            @NotBlank String elementType,
-            @NotNull List<String> contents,
-            String afterElementId,
-            String type
     ) {}
 
     // ===== V3 마이페이지 작업 관리 =====
