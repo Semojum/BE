@@ -33,6 +33,7 @@ public class JobController {
     private final JobRepository jobRepository;
     private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
+    private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
 
     // ===== V3 마이페이지 작업 관리 =====
 
@@ -102,6 +103,16 @@ public class JobController {
             @PathVariable String jobId
     ) {
         return ApiResponse.success(jobService.getJobStatus(jobId));
+    }
+
+    // 변환 취소 — 완료된 페이지까지만 남기고 중단. AI에 이미 들어간 페이지는 마무리 후 저장(취소는 수렴).
+    // 이미 끝난 작업이면 멱등(canceled=false, 현재 상태 반환). 확정 여부는 status로 구분(IN_PROGRESS=인플라이트 마무리 중).
+    @PostMapping("/{jobId}/cancel")
+    public ApiResponse<Map<String, Object>> cancelJob(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(jobCancelService.cancel(userDetails.getUsername(), jobId));
     }
 
     @GetMapping(value = "/{jobId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

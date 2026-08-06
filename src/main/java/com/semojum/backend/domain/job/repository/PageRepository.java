@@ -13,4 +13,6 @@ public interface PageRepository extends JpaRepository<Page, UUID> {
     Optional<Page> findByJobAndPageNo(Job job, int pageNo);
     long countByJobAndStatusIn(Job job, List<String> statuses);
     List<Page> findByJobAndStatus(Job job, String status);
+
+    List<Page> findByJob(Job job);
 }

@@ -197,6 +197,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
   - 모드 a/c: PDF 페이지별 분리 → S3 업로드
   - 모드 b: **HWP는 실제 페이지 단위**(레이아웃 기반, 표 내용 포함) / TXT는 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
+- `POST /api/jobs/{jobId}/cancel` — **변환 취소** (`JobCancelService`): 완료된 페이지까지만 남기고 중단. 취소는 즉시가 아니라 **수렴** — ① 취소 플래그(Redis `job:{id}:canceled`, TTL 1h) 먼저 → ② 작업 큐 배수(빈 큐는 스케줄러 lazy cleanup으로 링에서 제거 = 다른 작업이 슬롯 승계) → ③ AI에 이미 들어간 페이지(RUNNING)는 마무리·저장 후 ④ 확정: 완료된 마지막 페이지(K) 뒤쪽은 Page 행 삭제 + `total_pages=K` 축소, K 앞에 낀 미변환 페이지(재시도 대기)는 번호 구멍 방지로 BLOCKED. 완료 0건이면 전부 BLOCKED+FAILED(총수 유지). 성공≥1이면 COMPLETED(부분 완료). 워커는 태스크 pop 직후·재시도 직전에 플래그를 검사해 폐기(`cancelPage`)하고, 마지막 인플라이트를 처리한 쪽이 `tryFinalize`로 확정. 이미 끝난 작업 취소는 멱등(canceled=false). DB Page의 `CANCELED`는 취소 창 동안만 존재하는 과도 상태
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
 - `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
   - `queue_position`: PENDING 페이지 존재 시 전송 (position, estimated_wait_sec)

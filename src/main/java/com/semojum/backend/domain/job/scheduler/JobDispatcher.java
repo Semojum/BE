@@ -45,7 +45,7 @@ public class JobDispatcher {
 
     private final AtomicLong dispatchCounter = new AtomicLong();
 
-    static String jobQueueKey(String jobId) { return "queue:job:" + jobId; }
+    public static String jobQueueKey(String jobId) { return "queue:job:" + jobId; }
     static String userJobsKey(String userId) { return "sched:user:" + userId + ":jobs"; }
     static String fgLeaseKey(String jobId) { return "sched:job:" + jobId + ":fg"; }
 
