@@ -164,19 +164,19 @@ public class PageSaveService {
         return respond(finalOrder);
     }
 
-    // 사용자 작성 새 블록 — 서버가 element_id 발급, original=null(사용자 작성 표식)
+    // 사용자 작성 새 블록 — 서버가 element_id 발급, original=null(사용자 작성 표식).
+    // type은 항상 "text": image·chart_graph 등은 AI가 원본에서 인식해야 존재하는 분류라 사용자가 만들 수 없다.
     private Element createUserBlock(PageResult pageResult, JobRequestDto.SaveElement item, boolean isText) {
         String newId = UUID.randomUUID().toString();
-        String blockType = (item.type() == null || item.type().isBlank()) ? "text" : item.type();
         if (isText) {
             TextElement neo = TextElement.builder()
-                    .pageResult(pageResult).elementId(newId).type(blockType)
+                    .pageResult(pageResult).elementId(newId).type("text")
                     .contents(item.contents()).isBlocked(false).build();
             neo.markUserAuthored();
             return new TextView(textElementRepository.save(neo));
         }
         BrailleElement neo = BrailleElement.builder()
-                .pageResult(pageResult).elementId(newId).type(blockType)
+                .pageResult(pageResult).elementId(newId).type("text")
                 .content(item.contents()).isBlocked(false).build();
         neo.markUserAuthored();
         return new BrailleView(brailleElementRepository.save(neo));
@@ -250,14 +250,13 @@ public class PageSaveService {
                 .build());
     }
 
-    // FE 응답 — 최종 배열(요청과 같은 순서). 새 블록은 서버 발급 id가 채워져 FE가 임시 항목을 교체한다
+    // FE 응답 — 최종 배열(요청과 같은 순서). 새 블록은 서버 발급 id가 채워져 FE가 임시 항목을 교체한다.
+    // type 등 나머지 요소 정보는 페이지 조회(buildResult)가 담당 — 저장 응답은 id 매핑에 필요한 최소만
     private List<Map<String, Object>> respond(List<Element> finalOrder) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (Element el : finalOrder) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", el.elementId());
-            m.put("type", el.type());
-            m.put("heading_level", el.headingLevel());
             m.put("contents", el.contents());
             list.add(m);
         }

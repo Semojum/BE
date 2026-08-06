@@ -81,7 +81,7 @@ class PageSaveServiceTest {
     }
 
     private JobRequestDto.SaveElement item(String id, String contents) {
-        return new JobRequestDto.SaveElement(id, null, List.of(contents));
+        return new JobRequestDto.SaveElement(id, List.of(contents));
     }
 
     private PageEditLog savedLog() {
@@ -125,6 +125,7 @@ class PageSaveServiceTest {
         Map<String, Object> addedSnap = log.getAfterElements().get(1);
         assertEquals("user", addedSnap.get("origin"));
         assertNull(addedSnap.get("ai_original"));
+        assertEquals("text", addedSnap.get("type"), "사용자 블록은 항상 text");
     }
 
     /** 배열에서 빠진 기존 요소는 삭제(soft-delete)로 판정된다 */

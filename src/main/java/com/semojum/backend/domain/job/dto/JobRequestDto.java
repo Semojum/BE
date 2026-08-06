@@ -18,10 +18,9 @@ public class JobRequestDto {
             @NotNull List<@Valid SaveElement> elements
     ) {}
 
-    // id=null이면 사용자 작성 새 블록(서버가 id 발급). type은 블록 종류(기본 "text"), 기존 요소는 무시.
+    // id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐)
     public record SaveElement(
             String id,
-            String type,
             @NotNull List<String> contents
     ) {}
 
