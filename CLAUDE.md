@@ -252,12 +252,12 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 
 ### 점역사 편집 — 페이지 일괄 저장 (Page Save)
 편집 API는 **`PUT /api/jobs/{jobId}/pages/{pageNo}/elements` 하나로 일원화**됐다 (`PageSaveService`, `@Transactional`). 구 요소 단위 API(PATCH 요소수정 / POST 추가 / DELETE 삭제 / PATCH order)와 `ElementEditService`·`edit_logs`는 제거됨(2026-08-06 팀 결정, V13 마이그레이션).
-- body: `{ "elements": [ { "id": "<AI element id>"|null, "type": "text"(신규만, 기본), "contents": [...] }, ... ] }` — **페이지 최종 상태 전체를 순서대로**
+- body: `{ "elements": [ { "id": "<AI element id>"|null, "contents": [...] }, ... ] }` — **페이지 최종 상태 전체를 순서대로**. type 필드 없음(사용자 블록은 항상 "text"로 저장 — 시각 요소는 AI 인식으로만 존재)
 - **FE는 최종 상태만 보내고 diff는 서버가 판정**: id 있음+contents 다름=EDIT / id null=ADD(서버가 UUID 발급, `original=NULL`=사용자 작성 표식) / 배열에서 빠짐=DELETE(soft-delete) / 살아남은 기존 요소의 상대 순서 변화=reorder. 모르는 id 404, 중복 id JOB4006
 - **편집 대상 목록은 mode가 정한다**: a=text_elements, b·c=braille_elements (mode b의 text_list는 원문 대조용이라 편집 불가). body에 elementType 없음, JOB4005 폐기
 - `current`만 갱신·**`original`은 절대 보존**. `is_blocked`/상태 무관 저장 허용. 변경이 하나라도 있으면 `markContentEdited(pageNo)`, 전혀 없으면 로그·카드 날짜 안 건드림
 - **순서(reading_order)는 서버가 소유**: 저장 시 살아있는 블록 전체를 배열 순서대로 `1..N` 재번호. `findByPageResult`가 `is_deleted=false` 필터 + `ORDER BY reading_order`라 SSE·마이페이지 응답에 그대로 반영
-- 응답: 최종 요소 배열(요청과 같은 순서) `[{id, type, heading_level, contents}]` — 새 블록엔 발급 id가 채워져 FE가 임시 항목을 교체
+- 응답: 최종 요소 배열(요청과 같은 순서) `[{id, contents}]` — 새 블록엔 발급 id가 채워져 FE가 임시 항목을 교체(type 등 요소 상세는 페이지 조회가 담당)
 
 ### page_edit_logs (RLHF 학습용, 구 edit_logs 대체)
 **1저장 = 1행, 페이지 전체 before/after 스냅샷** — 블록 추가·이동처럼 페이지 맥락이 필요한 편집을 담기 위해 요소 단위 edit_logs에서 전환(AI팀 요구: 페이지 단위 수정 데이터).
