@@ -79,9 +79,9 @@ public class PageSaveService {
     @Transactional
     public List<Map<String, Object>> savePage(String userId, String jobId, int pageNo,
                                               List<JobRequestDto.SaveElement> requested) {
-        // 1. 본인 Job 검증 (타인 접근 403)
+        // 1. 본인 Job 검증 — 타인 소유는 존재를 숨기기 위해 404로 통일 (V3 관리 API 관례)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
-                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
