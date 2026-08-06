@@ -104,4 +104,9 @@ public class TextElement {
     public void markUserAuthored() {
         this.originalContents = null;
     }
+
+    // 대체 초안 선택: 선택 번호 갱신 (-1 = 선택 해제·AI 원본 복귀)
+    public void updateSelectedIdx(Integer selectedIdx) {
+        this.selectedIdx = selectedIdx;
+    }
 }

@@ -42,6 +42,10 @@ public class PageSaveService {
     private final PageEditLogRepository pageEditLogRepository;
     private final S3Service s3Service;
 
+    // AI가 시각 요소 본문에 붙여 보내는 점역자주 마커 (mode a 초안 선택 시 형태 보존용)
+    private static final String TN_OPEN = "<!점역자주>";
+    private static final String TN_CLOSE = "<!/점역자주>";
+
     // TEXT/BRAILLE 두 테이블을 하나의 diff 로직으로 다루기 위한 공통 시야
     private interface Element {
         String elementId();
@@ -49,8 +53,11 @@ public class PageSaveService {
         Integer headingLevel();
         List<String> contents();
         List<String> aiOriginal();
+        List<Map<String, Object>> drafts();
+        Integer selectedIdx();
         void updateContents(List<String> contents);
         void updateReadingOrder(int order);
+        void updateSelectedIdx(Integer idx);
         void markDeleted();
     }
 
@@ -60,8 +67,11 @@ public class PageSaveService {
         public Integer headingLevel() { return el.getHeadingLevel(); }
         public List<String> contents() { return el.getCurrentContents(); }
         public List<String> aiOriginal() { return el.getOriginalContents(); }
+        public List<Map<String, Object>> drafts() { return el.getDrafts(); }
+        public Integer selectedIdx() { return el.getSelectedIdx(); }
         public void updateContents(List<String> contents) { el.updateCurrentContents(contents); }
         public void updateReadingOrder(int order) { el.updateReadingOrder(order); }
+        public void updateSelectedIdx(Integer idx) { el.updateSelectedIdx(idx); }
         public void markDeleted() { el.markDeleted(); }
     }
 
@@ -71,8 +81,11 @@ public class PageSaveService {
         public Integer headingLevel() { return el.getHeadingLevel(); }
         public List<String> contents() { return el.getCurrentContent(); }
         public List<String> aiOriginal() { return el.getOriginalContent(); }
+        public List<Map<String, Object>> drafts() { return el.getDrafts(); }
+        public Integer selectedIdx() { return el.getSelectedIdx(); }
         public void updateContents(List<String> contents) { el.updateCurrentContent(contents); }
         public void updateReadingOrder(int order) { el.updateReadingOrder(order); }
+        public void updateSelectedIdx(Integer idx) { el.updateSelectedIdx(idx); }
         public void markDeleted() { el.markDeleted(); }
     }
 
@@ -89,9 +102,7 @@ public class PageSaveService {
         //    (mode b의 text_list는 원문 대조용이라 편집 대상이 아니다)
         String mode = pageResult.getMode();
         boolean isText = "a".equals(mode);
-        List<Element> live = isText
-                ? textElementRepository.findByPageResult(pageResult).stream().map(el -> (Element) new TextView(el)).toList()
-                : brailleElementRepository.findByPageResult(pageResult).stream().map(el -> (Element) new BrailleView(el)).toList();
+        List<Element> live = loadLive(pageResult, isText);
         Map<String, Element> liveById = new LinkedHashMap<>();
         for (Element el : live) liveById.put(el.elementId(), el);
 
@@ -162,6 +173,95 @@ public class PageSaveService {
         log.info("페이지 일괄 저장: jobId={}, pageNo={}, edited={}, added={}, deleted={}, reordered={}",
                 jobId, pageNo, edited.size(), added.size(), deleted.size(), reordered);
         return respond(finalOrder);
+    }
+
+    /**
+     * 대체 초안 선택 — AI가 준 drafts 중 하나를 골라 본문(current)을 교체하고 selected_idx를 갱신한다.
+     * {@code selectedIdx = -1}이면 선택을 해제하고 AI 원본(original)으로 되돌린다.
+     *
+     * <p>본문에 넣을 값은 모드가 정한다:
+     * <ul>
+     *   <li>mode b·c: 결과물이 점자라 {@code draft.contents}(점자 통 문자열)를 그대로 쓴다</li>
+     *   <li>mode a: 결과물이 텍스트라 {@code draft.contents}가 비어 있다 → {@code draft.text}를 쓰되,
+     *       기존 본문이 점역자주 마커로 감싸여 있었으면 새 텍스트도 같은 마커로 감싼다
+     *       (마커 규약을 AI 출력에서 그대로 따라가므로 별도 합의가 필요 없다)</li>
+     * </ul>
+     */
+    @Transactional
+    public Map<String, Object> selectDraft(String userId, String jobId, int pageNo,
+                                           String elementId, int selectedIdx) {
+        Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+
+        String mode = pageResult.getMode();
+        boolean isText = "a".equals(mode);
+        List<Element> live = loadLive(pageResult, isText);
+        Element el = live.stream()
+                .filter(e -> e.elementId().equals(elementId))
+                .findFirst()
+                .orElseThrow(() -> new CustomException(ErrorCode.ELEMENT_NOT_FOUND));
+
+        List<Map<String, Object>> drafts = el.drafts();
+        if (drafts == null || drafts.isEmpty() || selectedIdx < -1 || selectedIdx >= drafts.size()) {
+            // 초안이 없는 요소이거나 범위 밖 번호
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+
+        Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
+        List<Map<String, Object>> before = snapshot(live, bboxById);
+        Integer prevIdx = el.selectedIdx();
+
+        List<String> newContents = selectedIdx < 0
+                ? (el.aiOriginal() == null ? List.of() : el.aiOriginal())
+                : draftContents(drafts.get(selectedIdx), el.contents());
+        el.updateContents(newContents);
+        el.updateSelectedIdx(selectedIdx);
+
+        // 본문이 바뀌었으므로 카드 날짜·복구 지점 갱신 (일괄 저장과 동일)
+        job.markContentEdited(pageNo);
+
+        // 어느 초안을 골랐는지는 그 자체로 RLHF 학습 신호 — 페이지 스냅샷과 함께 남긴다
+        Map<String, Object> selection = new LinkedHashMap<>();
+        selection.put("element_id", elementId);
+        selection.put("from", prevIdx);
+        selection.put("to", selectedIdx);
+        selection.put("label", selectedIdx < 0 ? null : drafts.get(selectedIdx).get("label"));
+        Map<String, Object> changed = new LinkedHashMap<>();
+        changed.put("draft_selected", List.of(selection));
+        saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
+                before, snapshot(live, bboxById), changed);
+
+        log.info("초안 선택: jobId={}, pageNo={}, elementId={}, selectedIdx {} → {}",
+                jobId, pageNo, elementId, prevIdx, selectedIdx);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", elementId);
+        result.put("selectedIdx", selectedIdx);
+        result.put("contents", newContents);
+        return result;
+    }
+
+    /** 초안 1개 → 본문에 넣을 contents. mode a는 점자가 없어 text를 쓰고 마커 형태를 보존한다 */
+    private List<String> draftContents(Map<String, Object> draft, List<String> currentContents) {
+        Object raw = draft.get("contents");
+        if (raw instanceof List<?> list && !list.isEmpty()) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        String text = draft.get("text") == null ? "" : String.valueOf(draft.get("text"));
+        String prev = (currentContents == null || currentContents.isEmpty()) ? "" : currentContents.get(0);
+        if (prev.contains(TN_OPEN) && prev.contains(TN_CLOSE)) {
+            text = TN_OPEN + text + TN_CLOSE;
+        }
+        return List.of(text);
+    }
+
+    /** 편집 대상 요소 목록 — mode가 테이블을 정한다(a=text, b·c=braille). 삭제분은 리포지토리가 걸러낸다 */
+    private List<Element> loadLive(PageResult pageResult, boolean isText) {
+        return isText
+                ? textElementRepository.findByPageResult(pageResult).stream().map(el -> (Element) new TextView(el)).toList()
+                : brailleElementRepository.findByPageResult(pageResult).stream().map(el -> (Element) new BrailleView(el)).toList();
     }
 
     // 사용자 작성 새 블록 — 서버가 element_id 발급, original=null(사용자 작성 표식).

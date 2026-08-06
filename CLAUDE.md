@@ -260,6 +260,14 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - **순서(reading_order)는 서버가 소유**: 저장 시 살아있는 블록 전체를 배열 순서대로 `1..N` 재번호. `findByPageResult`가 `is_deleted=false` 필터 + `ORDER BY reading_order`라 SSE·마이페이지 응답에 그대로 반영
 - 응답: 최종 요소 배열(요청과 같은 순서) `[{id, contents}]` — 새 블록엔 발급 id가 채워져 FE가 임시 항목을 교체(type 등 요소 상세는 페이지 조회가 담당)
 
+### 대체 초안 선택 (Draft Select)
+- `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/{elementId}/draft` — body `{ "selectedIdx": 1 }` (`PageSaveService.selectDraft`)
+- AI가 시각 요소에 주는 `drafts`(4종: 생략/짧은 제목/개조식 설명/줄글 설명) 중 하나를 골라 **`selected_idx` 갱신 + 본문(current) 교체**. `original`은 보존
+- **넣을 값은 mode가 정한다**: b·c는 `draft.contents`(점자) 그대로 / **a는 `draft.contents`가 비어 있어**(결과물이 텍스트) `draft.text`를 쓰되 **기존 본문이 `<!점역자주>`…`<!/점역자주>` 마커로 감싸여 있으면 새 텍스트도 같은 마커로 감쌈** — AI 출력 규약을 따라가므로 별도 합의 불필요
+- `selectedIdx = -1` → 선택 해제, AI 원본(`original`)으로 복귀
+- 초안 없는 요소·범위 밖 번호는 `COMMON4000`, 없는 요소 `JOB4004`, 타인/미존재 Job `JOB4001`
+- **page_edit_logs에 기록**: `changed = {draft_selected:[{element_id, from, to, label}]}` + 페이지 before/after 스냅샷 — "AI가 준 N개 중 점역사가 뭘 골랐나"가 그 자체로 RLHF 선호 신호
+
 ### page_edit_logs (RLHF 학습용, 구 edit_logs 대체)
 **1저장 = 1행, 페이지 전체 before/after 스냅샷** — 블록 추가·이동처럼 페이지 맥락이 필요한 편집을 담기 위해 요소 단위 edit_logs에서 전환(AI팀 요구: 페이지 단위 수정 데이터).
 - `before_elements`/`after_elements`(jsonb): `[{id, type, heading_level, contents, origin("ai"|"user"), ai_original, bounding_box}]` 읽기 순서대로. 사용자 추가 블록은 origin="user"·ai_original=null — before에 없고 after에만 나타남

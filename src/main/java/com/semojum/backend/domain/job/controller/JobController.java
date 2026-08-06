@@ -138,4 +138,17 @@ public class JobController {
         return ApiResponse.success(pageSaveService.savePage(
                 userDetails.getUsername(), jobId, pageNo, request.elements()));
     }
+
+    // 대체 초안 선택 — selected_idx 갱신 + 본문을 해당 초안으로 교체 (-1이면 AI 원본 복귀)
+    @PatchMapping("/{jobId}/pages/{pageNo}/elements/{elementId}/draft")
+    public ApiResponse<Map<String, Object>> selectDraft(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @PathVariable String elementId,
+            @RequestBody @Valid JobRequestDto.SelectDraft request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(pageSaveService.selectDraft(
+                userDetails.getUsername(), jobId, pageNo, elementId, request.selectedIdx()));
+    }
 }

@@ -24,6 +24,11 @@ public class JobRequestDto {
             @NotNull List<String> contents
     ) {}
 
+    // 대체 초안 선택: 0-based 초안 번호. -1 = 선택 해제(AI 원본 복귀)
+    public record SelectDraft(
+            @NotNull Integer selectedIdx
+    ) {}
+
     // ===== V3 마이페이지 작업 관리 =====
     // 파일 이름은 하나만 사용 (팀 결정) — 이름 변경은 originalFileName 자체를 바꾼다
     public record Rename(
