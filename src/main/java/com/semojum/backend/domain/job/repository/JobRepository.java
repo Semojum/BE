@@ -81,6 +81,11 @@ public interface JobRepository extends JpaRepository<Job, String>, JobQueryRepos
                   @Param("newStatus") String newStatus,
                   @Param("failedPages") String failedPages);
 
+    // 변환 취소 확정 시 완료 범위까지로 축소 (JobCancelService.tryFinalize 전용)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE jobs SET total_pages = :totalPages WHERE id = :jobId", nativeQuery = true)
+    int updateTotalPages(@Param("jobId") String jobId, @Param("totalPages") int totalPages);
+
     // stale-job 안전망: 무진행 IN_PROGRESS → FAILED.
     // cutoff는 Instant(절대시각) → updated_at(timestamptz) 비교가 타임존 무관하게 정확.
     @Modifying(clearAutomatically = true)

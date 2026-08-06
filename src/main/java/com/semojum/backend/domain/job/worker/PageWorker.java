@@ -2,6 +2,7 @@ package com.semojum.backend.domain.job.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.job.scheduler.JobDispatcher;
+import com.semojum.backend.domain.job.service.JobCancelService;
 import com.semojum.backend.domain.result.service.ResultService;
 import com.semojum.backend.global.s3.S3Service;
 import com.semojum.backend.global.grpc.AiServerPool;
@@ -35,6 +36,7 @@ public class PageWorker {
     private final ResultService resultService;
     private final AiServerPool aiServerPool;
     private final JobDispatcher jobDispatcher;
+    private final JobCancelService jobCancelService;
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
@@ -90,6 +92,14 @@ public class PageWorker {
                 String mode = (String) taskMap.get("mode");
                 int totalPages = (int) taskMap.get("totalPages");
 
+                // 취소된 작업의 태스크는 처리하지 않고 폐기 — 플래그 이전에 이 검사를 통과한 태스크만
+                // "AI에 들어간 페이지"로 취급되어 마무리된다 (JobCancelService 참고)
+                if (jobCancelService.isCanceled(jobId)) {
+                    jobCancelService.cancelPage(jobId, pageNo);
+                    log.info("Worker-{} 취소된 작업 태스크 폐기: jobId={}, pageNo={}", workerId, jobId, pageNo);
+                    continue;
+                }
+
                 log.info("Worker-{} 작업 시작: jobId={}, pageNo={}", workerId, jobId, pageNo);
 
                 // Redis 상태 → RUNNING
@@ -125,6 +135,11 @@ public class PageWorker {
 
                 log.info("Worker-{} 작업 완료: jobId={}, pageNo={}, status={}", workerId, jobId, pageNo, response.getStatus());
 
+                // 취소된 작업의 마지막 인플라이트였다면 여기서 취소가 확정된다
+                if (jobCancelService.isCanceled(jobId)) {
+                    jobCancelService.tryFinalize(jobId);
+                }
+
             } catch (Exception e) {
                 if (running) {
                     if (task != null) {
@@ -135,6 +150,13 @@ public class PageWorker {
                             int pageNo = (int) taskMap.get("pageNo");
                             int retryCount = taskMap.get("retryCount") != null ? (int) taskMap.get("retryCount") : 0;
                             int backpressureCount = taskMap.get("backpressureCount") != null ? (int) taskMap.get("backpressureCount") : 0;
+
+                            // 취소된 작업은 재시도·백프레셔 재등록 대신 폐기 (스케줄러에 다시 들어가지 않게)
+                            if (jobCancelService.isCanceled(jobId)) {
+                                jobCancelService.cancelPage(jobId, pageNo);
+                                log.info("Worker-{} 취소된 작업 재시도 폐기: jobId={}, pageNo={}", workerId, jobId, pageNo);
+                                continue;
+                            }
 
                             // AI 서버 백프레셔(RESOURCE_EXHAUSTED): 응답 직후 내부 슬롯 해제가 늦어
                             // 잠깐 튕기는 정상 신호 — 실패로 세지 않고 잠시 후 재등록 (실측: 해제 지연 ~수십 ms).
@@ -164,6 +186,10 @@ public class PageWorker {
                                 }
                                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "BLOCKED");
                                 log.error("Worker-{} 최대 재시도 초과, BLOCKED 처리: jobId={}, pageNo={}, error={}", workerId, jobId, pageNo, e.getMessage());
+                                // 취소 대기 중이던 작업이라면 이 페이지가 마지막 걸림돌이었을 수 있다
+                                if (jobCancelService.isCanceled(jobId)) {
+                                    jobCancelService.tryFinalize(jobId);
+                                }
                             }
                         } catch (Exception ex) {
                             // pop된 task가 무로그로 증발하지 않도록 가시화 (파싱 실패/leftPush 실패 등 포함).
