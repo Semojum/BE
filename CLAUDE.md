@@ -141,8 +141,7 @@ com.semojum.backend
 | JOB4002 | 400 | 잘못된 파일 형식 |
 | JOB4003 | 400 | 지원하지 않는 모드 |
 | JOB4004 | 404 | 존재하지 않는 요소 |
-| JOB4005 | 400 | 잘못된 elementType (TEXT/BRAILLE만 허용) |
-| JOB4006 | 400 | 순서 목록이 현재 페이지 요소와 불일치 (블록 순서변경) |
+| JOB4006 | 400 | 요소 목록이 현재 페이지 요소와 불일치 (일괄 저장의 중복 id 등) — JOB4005는 일괄 저장 도입으로 폐기 |
 | JOB4007 | 400 | HWP 파싱 실패 (손상·미지원 형식) |
 | JOB4008 | 400 | 암호 설정/배포용 HWP (변환 불가) |
 
@@ -251,31 +250,21 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
 - `getMyJobs`/`getJobPage`는 `@Transactional(readOnly=true)` (OSIV off 대응)
 
-### 점역사 수정 (Edit)
-- `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/{elementId}` — 요소 수정 (`ElementEditService`, `@Transactional`)
-  - body: `{ "elementType": "TEXT"|"BRAILLE", "contents": [...] }`
-  - `{elementId}`는 응답/SSE에 내려가던 **AI element id(String)** (엔티티 PK 아님) → `findByPageResultAndElementId`로 조회
-  - `current`(currentContents/currentContent)만 갱신, **`original`은 절대 보존**. 응답으로 갱신된 contents 반환
-  - 본인 Job 검증(타인 403), 없는 요소 404, 잘못된 elementType 400. `is_blocked`/상태 무관 수정 허용
-- **edit_logs 스냅샷 기록(RLHF용)**: 수정과 같은 트랜잭션에서 1수정=1행 저장
-  - 공통: `action`(EDIT/DELETE/ADD) + before/after content + `ai_original_content` + mode/element_type/user/job/page
-  - mode a/c: `source_pdf_path` + `image_width/height` + `bounding_box`(해당 요소)
-  - mode b: `source_text`(변환에 쓴 원본 한글텍스트, S3 `.txt`에서 읽음)
-  - 입력 컨텍스트까지 자기완결 스냅샷(같은 요소 반복 수정 시 컨텍스트 중복은 의도된 트레이드오프). PDF/이미지 바이너리는 저장 안 하고 s3 경로만(구 데이터는 gs:// 경로 — S3Service가 양쪽 호환)
-  - 저장 로직은 `saveEditLog(...)` 공통 헬퍼로 EDIT/DELETE/ADD가 공유
+### 점역사 편집 — 페이지 일괄 저장 (Page Save)
+편집 API는 **`PUT /api/jobs/{jobId}/pages/{pageNo}/elements` 하나로 일원화**됐다 (`PageSaveService`, `@Transactional`). 구 요소 단위 API(PATCH 요소수정 / POST 추가 / DELETE 삭제 / PATCH order)와 `ElementEditService`·`edit_logs`는 제거됨(2026-08-06 팀 결정, V13 마이그레이션).
+- body: `{ "elements": [ { "id": "<AI element id>"|null, "type": "text"(신규만, 기본), "contents": [...] }, ... ] }` — **페이지 최종 상태 전체를 순서대로**
+- **FE는 최종 상태만 보내고 diff는 서버가 판정**: id 있음+contents 다름=EDIT / id null=ADD(서버가 UUID 발급, `original=NULL`=사용자 작성 표식) / 배열에서 빠짐=DELETE(soft-delete) / 살아남은 기존 요소의 상대 순서 변화=reorder. 모르는 id 404, 중복 id JOB4006
+- **편집 대상 목록은 mode가 정한다**: a=text_elements, b·c=braille_elements (mode b의 text_list는 원문 대조용이라 편집 불가). body에 elementType 없음, JOB4005 폐기
+- `current`만 갱신·**`original`은 절대 보존**. `is_blocked`/상태 무관 저장 허용. 변경이 하나라도 있으면 `markContentEdited(pageNo)`, 전혀 없으면 로그·카드 날짜 안 건드림
+- **순서(reading_order)는 서버가 소유**: 저장 시 살아있는 블록 전체를 배열 순서대로 `1..N` 재번호. `findByPageResult`가 `is_deleted=false` 필터 + `ORDER BY reading_order`라 SSE·마이페이지 응답에 그대로 반영
+- 응답: 최종 요소 배열(요청과 같은 순서) `[{id, type, heading_level, contents}]` — 새 블록엔 발급 id가 채워져 FE가 임시 항목을 교체
 
-### 블록 편집 (Block Edit)
-`ElementEditService`, 모두 `@Transactional` + 본인 Job 검증(타인 403). 브랜치 `feat/block-edit`.
-- **읽기 정렬 토대**: `text_elements`/`braille_elements`에 `is_deleted`(soft-delete) 추가. `findByPageResult`가 `is_deleted=false` 필터 + `ORDER BY reading_order`(`@Query`, 호출부 무변경) → 추가/삭제/순서변경이 `buildResult`(SSE·마이페이지) 응답에 반영됨.
-- **순서(reading_order)는 서버가 소유**: 어떤 편집이든 살아있는 블록을 최종 순서대로 `reading_order = 1..N` 재번호. FE는 order 숫자를 계산하지 않고 "무엇을/어디에"만 전송.
-- `POST /api/jobs/{jobId}/pages/{pageNo}/elements` — 블록 추가
-  - body: `{ elementType, contents, afterElementId, type }` (`afterElementId` null이면 맨 앞, `type` 기본 "text")
-  - 서버가 element_id 발급, `original=NULL`(=사용자 작성 블록 표시), `current=contents`. afterElementId 뒤 삽입 후 재번호. edit_logs `action=ADD`(before=`[]`, ai_original=null). 없는 afterElementId면 404
-- `DELETE /api/jobs/{jobId}/pages/{pageNo}/elements/{elementId}?elementType=` — 블록 삭제
-  - soft-delete(`is_deleted=true`) + 남은 블록 재번호. 이미 삭제된 요소 재삭제 시 404. edit_logs `action=DELETE`(after=`[]`)
-- `PATCH /api/jobs/{jobId}/pages/{pageNo}/elements/order` — 순서변경
-  - body: `{ elementType, orderedElementIds }` (그 페이지 최종 순서 전체) → `reading_order` 1..N 재작성. 살아있는 요소들의 순열이어야 함(불일치 시 JOB4006). edit_logs 미기록(내용 안 바뀌는 구조 변경 전용)
-- **DDL(ddl-auto:none, 수동 적용 완료)**: `is_deleted`(text/braille, NOT NULL default false), `edit_logs.action`(varchar, 기존행 EDIT 백필), `original_contents`/`original_content`/`ai_original_content` NOT NULL 해제(사용자 추가 블록·ADD 로그는 AI 원본 없음)
+### page_edit_logs (RLHF 학습용, 구 edit_logs 대체)
+**1저장 = 1행, 페이지 전체 before/after 스냅샷** — 블록 추가·이동처럼 페이지 맥락이 필요한 편집을 담기 위해 요소 단위 edit_logs에서 전환(AI팀 요구: 페이지 단위 수정 데이터).
+- `before_elements`/`after_elements`(jsonb): `[{id, type, heading_level, contents, origin("ai"|"user"), ai_original, bounding_box}]` 읽기 순서대로. 사용자 추가 블록은 origin="user"·ai_original=null — before에 없고 after에만 나타남
+- `changed`(jsonb): `{edited:[id..], added:[..], deleted:[..], reordered:bool}` — 학습 시 diff 재계산 불필요
+- 입력 컨텍스트 자기완결: mode a/c는 `source_pdf_path`+`image_width/height`(요소별 bbox는 스냅샷 안), mode b는 `source_text`(S3 `.txt` 원문). 바이너리는 경로만
+- 저장과 같은 트랜잭션에서 기록. `created_at`은 timestamptz(Instant)
 
 ### HWP 페이지 분리 (HwpPageExtractor)
 - **실제 페이지 경계 복원**: 한글이 저장 시 계산해 둔 레이아웃 캐시(LineSeg)의 `lineVerticalPosition`(줄 세로 위치)을 사용. 같은 페이지에선 y가 증가하고 페이지가 바뀌면 상단으로 리셋되므로 **y가 작아지는 지점 = 페이지 경계**
@@ -351,7 +340,7 @@ ssh semojum-aws 'docker exec semojum-backend-1 openssl x509 -in /home/joha-eun/s
 | rule_trails | 적용된 점역 규정 |
 | quality_critical_errors | 품질 오류 |
 | quality_review_flags | 검토 필요 항목 |
-| edit_logs | 점역사 수정 이력 (RLHF 학습용 스냅샷) |
+| page_edit_logs | 점역사 편집 이력 (RLHF용 — 1저장=1행, 페이지 전체 before/after 스냅샷. 구 edit_logs는 V13에서 폐기) |
 
 ### Page 상태 값
 | 값 | 설명 |
@@ -414,5 +403,5 @@ ssh semojum-aws 'docker exec semojum-backend-1 openssl x509 -in /home/joha-eun/s
 - stale-job 타임아웃은 `application.yaml`의 `job.stale.in-progress-timeout`(1h) / `pending-timeout`(12h)로 조정
 - **시간대는 한국 표준시(KST) 고정**: ① `BackendApplication`이 기동 시 `TimeZone.setDefault(Asia/Seoul)` ② `application.yaml`의 `spring.jackson.time-zone`(응답 직렬화)·`hibernate.jdbc.time_zone`(DB 세션) ③ docker-compose의 `TZ`/`JAVA_TOOL_OPTIONS` — 3중으로 고정돼 있으니 **어느 하나도 제거하지 말 것**. 컨테이너가 UTC로 돌던 구간에 작업 시각이 9시간 이르게 저장돼 마이페이지 카드 날짜("1시간 전"/"어제")가 어긋난 적이 있다. V11 이후 모든 시각 컬럼은 `timestamptz`(절대시각)이므로 새 컬럼도 반드시 `timestamptz`로 만들 것
 - V3 인증 개편 배포 전 `ddl/v3_auth.sql` 수동 실행 필요 (organizations 생성 + users에 login_id/organization_id 추가)
-- `edit_logs` 테이블은 `ddl-auto:none`이라 자동 생성 안 됨 → 수정 API 배포 전에 DataGrip에서 `CREATE TABLE edit_logs (...)` 먼저 실행
+- `page_edit_logs` 테이블은 Flyway `V13__page_edit_logs.sql`이 생성한다 (edit_logs DROP 포함 — V13 배포 후 구버전 이미지로 롤백하면 편집 API가 깨지니 주의)
 - UserService와 SseService 간 result 직렬화 헬퍼 코드 중복 존재 → 추후 공통 컴포넌트로 리팩토링 예정

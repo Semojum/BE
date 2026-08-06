@@ -5,7 +5,7 @@ import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.service.JobService;
 import com.semojum.backend.domain.job.service.SseService;
-import com.semojum.backend.domain.result.service.ElementEditService;
+import com.semojum.backend.domain.result.service.PageSaveService;
 import com.semojum.backend.global.exception.ApiResponse;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -31,7 +31,7 @@ public class JobController {
     private final JobService jobService;
     private final SseService sseService;
     private final JobRepository jobRepository;
-    private final ElementEditService elementEditService;
+    private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
 
     // ===== V3 마이페이지 작업 관리 =====
@@ -115,60 +115,16 @@ public class JobController {
         return sseService.connect(jobId);
     }
 
-    // 점역사 요소 수정 (current만 갱신, edit_logs 스냅샷 기록)
-    @PatchMapping("/{jobId}/pages/{pageNo}/elements/{elementId}")
-    public ApiResponse<List<String>> editElement(
+    // 페이지 일괄 저장 — FE가 페이지 최종 상태 전체를 보내면 서버가 diff(수정/추가/삭제/순서)를 판정해 적용.
+    // 응답은 최종 배열(요청과 같은 순서) — 새 블록엔 서버 발급 id가 채워진다.
+    @PutMapping("/{jobId}/pages/{pageNo}/elements")
+    public ApiResponse<List<Map<String, Object>>> savePage(
             @PathVariable String jobId,
             @PathVariable int pageNo,
-            @PathVariable String elementId,
-            @RequestBody @Valid JobRequestDto.EditElement request,
+            @RequestBody @Valid JobRequestDto.SavePage request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        List<String> updated = elementEditService.editElement(
-                userDetails.getUsername(), jobId, pageNo, elementId,
-                request.elementType(), request.contents());
-        return ApiResponse.success(updated);
-    }
-
-    // 블록 순서변경 (전체 순서 배열을 받아 reading_order 1..N 재작성)
-    @PatchMapping("/{jobId}/pages/{pageNo}/elements/order")
-    public ApiResponse<List<String>> reorderElements(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @RequestBody @Valid JobRequestDto.ReorderElements request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        List<String> ordered = elementEditService.reorderElements(
-                userDetails.getUsername(), jobId, pageNo,
-                request.elementType(), request.orderedElementIds());
-        return ApiResponse.success(ordered);
-    }
-
-    // 블록 삭제 (soft-delete + 남은 블록 재번호 + edit_logs DELETE 기록)
-    @DeleteMapping("/{jobId}/pages/{pageNo}/elements/{elementId}")
-    public ApiResponse<Void> deleteElement(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @PathVariable String elementId,
-            @RequestParam String elementType,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        elementEditService.deleteElement(
-                userDetails.getUsername(), jobId, pageNo, elementId, elementType);
-        return ApiResponse.success(null);
-    }
-
-    // 블록 추가 (사용자 작성 새 블록을 afterElementId 뒤에 삽입 + 재번호 + edit_logs ADD 기록)
-    @PostMapping("/{jobId}/pages/{pageNo}/elements")
-    public ApiResponse<Map<String, Object>> addElement(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @RequestBody @Valid JobRequestDto.AddElement request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        Map<String, Object> created = elementEditService.addElement(
-                userDetails.getUsername(), jobId, pageNo,
-                request.elementType(), request.contents(), request.afterElementId(), request.type());
-        return ApiResponse.success(created);
+        return ApiResponse.success(pageSaveService.savePage(
+                userDetails.getUsername(), jobId, pageNo, request.elements()));
     }
 }
