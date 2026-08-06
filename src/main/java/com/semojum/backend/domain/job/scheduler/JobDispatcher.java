@@ -73,7 +73,11 @@ public class JobDispatcher {
         touchForeground(jobId);
     }
 
-    /** 재시도·백프레셔: 자기 작업 큐 뒤에 재삽입. 큐가 비어 링에서 정리된 뒤일 수 있으니 재등록까지 */
+    /**
+     * 재시도·백프레셔: 자기 작업 큐 <b>머리</b>에 재삽입 — 실패한 페이지가 뒤 페이지들보다 먼저
+     * 다시 나가야 페이지 순서(1..N 요청 순서)가 유지된다(꼬리로 보내면 재시도 페이지만 맨 뒤로 밀림).
+     * 큐가 비어 링에서 정리된 뒤일 수 있으니 재등록까지.
+     */
     public void requeue(String userId, String jobId, String task) {
         if (userId == null) {
             // 레거시 태스크(userId 없음) 대비 — DB에서 소유자 조회
@@ -85,7 +89,7 @@ public class JobDispatcher {
                 return;
             }
         }
-        redisTemplate.opsForList().rightPush(jobQueueKey(jobId), task);
+        redisTemplate.opsForList().leftPush(jobQueueKey(jobId), task);
         register(userId, jobId);
     }
 

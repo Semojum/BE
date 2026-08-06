@@ -147,6 +147,9 @@ public class JobCancelService {
             return null; // 이미 확정됨(중복 호출)
         }
 
+        // 취소 기록 — 잘리기 전 원래 규모와 취소 시각 (native update의 flushAutomatically로 함께 반영됨)
+        job.markCanceled(job.getTotalPages());
+
         List<Page> pages = pageRepository.findByJob(job);
         int lastKept = pages.stream()
                 .filter(p -> TERMINAL.contains(p.getStatus()))
