@@ -127,6 +127,20 @@ class JobDispatcherIntegrationTest {
     }
 
     @Test
+    void 재시도_태스크는_큐_머리로_들어가_뒤_페이지보다_먼저_나온다() {
+        dispatcher.enqueueJob("userA", "orderJob", tasks("orderJob", 3));
+
+        String p1 = dispatcher.poll();
+        assertTrue(p1.contains("\"pageNo\":1"));
+
+        // 1페이지 실패 → 재등록: 큐 머리로 가서 2·3페이지보다 먼저 다시 나와야 함 (페이지 순서 유지)
+        dispatcher.requeue("userA", "orderJob", p1);
+        assertTrue(dispatcher.poll().contains("\"pageNo\":1"), "재시도 페이지가 최우선");
+        assertTrue(dispatcher.poll().contains("\"pageNo\":2"));
+        assertTrue(dispatcher.poll().contains("\"pageNo\":3"));
+    }
+
+    @Test
     void touchForeground는_30초_리스를_건다() {
         dispatcher.enqueueJob("userA", "leaseJob", tasks("leaseJob", 1));
 

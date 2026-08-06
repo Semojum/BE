@@ -61,7 +61,9 @@ public class SseService {
     }
 
     private void runPollingLoop(String jobId, SseEmitter emitter, AtomicBoolean running) {
-        Map<String, String> prevState = new HashMap<>();
+        // page_done 순서 보장 커서 — 이 번호까지 전송 완료. 병렬 변환이라 뒤 페이지가 먼저 끝날 수 있지만,
+        // FE에는 반드시 1, 2, 3… 순서로 내보낸다(앞 페이지가 끝날 때까지 뒤 페이지 이벤트는 보류).
+        int emittedUpTo = 0;
 
         while (running.get()) {
             try {
@@ -80,13 +82,10 @@ public class SseService {
 
                 int pendingCount = 0;
                 int doneCount = 0;
-                Map<String, String> currentState = new HashMap<>();
-
                 for (Map.Entry<Object, Object> entry : redisData.entrySet()) {
                     String key = (String) entry.getKey();
                     String value = (String) entry.getValue();
                     if (key.equals("total_pages")) continue;
-                    currentState.put(key, value);
 
                     switch (value) {
                         case "PENDING" -> pendingCount++;
@@ -94,21 +93,19 @@ public class SseService {
                     }
                 }
 
-                // 이전 상태와 비교해 PENDING/RUNNING → 완료 상태로 전환된 페이지만 이벤트 전송
-                for (Map.Entry<String, String> entry : currentState.entrySet()) {
-                    String key = entry.getKey();
-                    String newStatus = entry.getValue();
-                    // prevState에 없는 키는 최초 연결 시점에 이미 완료된 페이지이므로 PENDING으로 간주
-                    String prevStatus = prevState.getOrDefault(key, "PENDING");
-
-                    boolean wasPendingOrRunning = prevStatus.equals("PENDING") || prevStatus.equals("RUNNING");
-                    boolean isDone = newStatus.equals("COMPLETED") || newStatus.equals("NEEDS_REVIEW") || newStatus.equals("BLOCKED");
-
-                    if (wasPendingOrRunning && isDone) {
-                        int pageNo = Integer.parseInt(key.replace("page:", ""));
-                        sendPageDoneEvent(jobId, pageNo, newStatus, emitter);
-                    }
+                // 연속 완료 구간(1..K 전부 terminal) 끝까지 커서를 전진시키며 순서대로 전송.
+                // 재연결 시에도 커서가 0부터 시작해 이미 완료된 페이지들을 순서대로 다시 내려준다(기존 동작 유지).
+                int cursor = emittedUpTo;
+                while (cursor < totalPages) {
+                    String status = (String) redisData.get("page:" + (cursor + 1));
+                    boolean isDone = "COMPLETED".equals(status) || "NEEDS_REVIEW".equals(status) || "BLOCKED".equals(status);
+                    if (!isDone) break;
+                    cursor++;
                 }
+                for (int pageNo = emittedUpTo + 1; pageNo <= cursor; pageNo++) {
+                    sendPageDoneEvent(jobId, pageNo, (String) redisData.get("page:" + pageNo), emitter);
+                }
+                emittedUpTo = cursor;
 
                 // queue_position 이벤트
                 if (pendingCount > 0) {
@@ -119,8 +116,6 @@ public class SseService {
                     queueEvent.put("estimated_wait_sec", (int) Math.ceil(pendingCount * 30.0 / aiServerPool.getTotalSlots()));
                     emitter.send(SseEmitter.event().name("queue_position").data(objectMapper.writeValueAsString(queueEvent)));
                 }
-
-                prevState = currentState;
 
                 // job_done 이벤트
                 if (doneCount == totalPages) {

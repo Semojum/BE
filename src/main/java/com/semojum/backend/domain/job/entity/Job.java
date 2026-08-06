@@ -65,6 +65,13 @@ public class Job {
     @Column(name = "last_modified_at", nullable = false)
     private LocalDateTime lastModifiedAt;
 
+    // 변환 취소 기록 (V14) — 결과물은 완료분까지로 잘리지만 원래 규모·취소 시각은 남긴다 (운영·CS용, 화면 로직 무관)
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
+
+    @Column(name = "original_total_pages")
+    private Integer originalTotalPages;
+
     // 페이지 일괄 저장 API용 (V3 4장) — 컬럼 선반영
     @Column(name = "last_edited_page")
     private Integer lastEditedPage;
@@ -144,6 +151,12 @@ public class Job {
 
     public void updateStatus(String status) {
         this.status = status;
+    }
+
+    // 변환 취소 확정 시 기록 — total_pages가 잘리기 전의 원래 값을 보존한다
+    public void markCanceled(int originalTotalPages) {
+        this.canceledAt = LocalDateTime.now();
+        this.originalTotalPages = originalTotalPages;
     }
 
     // 즐겨찾기 토글 — 카드 날짜(last_modified_at)는 건드리지 않는다(내용 변경이 아니므로)

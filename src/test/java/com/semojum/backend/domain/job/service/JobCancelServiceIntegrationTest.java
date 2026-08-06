@@ -127,6 +127,8 @@ class JobCancelServiceIntegrationTest {
         assertEquals(2, pages.size(), "3·4·5페이지 행 삭제");
         assertEquals("2", redisTemplate.opsForHash().get(hashKey(), "total_pages"));
         assertNull(redisTemplate.opsForHash().get(hashKey(), "page:4"), "잘린 페이지 해시 필드 제거");
+        assertNotNull(job.getCanceledAt(), "취소 시각 기록");
+        assertEquals(5, job.getOriginalTotalPages(), "잘리기 전 원래 규모 보존");
     }
 
     /** 인플라이트(RUNNING)가 있으면 확정을 보류하고, 그 페이지 완료 후 워커의 tryFinalize가 마무리한다 */
