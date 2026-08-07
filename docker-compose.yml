@@ -1,0 +1,40 @@
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.29-latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      - backend
+
+  backend:
+    image: zxhwan/semojum-backend:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - SPRING_PROFILES_ACTIVE=prod
+      - GRPC_CERT_PATH=${GRPC_CERT_PATH}
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+      # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.
+      # UTC로 두면 LocalDateTime.now()가 9시간 이른 값을 써서 "어제/오늘" 판정이 어긋난다.
+      - TZ=Asia/Seoul
+      - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Seoul
+    depends_on:
+      - redis
+    volumes:
+      # 호스트 경로를 compose 파일 기준 상대경로로 (GCP/AWS 어느 VM에서든 동작)
+      - ./server.crt:/home/joha-eun/server.crt:ro
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    ports:
+      - "6379:6379"

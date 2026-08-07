@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:34.47.68.184}:5432/postgres?ssl=true&sslmode=require
+    username: postgres
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      leak-detection-threshold: 60000
+
+  # Flyway 스키마 마이그레이션 — 앱 기동 시 db/migration의 미적용 버전을 자동 적용
+  # baseline: 이미 운영 중인 DB(V2 서비스 스키마 + v3_auth 적용 상태)를 버전 1로 간주하고,
+  #           V2__ 이후 마이그레이션부터 적용한다. 첫 기동 때 flyway_schema_history가 자동 생성됨.
+  # ⚠️ 신규 빈 DB에는 base 스키마(V1)가 없어 적용 불가 — 신규 환경 구축 시 운영 DB 덤프로 V1 작성 필요
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: "1"
+
+  jackson:
+    # 응답 JSON의 시각도 한국 표준시로 직렬화
+    time-zone: Asia/Seoul
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          # DB 세션 시간대를 고정 — JVM 기본값에 끌려다니지 않게 한다
+          time_zone: Asia/Seoul
+    show-sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  servlet:
+    multipart:
+      # V3 정책: 업로드 파일 1개당 100MB 상한
+      max-file-size: 100MB
+      # 파일 + mode 파라미터 + 멀티파트 오버헤드를 감안해 약간의 여유를 둔다
+      max-request-size: 105MB
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiry: 3600000       # 1시간 (ms)
+  refresh-token-expiry: 43200000     # 12시간 (ms) — V3 자동 로그인 X 정책으로 30일→12h 축소
+
+# V3 운영자 API (X-Admin-Key 헤더 검증). 미설정 시 운영자 API 전부 차단
+admin:
+  api-key: ${ADMIN_API_KEY:}
+
+job:
+  stale:
+    in-progress-timeout: 1h    # IN_PROGRESS 무진행 1시간 → FAILED
+    pending-timeout: 12h       # PENDING 고아 12시간 → FAILED
+
+aws:
+  region: ${AWS_REGION:ap-northeast-2}
+  s3:
+    bucket: ${S3_BUCKET:semojum-bucket}
+
+grpc:
+  ai:
+    # AI 서버 목록: host:port:슬롯수 (쉼표 구분, 예: ip1:50051:2,ip2:50051:2)
+    # 슬롯수 = 서버당 동시 요청 상한(AI 내부 파이프라인 단계 수). 워커 수 = 총 슬롯 수로 자동 계산.
+    # AI 서버는 같은 VPC(AWS 서울)에 있으므로 사설 IP로 접속한다.
+    # 공인 IP로 가면 트래픽이 VPC를 벗어나 AI 보안그룹의 "BE 보안그룹 허용" 규칙에 걸리지 않아 차단된다.
+    # (전송비 0원·지연 감소 효과도 있음) 서버 증설·슬롯 조정은 환경변수 수정 + 재시작으로 끝.
+    servers: ${GRPC_AI_SERVERS:172.31.47.101:50051:2}
+    cert-path: ${GRPC_CERT_PATH}
+    authority: semo-jum.com
+    # 응답 없는 요청이 슬롯을 영구 점유하지 못하게 하는 백스톱. "BE가 요청을 보낸 시점"부터 카운트.
+    # AI 하드 타임아웃 180s는 "변환 시작" 기준(AI팀 확인) — 슬롯 2라 앞 요청을 기다린 뒤 변환하는
+    # 최악 케이스가 대기(~180s) + 자기 변환(180s) ≈ 360s이므로 400s로 감싼다.
+    deadline-seconds: ${GRPC_AI_DEADLINE_SECONDS:400}

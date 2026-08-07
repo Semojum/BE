@@ -1,0 +1,101 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.13'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.google.protobuf' version '0.9.4'
+}
+
+group = 'com.semojum'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testCompileOnly 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	// 통합 테스트 — Testcontainers로 실제 PostgreSQL 컨테이너를 띄워 검증 (Docker 필요)
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:junit-jupiter'
+
+	// gRPC — AiServerPool이 채널을 직접 생성하므로 starter 대신 전송체만 사용
+	implementation 'io.grpc:grpc-netty-shaded:1.63.0'
+	implementation 'io.grpc:grpc-protobuf:1.63.0'
+	implementation 'io.grpc:grpc-stub:1.63.0'
+	// BrailleResponse → JSON 직렬화(JsonFormat). 기존엔 google-cloud-storage에 묻어오던 의존성
+	implementation 'com.google.protobuf:protobuf-java-util:3.25.3'
+	compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+
+	// JPA
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// PostgreSQL
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// Flyway — 스키마 마이그레이션 (앱 기동 시 db/migration의 미적용 버전을 자동 적용)
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+
+	// Spring Security + JWT
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+	// validation
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// Swagger
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
+
+	// AWS S3
+	implementation platform('software.amazon.awssdk:bom:2.25.64')
+	implementation 'software.amazon.awssdk:s3'
+
+	// iText (PDF 페이지 분리)
+	implementation 'com.itextpdf:itext7-core:7.2.5'
+
+	// PDFBox (PDF 썸네일 생성)
+	implementation 'org.apache.pdfbox:pdfbox:2.0.29'
+
+	// hwp — 1.1.1은 일부 실제 파일에서 파싱이 무한 대기(hang)하는 문제가 있어 1.1.9로 상향
+	implementation 'kr.dogfoot:hwplib:1.1.9'
+
+	// Redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+}
+
+protobuf {
+	protoc {
+		artifact = 'com.google.protobuf:protoc:3.25.3'
+	}
+	plugins {
+		grpc {
+			artifact = 'io.grpc:protoc-gen-grpc-java:1.63.0'
+		}
+	}
+	generateProtoTasks {
+		all()*.plugins {
+			grpc {}
+		}
+	}
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

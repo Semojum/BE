@@ -1,0 +1,34 @@
+package com.semojum.backend.domain.auth.controller;
+
+import com.semojum.backend.domain.auth.dto.AuthRequestDto;
+import com.semojum.backend.domain.auth.dto.AuthResponseDto;
+import com.semojum.backend.domain.auth.service.AuthService;
+import com.semojum.backend.global.exception.ApiResponse;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+// V3: 회원가입·소셜 로그인 제거 — 발급형 계정 로그인/로그아웃/재발급만 제공
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class AuthController {
+
+    private final AuthService authService;
+
+    @PostMapping("/login")
+    public ApiResponse<AuthResponseDto.Login> login(@RequestBody @Valid AuthRequestDto.Login request) {
+        return ApiResponse.success(authService.login(request));
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@RequestBody @Valid AuthRequestDto.Refresh request) {
+        authService.logout(request);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/refresh")
+    public ApiResponse<AuthResponseDto.Refresh> refresh(@RequestBody @Valid AuthRequestDto.Refresh request) {
+        return ApiResponse.success(authService.refresh(request));
+    }
+}
