@@ -29,6 +29,11 @@ public class JobRequestDto {
             @NotNull Integer selectedIdx
     ) {}
 
+    // 다운로드: 파일명 지정(선택, 확장자는 모드가 결정 — a=.txt, b·c=.brf)
+    public record Download(
+            String fileName
+    ) {}
+
     // ===== V3 마이페이지 작업 관리 =====
     // 파일 이름은 하나만 사용 (팀 결정) — 이름 변경은 originalFileName 자체를 바꾼다
     public record Rename(

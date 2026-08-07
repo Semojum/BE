@@ -39,6 +39,7 @@ public enum ErrorCode {
     JOB_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "JOB4009", "업로드 가능한 파일 최대 용량(100MB)을 초과했습니다."),
     JOB_IN_PROGRESS(HttpStatus.CONFLICT, "JOB4010", "변환 중인 작업은 이동·이름변경·삭제·다운로드할 수 없습니다."),
     JOB_BRAILLE_EXISTS(HttpStatus.CONFLICT, "JOB4011", "이미 연결된 점역 문서가 있습니다. 덮어쓰기 여부를 확인해 주세요."),
+    JOB_NO_RESULT(HttpStatus.BAD_REQUEST, "JOB4012", "다운로드할 변환 결과가 없습니다."),
 
     // ========== 폴더 (FOLDER) ==========
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER4001", "존재하지 않는 폴더입니다."),

@@ -34,6 +34,7 @@ public class JobController {
     private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
+    private final com.semojum.backend.domain.job.service.JobDownloadService jobDownloadService;
 
     // ===== V3 마이페이지 작업 관리 =====
 
@@ -91,10 +92,12 @@ public class JobController {
             @RequestPart("file") MultipartFile file,
             @RequestParam("mode") String mode,
             // 점자 판면 마지막 줄에 쪽번호를 넣을지 — 업로드 시 선택 (미전송 시 false)
-            @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber
+            @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber,
+            // 꼬리말(묵자, 최대 200자) — 다운로드(brf) 때 점역해 페이지행 가운데 배치. 미전송 시 없음
+            @RequestParam(value = "footerText", required = false) String footerText
     ) throws Exception {
         return ApiResponse.success(
-                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber));
+                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText));
     }
 
     // job 상태 확인 API
@@ -137,6 +140,25 @@ public class JobController {
     ) {
         return ApiResponse.success(pageSaveService.savePage(
                 userDetails.getUsername(), jobId, pageNo, request.elements()));
+    }
+
+    // 결과 다운로드 — mode a는 .txt(텍스트 병합), b·c는 .brf(braille-assist 조판).
+    // 응답은 JSON 래핑 없이 파일 스트림(Content-Disposition). body는 선택(파일명 지정).
+    @PostMapping("/{jobId}/download")
+    public org.springframework.http.ResponseEntity<byte[]> downloadJob(
+            @PathVariable String jobId,
+            @RequestBody(required = false) JobRequestDto.Download request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        var file = jobDownloadService.download(
+                userDetails.getUsername(), jobId, request == null ? null : request.fileName());
+        String encoded = java.net.URLEncoder.encode(file.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"download." +
+                        (file.fileName().endsWith(".txt") ? "txt" : "brf") + "\"; filename*=UTF-8''" + encoded)
+                .header("Content-Type", file.contentType())
+                .body(file.content());
     }
 
     // 대체 초안 선택 — selected_idx 갱신 + 본문을 해당 초안으로 교체 (-1이면 AI 원본 복귀)
