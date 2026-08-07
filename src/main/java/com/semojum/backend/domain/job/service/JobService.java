@@ -50,7 +50,13 @@ public class JobService {
 
     @Transactional
     public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode,
-                                           boolean insertPageNumber) throws Exception {
+                                           boolean insertPageNumber, String footerText) throws Exception {
+
+        // 꼬리말(묵자) 정리 — 빈 값은 null, 200자 초과는 거절 (TranslateText 입력 상한)
+        footerText = footerText == null || footerText.isBlank() ? null : footerText.trim();
+        if (footerText != null && footerText.length() > 200) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
 
         // UUID로 유저 조회
         User user = userRepository.findById(UUID.fromString(userId))
@@ -111,6 +117,7 @@ public class JobService {
                     .totalPages(totalPages)
                     .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                     .insertPageNumber(insertPageNumber)
+                    .footerText(footerText)
                     .build();
             jobRepository.saveAndFlush(job);
 
@@ -159,7 +166,7 @@ public class JobService {
             pageRepository.saveAll(pages);
             jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
-            return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber);
+            return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
 
         } else {
             // 5. PDF 페이지별 분리 및 GCS 업로드
@@ -178,6 +185,7 @@ public class JobService {
                         .totalPages(totalPages)
                         .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                         .insertPageNumber(insertPageNumber)
+                        .footerText(footerText)
                         .build();
                 jobRepository.saveAndFlush(job);
 
@@ -229,7 +237,7 @@ public class JobService {
                 pageRepository.saveAll(pages);
                 jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
-                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber);
+                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
             }
         }
     }

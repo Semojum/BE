@@ -83,13 +83,17 @@ public class Job {
     @Column(name = "insert_page_number", nullable = false)
     private boolean insertPageNumber;
 
+    // 업로드 시 입력 — 꼬리말(묵자, V15). 다운로드(brf) 때 TranslateText로 점역해 페이지행 가운데 배치
+    @Column(name = "footer_text", length = 200)
+    private String footerText;
+
     // 마이페이지 즐겨찾기 (목록 필터·정렬용)
     @Column(name = "is_favorite", nullable = false)
     private boolean isFavorite;
 
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName,
-               String thumbnailUrl, boolean insertPageNumber) {
+               String thumbnailUrl, boolean insertPageNumber, String footerText) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -97,6 +101,7 @@ public class Job {
         this.originalFileName = originalFileName;
         this.thumbnailUrl = thumbnailUrl;
         this.insertPageNumber = insertPageNumber;
+        this.footerText = footerText;
         this.isFavorite = false;
         this.status = "PENDING";
         this.failedPages = new int[]{};

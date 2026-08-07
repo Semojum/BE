@@ -11,7 +11,8 @@ public class JobResponseDto {
             String mode,
             int totalPages,
             String status,
-            boolean insertPageNumber
+            boolean insertPageNumber,
+            String footerText
     ) {}
 
     public record Status(
