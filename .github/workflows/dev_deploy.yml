@@ -5,6 +5,15 @@ on:
     branches:
       - dev
 
+# 배포는 한 번에 하나만. PR을 연달아 머지하면 런이 동시에 떠서 같은 EC2를 함께 만지는데,
+# 한쪽의 `compose down`과 다른 쪽의 `compose up`이 겹치면 컨테이너 이름 충돌로 배포가 깨진다
+# (2026-08-08 실제 발생: "container name /semojum-redis-1 is already in use").
+# cancel-in-progress: false — 앞 배포를 끝까지 마치고 다음을 실행한다. 취소하면 컨테이너를
+# 내린 상태에서 중단돼 서비스가 죽을 수 있다.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
