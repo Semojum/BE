@@ -2,7 +2,9 @@ spring:
   application:
     name: backend
   datasource:
-    url: jdbc:postgresql://${DB_HOST:34.47.68.184}:5432/postgres?ssl=true&sslmode=require
+    # DB_HOST는 기본값을 두지 않는다 — 예전 기본값(구 GCP Cloud SQL 주소)이 남아 있어
+    # 환경변수를 빠뜨리면 이미 없는 호스트로 조용히 붙으러 갔다. 미설정 시 기동에서 바로 실패한다.
+    url: jdbc:postgresql://${DB_HOST}:5432/postgres?ssl=true&sslmode=require
     username: postgres
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
