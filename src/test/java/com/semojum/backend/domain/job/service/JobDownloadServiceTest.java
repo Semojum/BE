@@ -83,6 +83,43 @@ class JobDownloadServiceTest {
         verify(grpc, never()).translateText(anyString());
     }
 
+    /** 내용만 비운 블록은 빈 줄로 남지 않고 뒤 내용이 당겨진다 (QA 0808 — 삭제 자리 공란 버그) */
+    @Test
+    void 내용이_빈_블록은_건너뛴다() {
+        givenJob("a", false, null);
+        PageResult p1 = pr(1, "a");
+        when(pageResultRepo.findByJobIdOrderByPageNumber("job1")).thenReturn(List.of(p1));
+        when(textRepo.findByPageResult(p1)).thenReturn(List.of(
+                TextElement.builder().elementId("e1").contents(List.of("")).build(),       // 내용 전부 삭제
+                TextElement.builder().elementId("e2").contents(List.of("  ")).build(),     // 공백만 남음
+                TextElement.builder().elementId("e3").contents(List.of()).build(),         // 빈 배열
+                TextElement.builder().elementId("e4").contents(List.of("셋째 줄 내용")).build()));
+
+        JobDownloadService.DownloadFile f = service.download(USER, "job1", null);
+
+        assertEquals("셋째 줄 내용", new String(f.content(), StandardCharsets.UTF_8),
+                "빈 블록들이 빈 줄로 남지 않고 남은 내용부터 시작");
+    }
+
+    /** 블록이 전부 빈 페이지는 페이지 구분 빈 줄도 남기지 않는다 */
+    @Test
+    void 전부_빈_페이지는_구분_빈줄도_없다() {
+        givenJob("a", false, null);
+        PageResult p1 = pr(1, "a"), p2 = pr(2, "a"), p3 = pr(3, "a");
+        when(pageResultRepo.findByJobIdOrderByPageNumber("job1")).thenReturn(List.of(p1, p2, p3));
+        when(textRepo.findByPageResult(p1)).thenReturn(List.of(
+                TextElement.builder().elementId("e1").contents(List.of("첫 페이지")).build()));
+        when(textRepo.findByPageResult(p2)).thenReturn(List.of(          // 2페이지: 내용 전부 삭제됨
+                TextElement.builder().elementId("e2").contents(List.of("")).build()));
+        when(textRepo.findByPageResult(p3)).thenReturn(List.of(
+                TextElement.builder().elementId("e3").contents(List.of("셋째 페이지")).build()));
+
+        JobDownloadService.DownloadFile f = service.download(USER, "job1", null);
+
+        assertEquals("첫 페이지\n\n셋째 페이지", new String(f.content(), StandardCharsets.UTF_8),
+                "빈 페이지가 통째로 빠지고 남은 페이지끼리 빈 줄 1개로 구분");
+    }
+
     /** mode b — braille-assist에 위임: BRF-ASCII 26줄 면, 쪽번호 끄면 페이지행 없음 */
     @Test
     void mode_b는_braille_assist로_조판한_brf() {
