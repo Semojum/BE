@@ -101,7 +101,7 @@ export DB_HOST=... DB_PASSWORD=... JWT_SECRET=... GRPC_CERT_PATH=file:/path/to/s
 | 출력 | `POST /api/jobs/{id}/download` (.txt / .brf) |
 | 마이페이지 | `GET /api/users/jobs` · `/api/folders/...` · `/api/trash` |
 
-상세 명세는 [Notion API 명세서](https://app.notion.com/p/3b143813bc2e80069813f883e4a8b7f5) 참고.
+상세 명세는 노션 참고.
 
 ---
 
