@@ -76,6 +76,10 @@ public class JobDownloadService {
      * mode a — 편집 최종본 텍스트 병합.
      * 요소 사이 줄바꿈, 원본 페이지 사이 빈 줄 1개. `<!점역자주>` 마커는 그대로 둔다
      * (mode a 결과는 "점역으로 보내기"로 mode b 입력이 되며 마커가 점역자주 처리 신호).
+     *
+     * <p>내용이 빈 블록은 건너뛴다 — 점역사가 블록을 지우지 않고 내용만 비운 경우
+     * 빈 줄로 남지 않고 뒤 내용이 당겨진다(QA 0808: 삭제 자리가 공란으로 출력되던 버그).
+     * 블록이 전부 빈 페이지는 페이지 구분 빈 줄도 남기지 않는다.
      */
     private String buildTxt(List<PageResult> pageResults) {
         List<String> pages = new ArrayList<>();
@@ -83,9 +87,14 @@ public class JobDownloadService {
             List<String> parts = new ArrayList<>();
             for (TextElement el : textElementRepository.findByPageResult(pr)) {
                 List<String> contents = el.getCurrentContents();
-                parts.add(contents == null || contents.isEmpty() ? "" : String.join("\n", contents));
+                if (contents == null || contents.isEmpty()) continue;
+                String text = String.join("\n", contents);
+                if (text.isBlank()) continue;
+                parts.add(text);
             }
-            pages.add(String.join("\n", parts));
+            if (!parts.isEmpty()) {
+                pages.add(String.join("\n", parts));
+            }
         }
         return String.join("\n\n", pages);
     }

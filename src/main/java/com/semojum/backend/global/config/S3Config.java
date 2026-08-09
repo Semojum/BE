@@ -17,4 +17,13 @@ public class S3Config {
                 .region(Region.of(region))
                 .build();
     }
+
+    // 원본 페이지 PDF의 만료형 서명 URL 발급용 (버킷 공개 읽기 회수 후 원본은 presigned로만 접근)
+    @Bean
+    public software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner(
+            @Value("${aws.region}") String region) {
+        return software.amazon.awssdk.services.s3.presigner.S3Presigner.builder()
+                .region(Region.of(region))
+                .build();
+    }
 }

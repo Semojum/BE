@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 public class S3Service {
 
     private final S3Client s3Client;
+    private final software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner;
 
     @Value("${aws.s3.bucket}")
     private String bucketName;
@@ -36,8 +37,23 @@ public class S3Service {
     }
 
     // 저장 경로를 공개 URL로 변환 (s3://bucket/key → https://bucket.s3.region.amazonaws.com/key)
+    // 공개 읽기가 허용된 객체(썸네일)에만 쓸 것 — 원본 페이지는 getPresignedUrl 사용
     public String getPublicUrl(String storagePath) {
         return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + toKey(storagePath);
+    }
+
+    // 만료형 서명 URL 발급 — 버킷이 비공개인 객체(원본 페이지 PDF)를 FE가 직접 받을 때 사용.
+    // 서명은 로컬 연산(HMAC)이라 S3 왕복 없음. 만료 후에는 페이지 조회 API를 다시 호출해 새 URL을 받는다.
+    public String getPresignedUrl(String storagePath, java.time.Duration ttl) {
+        software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest request =
+                software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .getObjectRequest(GetObjectRequest.builder()
+                                .bucket(bucketName)
+                                .key(toKey(storagePath))
+                                .build())
+                        .build();
+        return s3Presigner.presignGetObject(request).url().toString();
     }
 
     // S3에서 파일 다운로드

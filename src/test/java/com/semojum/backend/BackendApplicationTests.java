@@ -28,8 +28,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         "JWT_SECRET=test-secret-key-for-context-load-only-32bytes+",
         "DB_PASSWORD=test",
         "GRPC_CERT_PATH=classpath:grpc/test-server.crt",
-        "GOOGLE_CLIENT_ID=test", "GOOGLE_CLIENT_SECRET=test",
-        "KAKAO_CLIENT_ID=test", "KAKAO_CLIENT_SECRET=test",
         "ADMIN_API_KEY=test-key"
 })
 class BackendApplicationTests {
