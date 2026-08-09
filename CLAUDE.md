@@ -31,7 +31,7 @@
 |---|---|
 | EC2 | `semojum-backend`(`i-0287cb956dfefdbde`), t3.medium·30GB, 고정 IP `43.200.184.56`, Ubuntu 22.04 + Docker/Compose v2 |
 | RDS | `semojum-postgres`, PostgreSQL 18.4, db.t3.small, 20GB gp3(→100GB 자동증설), 백업 7일. 엔드포인트 `semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com` |
-| S3 | `semojum-bucket` — 객체 공개 읽기(썸네일·원본 공개 URL). EC2는 IAM Role(`semojum-ec2-role`/`semojum-ec2-profile`)로 키리스 접근 |
+| S3 | `semojum-bucket` — **공개 읽기는 `*/thumbnail.png`만**(2026-08-09 정책 회수). 원본 페이지는 presigned URL(만료 15분)로만 접근. CORS `GET/HEAD`·origin `*` 설정됨(FE fetch용 — 제거 시 에디터 원본 렌더링이 깨짐). EC2는 IAM Role(`semojum-ec2-role`/`semojum-ec2-profile`)로 키리스 접근 |
 | VPC | **기본(default) VPC** 사용(`vpc-008bb1c520fdf781e`) — 커스텀 VPC(프라이빗 서브넷+NAT)는 출시 후 보안 강화 항목. AI 서버 이전 시 같은 VPC에 넣어 사설 IP 통신 예정 |
 | 보안그룹 | `semojum-ec2-sg`(80/443 공개, 22는 관리자 IP만 — 배포 시 러너 IP 임시 허용) / `semojum-rds-sg`(5432는 EC2 SG+관리자 IP만) |
 | 배포용 IAM | `semojum-github-actions` — 보안그룹 인바운드 토글 권한만(최소 권한). 액세스 키는 GitHub Secrets에만 존재 |
@@ -249,7 +249,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - **`jobs.last_edited_page`** = 마지막으로 편집한 페이지 번호(재시작 복구용 — FE는 가장 최근 수정 작업의 이 페이지로 이동). `markContentEdited(pageNo)`가 `last_modified_at`·`is_edited`와 함께 기록한다
 - **`jobs.last_modified_at` = "파일 내용이 마지막으로 바뀐 시각"** (카드 날짜·목록 정렬·커서 키·재시작 복구 기준). 점역사의 페이지 편집에서만 `Job.markContentEdited()`로 갱신하고 `is_edited`도 함께 세운다. 이름 변경·폴더 이동·휴지통 복원·즐겨찾기 토글은 **내용이 안 바뀌므로 갱신하지 않는다**(윈도우 탐색기의 '수정한 날짜'와 동일). 변환 진행 상황은 `updated_at`(StaleJobScheduler 전용)이 따로 담당 — 두 컬럼을 섞지 말 것
 - `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
-  - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<공개 URL>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (S3의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**)
+  - 응답 **바깥 레벨**에 `original`(원본) 포함: mode a/c는 `{type:"pdf", url:<presigned URL·만료 15분>, lines:null}`, mode b는 `{type:"text", url:null, lines:[...]}` (S3의 `page-n.txt`를 `split("\n", -1)`로 읽음, **DB 컬럼 추가 없음**). URL은 다운로드 시작용 일회성 — FE는 받은 PDF 데이터를 계속 쓰면 되고, URL 문자열을 장기 캐시하면 안 됨(만료 후 403)
 - 두 엔드포인트 모두 JWT 인증 필요, 타인 Job 접근 시 403
 - `getMyJobs`/`getJobPage`는 `@Transactional(readOnly=true)` (OSIV off 대응)
 
