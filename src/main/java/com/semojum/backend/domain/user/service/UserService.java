@@ -215,16 +215,20 @@ public class UserService {
         );
     }
 
-    // 모드별 원본 구성. pdfPath(gs:// 전체경로)를 가공 없이 그대로 GcsService에 넘긴다.
+    // 원본 PDF presigned URL 수명 — FE는 페이지 진입 직후 1회 fetch하므로 짧아도 되지만,
+    // 느린 회선에서 대용량 페이지를 받는 경우까지 감안해 15분. 만료 후엔 페이지 조회를 다시 호출하면 된다.
+    private static final java.time.Duration ORIGINAL_URL_TTL = java.time.Duration.ofMinutes(15);
+
+    // 모드별 원본 구성. pdfPath(s3:// 전체경로)를 가공 없이 그대로 S3Service에 넘긴다.
     private JobResponseDto.OriginalContent buildOriginal(String mode, Page page) {
         if ("b".equals(mode)) {
-            // mode b: GCS의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
+            // mode b: S3의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
             String text = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
             List<String> lines = Arrays.asList(text.split("\n", -1));
             return new JobResponseDto.OriginalContent("text", null, lines);
         }
-        // mode a, c: 원본 PDF 공개 URL
-        String url = s3Service.getPublicUrl(page.getPdfPath());
+        // mode a, c: 원본 PDF 만료형 서명 URL — 버킷 공개 읽기 회수 후에도 FE가 직접 받을 수 있는 유일한 경로
+        String url = s3Service.getPresignedUrl(page.getPdfPath(), ORIGINAL_URL_TTL);
         return new JobResponseDto.OriginalContent("pdf", url, null);
     }
 
