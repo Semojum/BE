@@ -28,6 +28,10 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      # 의존성·빌드 캐시 — dev(기본 브랜치) 런이 캐시를 쓰고 PR 런(pr_test.yml)이 읽는다
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       # 테스트가 하나라도 실패하면 여기서 멈춰 배포가 나가지 않는다.
       # Testcontainers(PostgreSQL·Redis)를 쓰므로 러너의 Docker가 필요하다(ubuntu-latest에 기본 포함).
       - name: Run tests
