@@ -92,6 +92,10 @@ public class PageWorker {
                 String mode = (String) taskMap.get("mode");
                 int totalPages = (int) taskMap.get("totalPages");
 
+                // 이 태스크가 남기는 모든 로그(S3·gRPC·ResultService 포함)를 작업 키로 묶는다
+                // — "grep jobId" 하나로 페이지 처리 전 과정 추적. 루프 밖 finally가 해제
+                org.slf4j.MDC.put("ctx", jobId + "|p" + pageNo);
+
                 // 취소된 작업의 태스크는 처리하지 않고 폐기 — 플래그 이전에 이 검사를 통과한 태스크만
                 // "AI에 들어간 페이지"로 취급되어 마무리된다 (JobCancelService 참고)
                 if (jobCancelService.isCanceled(jobId)) {
@@ -201,6 +205,9 @@ public class PageWorker {
                         Thread.sleep(2000);
                     } catch (InterruptedException ignored) {}
                 }
+            } finally {
+                // 다음 태스크의 로그에 이전 작업 키가 섞이지 않도록 해제
+                org.slf4j.MDC.remove("ctx");
             }
         }
         log.info("Worker-{} 종료", workerId);

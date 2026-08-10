@@ -71,6 +71,8 @@ public class JobDispatcher {
         redisTemplate.opsForList().rightPushAll(jobQueueKey(jobId), tasks);
         register(userId, jobId);
         touchForeground(jobId);
+        Long ringUsers = redisTemplate.opsForList().size(USER_RING);
+        log.info("큐 적재: jobId={}, pages={}, user={} — 링 유저 {}명", jobId, tasks.size(), userId, ringUsers);
     }
 
     /**
@@ -149,6 +151,7 @@ public class JobDispatcher {
             if (queueLen == null || queueLen == 0) {
                 // 페이지를 전부 꺼낸 작업은 링에서 정리 (재시도 시 requeue가 재등록)
                 redisTemplate.opsForList().remove(jobsKey, 0, jobId);
+                log.info("큐 소진: jobId={} — 스케줄 링에서 제거 (남은 작업은 인플라이트뿐)", jobId);
                 continue;
             }
 
@@ -158,6 +161,37 @@ public class JobDispatcher {
             return redisTemplate.opsForList().leftPop(jobQueueKey(jobId));
         }
         return null;
+    }
+
+    /**
+     * 스케줄러 상태 요약 — 큐에 대기 작업이 있을 때만 1분에 1줄. 동시 사용자 여러 명이 변환 중일 때
+     * "누구 작업이 얼마나 대기 중인가"를 실시간으로 보여준다(유휴 시간엔 아무것도 찍지 않음).
+     * 즉석 스냅샷이 필요하면 redis-cli LLEN queue:job:{id} / LRANGE sched:ring:users 0 -1
+     */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 60_000)
+    public void logSchedulerStatus() {
+        List<String> users = redisTemplate.opsForList().range(USER_RING, 0, -1);
+        if (users == null || users.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        int jobCount = 0;
+        for (String userId : users) {
+            List<String> jobs = redisTemplate.opsForList().range(userJobsKey(userId), 0, -1);
+            if (jobs == null) continue;
+            for (String jobId : jobs) {
+                Long pending = redisTemplate.opsForList().size(jobQueueKey(jobId));
+                if (pending == null || pending == 0) continue;
+                boolean fg = Boolean.TRUE.equals(redisTemplate.hasKey(fgLeaseKey(jobId)));
+                if (jobCount > 0) sb.append(", ");
+                if (jobCount < 10) {
+                    sb.append(jobId).append(":").append(pending).append("대기").append(fg ? "(FG)" : "(BG)");
+                }
+                jobCount++;
+            }
+        }
+        if (jobCount == 0) return;
+        if (jobCount > 10) sb.append(" 외 ").append(jobCount - 10).append("건");
+        log.info("스케줄러 상태: 유저 {}명, 대기 작업 {}건 — {}", users.size(), jobCount, sb);
     }
 
     /** 링 등록 — 이미 있으면 위치를 건드리지 않는다(공정성 유지). 신규는 머리 쪽 = 기존 유저들 차례 이후 */

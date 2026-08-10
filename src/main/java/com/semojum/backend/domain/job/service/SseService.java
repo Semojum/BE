@@ -45,6 +45,7 @@ public class SseService {
     }
 
     public SseEmitter connect(String jobId) {
+        log.info("SSE 구독: jobId={}", jobId);
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT);
         // 멀티스레드 환경에서 루프 종료 신호를 안전하게 전달하기 위해 AtomicBoolean 사용
         AtomicBoolean running = new AtomicBoolean(true);
@@ -133,6 +134,8 @@ public class SseService {
                     emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
                     emitter.complete();
                     running.set(false);
+                    log.info("SSE 종료: jobId={} (job_done 전송, totalPages={}, failed={})",
+                            jobId, totalPages, failedPagesList.size());
                 }
 
             } catch (IOException e) {

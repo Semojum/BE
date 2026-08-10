@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 // V3: 자체 가입·소셜 로그인 제거. 운영자가 발급한 계정(loginId/PW)으로만 로그인한다.
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -30,16 +31,21 @@ public class AuthService {
     public AuthResponseDto.Login login(AuthRequestDto.Login request) {
         // 발급 ID로 유저 조회
         User user = userRepository.findByLoginId(request.loginId())
-                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS));
+                .orElseThrow(() -> {
+                    log.warn("로그인 실패: loginId={} (존재하지 않는 ID)", request.loginId());
+                    return new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+                });
 
         // 비밀번호 검증
         if (user.getPassword() == null
                 || !passwordEncoder.matches(request.password(), user.getPassword())) {
+            log.warn("로그인 실패: loginId={} (비밀번호 불일치)", request.loginId());
             throw new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
         }
 
         // 비활성 계정 차단 (계약 만료·퇴사 등 운영자 조치)
         if (!user.isActive()) {
+            log.warn("로그인 거부: loginId={} (비활성 계정)", request.loginId());
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 
@@ -53,6 +59,7 @@ public class AuthService {
         // 리프레시 토큰 세션 저장 (계정당 활성 1개)
         saveSession(user, refreshToken);
 
+        log.info("로그인 성공: loginId={}", request.loginId());
         return new AuthResponseDto.Login(accessToken, refreshToken);
     }
 
@@ -105,6 +112,7 @@ public class AuthService {
 
         // 비활성 계정은 재발급도 차단 (비활성화 시 세션도 revoke되지만 이중 방어)
         if (!user.isActive()) {
+            log.warn("토큰 재발급 거부: loginId={} (비활성 계정)", user.getLoginId());
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 

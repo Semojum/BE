@@ -62,6 +62,9 @@ public class JobService {
         User user = userRepository.findById(UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
+        log.info("Job 생성 시작: mode={}, file={} ({}KB), user={}",
+                mode, file.getOriginalFilename(), file.getSize() / 1024, user.getLoginId());
+
         // 2. 모드 검증
         if (!List.of("a", "b", "c").contains(mode)) {
             throw new CustomException(ErrorCode.JOB_INVALID_MODE);
@@ -166,6 +169,7 @@ public class JobService {
             pageRepository.saveAll(pages);
             jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
+            log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
             return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
 
         } else {
@@ -237,6 +241,7 @@ public class JobService {
                 pageRepository.saveAll(pages);
                 jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
+                log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
                 return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
             }
         }

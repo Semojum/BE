@@ -21,6 +21,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
@@ -58,13 +59,13 @@ public class JwtFilter extends OncePerRequestFilter {
 
         // 토큰 없음
         if (token == null) {
-            sendUnauthorized(response);
+            sendUnauthorized(request, response, "토큰 없음");
             return;
         }
 
         // 토큰 유효하지 않음
         if (!jwtProvider.isValid(token)) {
-            sendUnauthorized(response);
+            sendUnauthorized(request, response, "토큰 무효·만료");
             return;
         }
 
@@ -77,7 +78,10 @@ public class JwtFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private void sendUnauthorized(HttpServletResponse response) throws IOException {
+    // 미인증은 일상(봇·만료 토큰) — 스택 없이 WARN 한 줄. 진짜 장애(ERROR)가 묻히지 않게 한다
+    private void sendUnauthorized(HttpServletRequest request, HttpServletResponse response, String reason)
+            throws IOException {
+        log.warn("REQ {} {} → 401 ({})", request.getMethod(), request.getRequestURI(), reason);
         response.setStatus(401);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
