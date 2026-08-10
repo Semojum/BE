@@ -72,14 +72,17 @@ public class JobDownloadService {
                 "text/plain; charset=UTF-8");
     }
 
+    // mode a 페이지 구분선 — 빈 줄은 문단 간격과 구분이 안 돼 하이픈 줄로 표시 (팀 결정 2026-08-10)
+    private static final String PAGE_SEPARATOR = "-".repeat(40);
+
     /**
      * mode a — 편집 최종본 텍스트 병합.
-     * 요소 사이 줄바꿈, 원본 페이지 사이 빈 줄 1개. `<!점역자주>` 마커는 그대로 둔다
+     * 요소 사이 줄바꿈, 원본 페이지 사이 구분선({@link #PAGE_SEPARATOR}) 1줄. `<!점역자주>` 마커는 그대로 둔다
      * (mode a 결과는 "점역으로 보내기"로 mode b 입력이 되며 마커가 점역자주 처리 신호).
      *
      * <p>내용이 빈 블록은 건너뛴다 — 점역사가 블록을 지우지 않고 내용만 비운 경우
      * 빈 줄로 남지 않고 뒤 내용이 당겨진다(QA 0808: 삭제 자리가 공란으로 출력되던 버그).
-     * 블록이 전부 빈 페이지는 페이지 구분 빈 줄도 남기지 않는다.
+     * 블록이 전부 빈 페이지는 구분선도 남기지 않는다.
      */
     private String buildTxt(List<PageResult> pageResults) {
         List<String> pages = new ArrayList<>();
@@ -96,7 +99,7 @@ public class JobDownloadService {
                 pages.add(String.join("\n", parts));
             }
         }
-        return String.join("\n\n", pages);
+        return String.join("\n" + PAGE_SEPARATOR + "\n", pages);
     }
 
     /** mode b·c — braille-assist 조립 JSON을 만들어 조판·BRF 변환 전체를 위임 */

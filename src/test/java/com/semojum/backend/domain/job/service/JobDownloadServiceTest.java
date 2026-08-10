@@ -63,7 +63,10 @@ class JobDownloadServiceTest {
         return PageResult.builder().pageNumber(pageNo).mode(mode).status("COMPLETED").build();
     }
 
-    /** mode a — 요소는 줄바꿈, 페이지는 빈 줄 1개로 병합. 점역자주 마커는 그대로 */
+    /** mode a 페이지 구분선 (서비스 상수와 동일해야 함) */
+    static final String SEP = "-".repeat(40);
+
+    /** mode a — 요소는 줄바꿈, 페이지는 하이픈 구분선 1줄로 병합. 점역자주 마커는 그대로 */
     @Test
     void mode_a는_요소와_페이지를_순서대로_병합한_txt() {
         givenJob("a", false, null);
@@ -78,7 +81,7 @@ class JobDownloadServiceTest {
         JobDownloadService.DownloadFile f = service.download(USER, "job1", null);
 
         assertEquals("원본문서.txt", f.fileName());
-        assertEquals("첫 문단\n<!점역자주>그림 설명<!/점역자주>\n\n둘째 쪽",
+        assertEquals("첫 문단\n<!점역자주>그림 설명<!/점역자주>\n" + SEP + "\n둘째 쪽",
                 new String(f.content(), StandardCharsets.UTF_8));
         verify(grpc, never()).translateText(anyString());
     }
@@ -101,9 +104,9 @@ class JobDownloadServiceTest {
                 "빈 블록들이 빈 줄로 남지 않고 남은 내용부터 시작");
     }
 
-    /** 블록이 전부 빈 페이지는 페이지 구분 빈 줄도 남기지 않는다 */
+    /** 블록이 전부 빈 페이지는 구분선도 남기지 않는다 */
     @Test
-    void 전부_빈_페이지는_구분_빈줄도_없다() {
+    void 전부_빈_페이지는_구분선도_없다() {
         givenJob("a", false, null);
         PageResult p1 = pr(1, "a"), p2 = pr(2, "a"), p3 = pr(3, "a");
         when(pageResultRepo.findByJobIdOrderByPageNumber("job1")).thenReturn(List.of(p1, p2, p3));
@@ -116,8 +119,8 @@ class JobDownloadServiceTest {
 
         JobDownloadService.DownloadFile f = service.download(USER, "job1", null);
 
-        assertEquals("첫 페이지\n\n셋째 페이지", new String(f.content(), StandardCharsets.UTF_8),
-                "빈 페이지가 통째로 빠지고 남은 페이지끼리 빈 줄 1개로 구분");
+        assertEquals("첫 페이지\n" + SEP + "\n셋째 페이지", new String(f.content(), StandardCharsets.UTF_8),
+                "빈 페이지가 통째로 빠지고 남은 페이지끼리 구분선 1줄로 구분");
     }
 
     /** mode b — braille-assist에 위임: BRF-ASCII 26줄 면, 쪽번호 끄면 페이지행 없음 */
