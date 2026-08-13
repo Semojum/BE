@@ -18,14 +18,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().get(0).getDefaultMessage();
+        log.warn("요청 검증 실패: {}", message);
         return ResponseEntity
                 .badRequest()
                 .body(ApiResponse.failure(ErrorCode.COMMON_BAD_REQUEST));
     }
 
-    // 커스텀 예외
+    // 커스텀 예외 — 사용자 신고("안 돼요") 대응을 위해 에러코드를 로그에 남긴다.
+    // 어떤 요청이었는지는 같은 ctx의 REQ 라인이 담당(RequestLogFilter)
     @ExceptionHandler(CustomException.class)
     public ResponseEntity<ApiResponse<Void>> handleCustom(CustomException e) {
+        log.warn("비즈니스 예외: {} — {}", e.getErrorCode().getCode(), e.getErrorCode().getMessage());
         return ResponseEntity
                 .status(e.getErrorCode().getHttpStatus())
                 .body(ApiResponse.failure(e.getErrorCode()));

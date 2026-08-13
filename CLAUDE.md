@@ -297,6 +297,16 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - mode b: 텍스트를 NanumGothic 폰트로 흰 배경에 렌더링 → PNG
 - 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
 
+### 로깅 (2026-08-10 개편)
+- **형식**: `시각 레벨 [ctx] 로거 : 메시지` — ctx(MDC)는 요청 스레드 `req-xxxxxxxx`(RequestLogFilter 발급), 워커 스레드 `jobId|pN`(PageWorker). `grep <jobId>` 또는 `grep <req-id>` 하나로 해당 요청·작업의 전 로그가 묶임
+- **액세스 로그**: 요청마다 `REQ 메서드 경로 → 상태 (소요ms) user=uuid8자` 한 줄 (RequestLogFilter, 시큐리티 체인 바로 안쪽 @Order(-99)). 레벨=결과: 2xx·3xx INFO / 4xx WARN / 5xx ERROR. 시큐리티에서 거절된 401은 JwtFilter·entryPoint가 WARN 한 줄로 남김
+- **레벨 원칙**: 미인증·4xx는 일상이므로 WARN 한 줄(스택 금지) — ERROR+스택은 진짜 5xx뿐. `grep -E "WARN|ERROR"`가 곧 장애 화면이 되도록 유지할 것
+- **`show-sql: false` 고정** — stdout 직행이라 타임스탬프 없이 로그의 60%를 차지했음(2026-08-10 실측). SQL 디버깅은 `org.hibernate.SQL=DEBUG`(로거 경유)로
+- **`/error` 경로는 시큐리티 permitAll 유지** — 빼면 예외 1건이 AuthorizationDeniedException 스택 수백 줄로 증폭됨(에러 디스패치가 다시 인가 거부)
+- **스케줄링 가시성**: 큐 적재/소진 전이 로그(JobDispatcher) + 대기 작업이 있을 때만 1분 1줄 `스케줄러 상태: 유저 N명, 대기 작업 N건 — jobId:N대기(FG/BG)…`
+- **compose 로그 rotation**: 서비스별 json-file 10MB×5 (무제한이면 디스크 잠식 + down 시 로그 소실)
+- **색·이모지 금지(저장분)**: 색칠은 뷰어에서 — `scripts/semlog.sh`(ERROR 빨강·WARN 노랑·REQ 시안, `semlog [tail수] [필터]`)
+
 ### Spring Security
 - `JwtFilter`: PERMIT_URLS = `/api/auth/login`, `/api/admin/`(X-Admin-Key 자체 검증), `/swagger-ui`, `/v3/api-docs`
 - 미인증 요청 시 `COMMON4001` JSON 반환

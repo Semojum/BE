@@ -37,7 +37,9 @@ spring:
         jdbc:
           # DB 세션 시간대를 고정 — JVM 기본값에 끌려다니지 않게 한다
           time_zone: Asia/Seoul
-    show-sql: true
+    # 운영 SQL 로그 금지 — show-sql은 로거가 아닌 stdout 직행이라 타임스탬프·레벨 없이 찍혀
+    # 로그의 60%를 차지했다(2026-08-10 실측). 필요 시 org.hibernate.SQL=DEBUG로 로거 경유 활성화
+    show-sql: false
 
   data:
     redis:
@@ -84,3 +86,9 @@ grpc:
     # AI 하드 타임아웃 180s는 "변환 시작" 기준(AI팀 확인) — 슬롯 2라 앞 요청을 기다린 뒤 변환하는
     # 최악 케이스가 대기(~180s) + 자기 변환(180s) ≈ 360s이므로 400s로 감싼다.
     deadline-seconds: ${GRPC_AI_DEADLINE_SECONDS:400}
+# 로그 형식: 시각 레벨 [추적키] 로거 : 메시지
+# 추적키(ctx) = 요청 스레드는 req-xxxxxxxx(RequestLogFilter), 워커 스레드는 jobId|pN(PageWorker)
+# 같은 요청·같은 작업의 로그를 grep 하나로 묶기 위한 것. 없으면 "-"
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %5p [%X{ctx:--}] %-36.36logger{36} : %m%n%wEx"
