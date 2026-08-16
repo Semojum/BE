@@ -37,6 +37,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         // 운영자 API는 JWT 대신 X-Admin-Key 헤더로 자체 검증 (AdminController)
                         .requestMatchers("/api/admin/**").permitAll()
+                        // 헬스체크 — Envoy·배포 스크립트가 무인증으로 호출
+                        .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 에러 디스패치(/error 포워드)까지 인가를 요구하면 예외 1건이
                         // AuthorizationDeniedException 스택 수백 줄로 증폭된다(2026-08-10 실측) — 반드시 허용

@@ -41,7 +41,7 @@
 | Docker Hub | `zxhwan/semojum-backend:latest` |
 | 예산 알람 | 월 $50의 80%·100% 도달 시 `contact@semo-jum.com` 메일 |
 
-**배포 흐름**: `dev` 브랜치 push → GitHub Actions → Docker Hub → EC2 SSH(`ubuntu@43.200.184.56`, `/home/ubuntu/semojum`, `docker compose`)
+**배포 흐름**: `dev` 브랜치 push → GitHub Actions(테스트 게이트) → Docker Hub → EC2에서 `scripts/deploy.sh` 실행 — **블루그린 무중단**(2026-08-16 전환). 새 이미지를 비활성 색(backend-blue/green)으로 기동 → `/api/health` 게이트 → Envoy 헬스체크 편입 → 구 색 graceful 정지. 새 버전이 안 뜨면 구버전이 계속 서비스(배포 게이트). 롤백 = 방금 내린 색 재기동. ⚠️ 색 서비스는 compose profiles라 `docker compose up -d`로는 backend가 뜨지 않는다 — 수동 조작 시 `--profile blue` 필요
 
 ### CI 배포의 SSH 접근 방식 (중요)
 EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러너는 IP가 매번 바뀌므로, 워크플로우가 **배포 동안만 러너 IP를 인바운드에 추가하고 회수**한다.
@@ -57,7 +57,7 @@ EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러�
 ### GCP → AWS 이전 상태 (2026-07-29 기준, 브랜치 `feat/aws-migration`)
 - **완료**: S3·RDS·EC2 생성 / DB 전체 이관·검증(12테이블) / GCS→S3 객체 460개 이관·일치 확인 / EC2에서 E2E 검증(가입→Job 생성→S3 업로드→워커 다운로드) / GitHub 시크릿(VM_HOST·VM_USER·VM_SSH_KEY) EC2로 교체 완료
 - **컷오버 완료(2026-07-31)**: Cloudflare A레코드 전환 → 트래픽이 EC2·RDS·S3로 서비스 중. **AI 서버도 같은 AWS 계정·VPC로 이전 완료**, gRPC 실변환 E2E 검증됨(TLS 통과, 0.9초 내 COMPLETED)
-- **남은 정리**: GCP 리소스(VM·Cloud SQL) 삭제 · 테스트 계정/Job 정리 · 무중단 배포 전환(현재 배포마다 약 20초 중단)
+- **남은 정리**: GCP 리소스(VM·Cloud SQL) 삭제 · 테스트 계정/Job 정리 (~~무중단 배포 전환~~ → 2026-08-16 블루그린 완료)
 - **⚠️ 시크릿이 이미 EC2로 교체됨** → 컷오버 전에 dev push 금지(옛 GCS 코드가 EC2에 배포되면 크래시). 다음 dev 반영은 반드시 `feat/aws-migration` 머지
 - 구 GCP 인프라(참고): BE VM `34.158.215.55` / Cloud SQL `34.47.68.184` / GCS `semojum-bucket` — 컷오버·안정화까지 유지(롤백 보험)
 - 로컬 시크릿: RDS 비밀번호·EIP 등 `~/Desktop/semojum-aws-secrets.txt`(팀 비밀번호 관리자로 이관 권장), SSH 키 `~/.ssh/semojum-key.pem`
