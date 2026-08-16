@@ -18,7 +18,8 @@ set -euo pipefail
 TAIL="${1:-200}"
 FILTER="${2:-}"
 
-STREAM="ssh semojum-aws 'cd ~/semojum && docker compose logs -f --no-log-prefix --tail ${TAIL} backend'"
+# blue/green 두 색 모두 지정 — 평소엔 한 색만 떠 있어 그쪽 로그만 흐르고, 전환 중엔 양쪽이 섞여 보인다
+STREAM="ssh semojum-aws 'cd ~/semojum && docker compose --profile blue --profile green logs -f --no-log-prefix --tail ${TAIL} backend-blue backend-green'"
 
 colorize() {
   awk '

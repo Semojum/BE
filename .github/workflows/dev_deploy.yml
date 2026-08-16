@@ -78,26 +78,25 @@ jobs:
             --group-id ${{ secrets.EC2_SECURITY_GROUP_ID }} \
             --protocol tcp --port 22 --cidr "$RUNNER_IP/32"
 
-      - name: Copy docker-compose to VM
+      - name: Copy deploy files to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          source: "docker-compose.yml,envoy.yaml"
+          source: "docker-compose.yml,envoy.yaml,scripts/deploy.sh"
           target: "/home/ubuntu/semojum/"
 
-      - name: Deploy via SSH
+      # 블루그린 무중단 배포: 새 이미지를 비활성 색으로 띄우고 헬스 통과 후 구 색을 내린다.
+      # 새 버전이 안 뜨면 deploy.sh가 실패(exit 1)하고 구버전이 계속 서비스한다(배포 게이트).
+      - name: Deploy via SSH (blue-green)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            cd /home/ubuntu/semojum
-            docker pull zxhwan/semojum-backend:latest
-            docker compose down
-            docker compose up -d
+          command_timeout: 10m
+          script: bash /home/ubuntu/semojum/scripts/deploy.sh
 
       # 배포 성공·실패와 무관하게 반드시 회수 (규칙이 남아 포트가 열린 채 방치되지 않도록)
       - name: Close SSH for runner IP

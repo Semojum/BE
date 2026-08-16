@@ -35,7 +35,9 @@ public class RequestLogFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
         // 문서·아이콘 요청은 운영 신호가 아니라서 제외
-        return uri.startsWith("/swagger-ui") || uri.startsWith("/v3/api-docs") || uri.equals("/favicon.ico");
+        // /api/health는 Envoy가 3초마다 호출 — REQ 로그로 쌓이면 그게 다시 노이즈
+        return uri.startsWith("/swagger-ui") || uri.startsWith("/v3/api-docs")
+                || uri.equals("/favicon.ico") || uri.equals("/api/health");
     }
 
     @Override

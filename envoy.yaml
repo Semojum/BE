@@ -1,3 +1,9 @@
+# 블루그린 무중단 배포용 설정 (2026-08-16)
+# - 클러스터에 blue/green 두 엔드포인트 — 액티브 헬스체크(/api/health, 3초)로 살아있는 쪽에만 라우팅
+# - 꺼져 있는 색은 DNS 미해석·헬스 실패로 자동 제외되고, 새로 뜨면 재조회(5초)로 자동 편입
+# - 재시도는 connect-failure·refused-stream만: 요청이 백엔드에 "도달하기 전" 실패라 재시도해도
+#   중복 실행이 없다 (5xx 재시도는 POST 중복 실행 위험이 있어 넣지 않는다)
+# - SSE: timeout 0s(무제한) + idle_timeout 10800s(=EMITTER_TIMEOUT 3시간) 유지 — 변경 금지
 static_resources:
   listeners:
     - name: listener_0
@@ -23,6 +29,9 @@ static_resources:
                             cluster: spring_boot
                             timeout: 0s
                             idle_timeout: 10800s
+                            retry_policy:
+                              retry_on: "connect-failure,refused-stream"
+                              num_retries: 2
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
@@ -32,7 +41,19 @@ static_resources:
     - name: spring_boot
       connect_timeout: 0.25s
       type: STRICT_DNS
+      # 꺼진 색의 DNS 미해석을 빨리 반영/복구
+      dns_refresh_rate: 5s
+      respect_dns_ttl: false
       lb_policy: ROUND_ROBIN
+      health_checks:
+        - timeout: 2s
+          interval: 3s
+          healthy_threshold: 2
+          unhealthy_threshold: 2
+          http_health_check:
+            path: /api/health
+      # 두 색이 잠깐 같이 healthy면 트래픽이 반씩 나뉜다 — 전환 중 몇 초뿐이라 무해
+      # (deploy.sh가 헬스 통과 후 구 색을 바로 내림)
       load_assignment:
         cluster_name: spring_boot
         endpoints:
@@ -40,5 +61,10 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: backend
+                      address: backend-blue
+                      port_value: 8080
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: backend-green
                       port_value: 8080

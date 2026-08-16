@@ -1,3 +1,42 @@
+# 블루그린 무중단 배포 (2026-08-16 전환)
+# - backend가 blue/green 2색으로 나뉘고, 평소엔 한 색만 떠 있다 (deploy.sh가 관리)
+# - Envoy가 두 색을 액티브 헬스체크로 감시해 살아있는 쪽으로 라우팅
+# - 배포: 새 이미지를 비활성 색으로 기동 → 헬스 통과 → 구 색 graceful 정지 (다운타임 0)
+# - 색 서비스는 profiles라 `docker compose up -d`로는 뜨지 않는다 — 반드시 deploy.sh 사용
+#   (수동 기동: docker compose --profile blue up -d backend-blue)
+
+x-backend-common: &backend-common
+  image: zxhwan/semojum-backend:latest
+  # 배포 스크립트가 색을 명시적으로 켜고 끈다 — 재부팅 시 unless-stopped가 마지막 상태 복원
+  restart: unless-stopped
+  # graceful shutdown(앱 20s) + 여유 — 처리 중 요청을 마저 끝낸 뒤 내려간다
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+  environment:
+    - DB_HOST=${DB_HOST}
+    - DB_PASSWORD=${DB_PASSWORD}
+    - JWT_SECRET=${JWT_SECRET}
+    - SPRING_PROFILES_ACTIVE=prod
+    - GRPC_CERT_PATH=${GRPC_CERT_PATH}
+    - ADMIN_API_KEY=${ADMIN_API_KEY}
+    - S3_BUCKET=${S3_BUCKET}
+    - AWS_REGION=${AWS_REGION}
+    # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.
+    # UTC로 두면 LocalDateTime.now()가 9시간 이른 값을 써서 "어제/오늘" 판정이 어긋난다.
+    - TZ=Asia/Seoul
+    # -Xmx768m: 전환 창(두 색 동시 가동 ~30초)에 JVM 2개가 떠도 합계가 가용 메모리(3.7GB) 안에
+    # 갇히도록 힙 상한 고정 (기본값은 RAM 25%=960MB×2 + 네이티브라 이론상 최악에서 초과 가능)
+    - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Seoul -Xmx768m
+  depends_on:
+    - redis
+  volumes:
+    # 호스트 경로를 compose 파일 기준 상대경로로 (GCP/AWS 어느 VM에서든 동작)
+    - ./server.crt:/home/joha-eun/server.crt:ro
+
 services:
   envoy:
     image: envoyproxy/envoy:v1.29-latest
@@ -11,37 +50,19 @@ services:
       - "80:80"
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
-    depends_on:
-      - backend
+    # 색 서비스는 profiles라 depends_on을 걸 수 없다 — Envoy는 DNS 재조회(5s)로 알아서 찾는다
 
-  backend:
-    image: zxhwan/semojum-backend:latest
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
+  backend-blue:
+    <<: *backend-common
+    profiles: ["blue"]
     ports:
-      - "8080:8080"
-    environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-      - SPRING_PROFILES_ACTIVE=prod
-      - GRPC_CERT_PATH=${GRPC_CERT_PATH}
-      - ADMIN_API_KEY=${ADMIN_API_KEY}
-      - S3_BUCKET=${S3_BUCKET}
-      - AWS_REGION=${AWS_REGION}
-      # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.
-      # UTC로 두면 LocalDateTime.now()가 9시간 이른 값을 써서 "어제/오늘" 판정이 어긋난다.
-      - TZ=Asia/Seoul
-      - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Seoul
-    depends_on:
-      - redis
-    volumes:
-      # 호스트 경로를 compose 파일 기준 상대경로로 (GCP/AWS 어느 VM에서든 동작)
-      - ./server.crt:/home/joha-eun/server.crt:ro
+      - "8081:8080"   # deploy.sh 헬스체크용 (외부 트래픽은 Envoy:80 경유, SG는 8081 비공개)
+
+  backend-green:
+    <<: *backend-common
+    profiles: ["green"]
+    ports:
+      - "8082:8080"   # deploy.sh 헬스체크용
 
   redis:
     image: redis:latest

@@ -1,4 +1,11 @@
+# 블루그린 전환 시 구 컨테이너가 처리 중이던 요청을 마저 끝내고 내려가도록 (신규 요청은 즉시 거절)
+# SSE 장기 연결은 20초 뒤 끊김 — FE EventSource 자동 재연결 + 완료분 재전송으로 이어받음
+server:
+  shutdown: graceful
+
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   application:
     name: backend
   datasource:
