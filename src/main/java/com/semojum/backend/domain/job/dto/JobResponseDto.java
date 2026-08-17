@@ -41,6 +41,7 @@ public class JobResponseDto {
             String jobId,
             String mode,             // 배지 색·문구
             String status,           // "변환 중" 판정
+            Integer progress,        // 변환 중일 때만 0~100(완료 페이지 비율), 그 외 null — 카드 "생성 중 N%" 표시용 (2026-08-17 복원)
             String originalFileName,
             String thumbnailUrl,
             String displayDate,      // "1시간 전" / "어제" / "7. 28." / "2025. 12. 3."
