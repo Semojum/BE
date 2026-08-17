@@ -86,12 +86,13 @@ grpc:
     # AI 서버는 같은 VPC(AWS 서울)에 있으므로 사설 IP로 접속한다.
     # 공인 IP로 가면 트래픽이 VPC를 벗어나 AI 보안그룹의 "BE 보안그룹 허용" 규칙에 걸리지 않아 차단된다.
     # (전송비 0원·지연 감소 효과도 있음) 서버 증설·슬롯 조정은 환경변수 수정 + 재시작으로 끝.
-    servers: ${GRPC_AI_SERVERS:172.31.47.101:50051:2}
+    servers: ${GRPC_AI_SERVERS:172.31.47.101:50051:4}
     cert-path: ${GRPC_CERT_PATH}
     authority: semo-jum.com
     # 응답 없는 요청이 슬롯을 영구 점유하지 못하게 하는 백스톱. "BE가 요청을 보낸 시점"부터 카운트.
-    # AI 하드 타임아웃 180s는 "변환 시작" 기준(AI팀 확인) — 슬롯 2라 앞 요청을 기다린 뒤 변환하는
+    # AI 하드 타임아웃 180s는 "변환 시작" 기준(AI팀 확인) — 앞 요청을 기다린 뒤 변환하는
     # 최악 케이스가 대기(~180s) + 자기 변환(180s) ≈ 360s이므로 400s로 감싼다.
+    # 슬롯을 늘려 대기가 길어지면 DEADLINE_EXCEEDED가 늘 수 있으니 로그를 보고 이 값도 함께 조정.
     deadline-seconds: ${GRPC_AI_DEADLINE_SECONDS:400}
 # 로그 형식: 시각 레벨 [추적키] 로거 : 메시지
 # 추적키(ctx) = 요청 스레드는 req-xxxxxxxx(RequestLogFilter), 워커 스레드는 jobId|pN(PageWorker)
