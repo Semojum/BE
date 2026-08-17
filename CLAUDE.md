@@ -41,7 +41,7 @@
 | Docker Hub | `zxhwan/semojum-backend:latest` |
 | 예산 알람 | 월 $50의 80%·100% 도달 시 `contact@semo-jum.com` 메일 |
 
-**배포 흐름**: `dev` 브랜치 push → GitHub Actions → Docker Hub → EC2 SSH(`ubuntu@43.200.184.56`, `/home/ubuntu/semojum`, `docker compose`)
+**배포 흐름**: `dev` 브랜치 push → GitHub Actions(테스트 게이트) → Docker Hub → EC2에서 `scripts/deploy.sh` 실행 — **블루그린 무중단**(2026-08-16 전환). 새 이미지를 비활성 색(backend-blue/green)으로 기동 → `/api/health` 게이트 → Envoy 헬스체크 편입 → 구 색 graceful 정지. 새 버전이 안 뜨면 구버전이 계속 서비스(배포 게이트). 롤백 = 방금 내린 색 재기동. ⚠️ 색 서비스는 compose profiles라 `docker compose up -d`로는 backend가 뜨지 않는다 — 수동 조작 시 `--profile blue` 필요
 
 ### CI 배포의 SSH 접근 방식 (중요)
 EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러너는 IP가 매번 바뀌므로, 워크플로우가 **배포 동안만 러너 IP를 인바운드에 추가하고 회수**한다.
@@ -57,7 +57,7 @@ EC2의 22번 포트는 **관리자 IP에만** 열려 있고 GitHub Actions 러�
 ### GCP → AWS 이전 상태 (2026-07-29 기준, 브랜치 `feat/aws-migration`)
 - **완료**: S3·RDS·EC2 생성 / DB 전체 이관·검증(12테이블) / GCS→S3 객체 460개 이관·일치 확인 / EC2에서 E2E 검증(가입→Job 생성→S3 업로드→워커 다운로드) / GitHub 시크릿(VM_HOST·VM_USER·VM_SSH_KEY) EC2로 교체 완료
 - **컷오버 완료(2026-07-31)**: Cloudflare A레코드 전환 → 트래픽이 EC2·RDS·S3로 서비스 중. **AI 서버도 같은 AWS 계정·VPC로 이전 완료**, gRPC 실변환 E2E 검증됨(TLS 통과, 0.9초 내 COMPLETED)
-- **남은 정리**: GCP 리소스(VM·Cloud SQL) 삭제 · 테스트 계정/Job 정리 · 무중단 배포 전환(현재 배포마다 약 20초 중단)
+- **남은 정리**: GCP 리소스(VM·Cloud SQL) 삭제 · 테스트 계정/Job 정리 (~~무중단 배포 전환~~ → 2026-08-16 블루그린 완료)
 - **⚠️ 시크릿이 이미 EC2로 교체됨** → 컷오버 전에 dev push 금지(옛 GCS 코드가 EC2에 배포되면 크래시). 다음 dev 반영은 반드시 `feat/aws-migration` 머지
 - 구 GCP 인프라(참고): BE VM `34.158.215.55` / Cloud SQL `34.47.68.184` / GCS `semojum-bucket` — 컷오버·안정화까지 유지(롤백 보험)
 - 로컬 시크릿: RDS 비밀번호·EIP 등 `~/Desktop/semojum-aws-secrets.txt`(팀 비밀번호 관리자로 이관 권장), SSH 키 `~/.ssh/semojum-key.pem`
@@ -198,7 +198,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
   - 모드 a/c: PDF 페이지별 분리 → S3 업로드
   - 모드 b: **HWP는 실제 페이지 단위**(레이아웃 기반, 표 내용 포함) / TXT는 30줄 단위 청크 → S3 업로드
   - Redis `task_queue` LPUSH, `job:{jobId}:pages` Hash PENDING 초기화
-- `POST /api/jobs/{jobId}/download` — **결과 다운로드** (`JobDownloadService`): body `{fileName}`(선택), 응답은 JSON 래핑 없는 파일 스트림(Content-Disposition, RFC 5987). mode a=`.txt`(text_elements의 current를 페이지·읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 빈 줄, `<!점역자주>` 마커 유지), b·c=`.brf`(**braille-assist 라이브러리에 조판 전체 위임** — `com.semojum.brailleassist.BrailleAssist`는 https://github.com/Semojum/braille-assist 에서 복사한 파일, **수정 금지·규칙 변경은 원 레포에서**. vectors.json 42건을 BE VectorsTest가 검증). 꼬리말은 `jobs.footer_text`(묵자)를 다운로드 시점에 TranslateText로 점역. 항상 DB 최신 편집본으로 즉시 생성(조판 재처리 분기 없음). 변환 중 JOB4010, FAILED·결과 없음 JOB4012. BLOCKED 페이지는 빈 쪽으로 들어가 변경선만 유지
+- `POST /api/jobs/{jobId}/download` — **결과 다운로드** (`JobDownloadService`): body `{fileName}`(선택), 응답은 JSON 래핑 없는 파일 스트림(Content-Disposition, RFC 5987). mode a=`.txt`(text_elements의 current를 페이지·읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 하이픈 구분선 1줄(`-`×40, 2026-08-10 빈 줄에서 변경), 내용 빈 블록·빈 페이지는 스킵, `<!점역자주>` 마커 유지), b·c=`.brf`(**braille-assist 라이브러리에 조판 전체 위임** — `com.semojum.brailleassist.BrailleAssist`는 https://github.com/Semojum/braille-assist 에서 복사한 파일, **수정 금지·규칙 변경은 원 레포에서**. vectors.json 42건을 BE VectorsTest가 검증). 꼬리말은 `jobs.footer_text`(묵자)를 다운로드 시점에 TranslateText로 점역. 항상 DB 최신 편집본으로 즉시 생성(조판 재처리 분기 없음). 변환 중 JOB4010, FAILED·결과 없음 JOB4012. BLOCKED 페이지는 빈 쪽으로 들어가 변경선만 유지
 - `POST /api/jobs/{jobId}/cancel` — **변환 취소** (`JobCancelService`): 완료된 페이지까지만 남기고 중단. 취소는 즉시가 아니라 **수렴** — ① 취소 플래그(Redis `job:{id}:canceled`, TTL 1h) 먼저 → ② 작업 큐 배수(빈 큐는 스케줄러 lazy cleanup으로 링에서 제거 = 다른 작업이 슬롯 승계) → ③ AI에 이미 들어간 페이지(RUNNING)는 마무리·저장 후 ④ 확정: 완료된 마지막 페이지(K) 뒤쪽은 Page 행 삭제 + `total_pages=K` 축소, K 앞에 낀 미변환 페이지(재시도 대기)는 번호 구멍 방지로 BLOCKED. 완료 0건이면 전부 BLOCKED+FAILED(총수 유지). 성공≥1이면 COMPLETED(부분 완료). 확정 시 `jobs.canceled_at`·`original_total_pages`(V14)에 취소 시각·잘리기 전 규모 기록(운영·CS용, 화면 로직 무관). 워커는 태스크 pop 직후·재시도 직전에 플래그를 검사해 폐기(`cancelPage`)하고, 마지막 인플라이트를 처리한 쪽이 `tryFinalize`로 확정. 이미 끝난 작업 취소는 멱등(canceled=false). DB Page의 `CANCELED`는 취소 창 동안만 존재하는 과도 상태
 - `GET /api/jobs/{jobId}/status` — Redis Hash 폴링, 페이지별 상태 반환
 - `GET /api/jobs/{jobId}/events` — SSE 실시간 스트리밍 (JWT 인증, 본인 Job만)
@@ -245,7 +245,7 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - **커서(2페이지 이후) 요청에는 `folders`가 빈 배열**로 나간다 — 폴더는 페이지네이션이 없어 매번 전체가 실려 오므로, FE가 그대로 누적하면 폴더가 중복 표시된다. 세 경로 모두 동일
 - **검색은 현재 위치 "아래 전체"를 훑는다**(깊이 무관, 탐색기와 동일). 루트에서는 전역, 폴더 안에서는 그 폴더의 **서브트리 전체**(손자 이하 포함, 자기 자신은 제외). 검색이 아닐 때는 한 층만. 파일 범위는 `JobSearchCondition.withFolderScope(서브트리 id들)`로 넘어간다
 - `contents`의 **필터 규칙**(윈도우 탐색기 원칙): 상태·모드 필터가 걸리면 **폴더는 결과에서 빠진다**(폴더에 없는 속성) / 즐겨찾기·정렬은 폴더+파일 모두 적용 / 검색어는 파일명과 **폴더명 양쪽**에 적용
-- **목록 카드(`JobCard`) 필드**: `jobId·mode·status·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`. 진행률은 담지 않는다(카드는 "변환 중"만 표시, 실시간은 SSE 담당). `lastModifiedAt` 원본 시각도 담지 않는다(화면은 `displayDate`, 다음 페이지는 불투명 `nextCursor`). **`folderId`/`folderPath`는 제거 금지** — 전체보기(S9)·검색 결과의 위치 표시와 "폴더로 이동"에 쓰인다
+- **목록 카드(`JobCard`) 필드**: `jobId·mode·status·progress·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`. **`progress`는 2026-08-17 복원**(팀 결정 번복 — 카드에 "생성 중 N%" 표시): 변환 중일 때만 0~100(완료 페이지 비율, Redis 조회), 그 외 null. 초 단위 실시간은 여전히 SSE 담당 — 목록은 생성 중 카드가 있는 동안 FE가 10초 주기 재조회. `lastModifiedAt` 원본 시각도 담지 않는다(화면은 `displayDate`, 다음 페이지는 불투명 `nextCursor`). **`folderId`/`folderPath`는 제거 금지** — 전체보기(S9)·검색 결과의 위치 표시와 "폴더로 이동"에 쓰인다
 - **`jobs.last_edited_page`** = 마지막으로 편집한 페이지 번호(재시작 복구용 — FE는 가장 최근 수정 작업의 이 페이지로 이동). `markContentEdited(pageNo)`가 `last_modified_at`·`is_edited`와 함께 기록한다
 - **`jobs.last_modified_at` = "파일 내용이 마지막으로 바뀐 시각"** (카드 날짜·목록 정렬·커서 키·재시작 복구 기준). 점역사의 페이지 편집에서만 `Job.markContentEdited()`로 갱신하고 `is_edited`도 함께 세운다. 이름 변경·폴더 이동·휴지통 복원·즐겨찾기 토글은 **내용이 안 바뀌므로 갱신하지 않는다**(윈도우 탐색기의 '수정한 날짜'와 동일). 변환 진행 상황은 `updated_at`(StaleJobScheduler 전용)이 따로 담당 — 두 컬럼을 섞지 말 것
 - `GET /api/users/jobs/{jobId}/pages/{pageNo}` — 페이지별 변환 결과 조회 (모드별 직렬화)
@@ -296,6 +296,16 @@ curl -X POST https://api.semojum.app/api/admin/accounts/kblib001/password-reissu
 - mode a/c: PDFBox로 PDF 첫 페이지 → PNG 렌더링
 - mode b: 텍스트를 NanumGothic 폰트로 흰 배경에 렌더링 → PNG
 - 생성 실패 시 경고 로그만 남기고 Job 생성은 정상 진행
+
+### 로깅 (2026-08-10 개편)
+- **형식**: `시각 레벨 [ctx] 로거 : 메시지` — ctx(MDC)는 요청 스레드 `req-xxxxxxxx`(RequestLogFilter 발급), 워커 스레드 `jobId|pN`(PageWorker). `grep <jobId>` 또는 `grep <req-id>` 하나로 해당 요청·작업의 전 로그가 묶임
+- **액세스 로그**: 요청마다 `REQ 메서드 경로 → 상태 (소요ms) user=uuid8자` 한 줄 (RequestLogFilter, 시큐리티 체인 바로 안쪽 @Order(-99)). 레벨=결과: 2xx·3xx INFO / 4xx WARN / 5xx ERROR. 시큐리티에서 거절된 401은 JwtFilter·entryPoint가 WARN 한 줄로 남김
+- **레벨 원칙**: 미인증·4xx는 일상이므로 WARN 한 줄(스택 금지) — ERROR+스택은 진짜 5xx뿐. `grep -E "WARN|ERROR"`가 곧 장애 화면이 되도록 유지할 것
+- **`show-sql: false` 고정** — stdout 직행이라 타임스탬프 없이 로그의 60%를 차지했음(2026-08-10 실측). SQL 디버깅은 `org.hibernate.SQL=DEBUG`(로거 경유)로
+- **`/error` 경로는 시큐리티 permitAll 유지** — 빼면 예외 1건이 AuthorizationDeniedException 스택 수백 줄로 증폭됨(에러 디스패치가 다시 인가 거부)
+- **스케줄링 가시성**: 큐 적재/소진 전이 로그(JobDispatcher) + 대기 작업이 있을 때만 1분 1줄 `스케줄러 상태: 유저 N명, 대기 작업 N건 — jobId:N대기(FG/BG)…`
+- **compose 로그 rotation**: 서비스별 json-file 10MB×5 (무제한이면 디스크 잠식 + down 시 로그 소실)
+- **색·이모지 금지(저장분)**: 색칠은 뷰어에서 — `scripts/semlog.sh`(ERROR 빨강·WARN 노랑·REQ 시안, `semlog [tail수] [필터]`)
 
 ### Spring Security
 - `JwtFilter`: PERMIT_URLS = `/api/auth/login`, `/api/admin/`(X-Admin-Key 자체 검증), `/swagger-ui`, `/v3/api-docs`

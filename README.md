@@ -141,9 +141,9 @@ src/main/java/com/semojum/backend
 
 ## 배포
 
-`dev` 브랜치 push → GitHub Actions → Docker Hub → EC2에서 `docker compose up`
+`dev` 브랜치 push → GitHub Actions → Docker Hub → EC2에서 `scripts/deploy.sh`(블루그린)
 
-- 배포 중 약 20초 다운타임이 발생한다(무중단 전환 예정)
+- **무중단 배포** — 새 버전을 비활성 색 컨테이너로 띄우고 헬스 통과 후 구 색을 내린다. 새 버전 기동 실패 시 구버전이 계속 서비스한다
 - SSH 22번 포트는 상시 개방하지 않고, 워크플로가 배포 동안만 러너 IP를 인바운드에 추가했다가 회수한다
 
 ---

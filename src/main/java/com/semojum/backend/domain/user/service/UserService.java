@@ -120,6 +120,7 @@ public class UserService {
                 job.getId(),
                 job.getMode(),
                 job.getStatus(),
+                progressOf(job),   // 진행 중 작업만 Redis 조회 — 완료 작업은 즉시 null
                 job.getOriginalFileName(),
                 job.getThumbnailUrl(),
                 RelativeDateFormatter.format(job.getLastModifiedAt(), now),

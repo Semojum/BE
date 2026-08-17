@@ -45,6 +45,7 @@ public class SseService {
     }
 
     public SseEmitter connect(String jobId) {
+        log.info("SSE 구독: jobId={}", jobId);
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT);
         // 멀티스레드 환경에서 루프 종료 신호를 안전하게 전달하기 위해 AtomicBoolean 사용
         AtomicBoolean running = new AtomicBoolean(true);
@@ -133,6 +134,8 @@ public class SseService {
                     emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
                     emitter.complete();
                     running.set(false);
+                    log.info("SSE 종료: jobId={} (job_done 전송, totalPages={}, failed={})",
+                            jobId, totalPages, failedPagesList.size());
                 }
 
             } catch (IOException e) {
@@ -148,6 +151,11 @@ public class SseService {
         }
     }
 
+    // 페이지당 변환 결과 JSON 전문 로그 — 대형 작업에선 페이지당 10~30KB라 양이 크다.
+    // 전용 로거로 분리해 필요 시 재빌드 없이 끌 수 있다:
+    // EC2 .env에 LOGGING_LEVEL_SSE_PAYLOAD=OFF 추가 후 docker compose up -d
+    private static final org.slf4j.Logger payloadLog = org.slf4j.LoggerFactory.getLogger("sse.payload");
+
     private void sendPageDoneEvent(String jobId, int pageNo, String status, SseEmitter emitter) {
         try {
             Map<String, Object> event = new LinkedHashMap<>();
@@ -162,7 +170,10 @@ public class SseService {
                 event.put("result", pageResultSerializer.buildResult(pageResult));
             }
 
-            emitter.send(SseEmitter.event().name("page_done").data(objectMapper.writeValueAsString(event)));
+            String payload = objectMapper.writeValueAsString(event);
+            emitter.send(SseEmitter.event().name("page_done").data(payload));
+            log.info("SSE page_done 방출: jobId={}, pageNo={}, status={}, payload={}B", jobId, pageNo, status, payload.length());
+            payloadLog.info("jobId={}, pageNo={} :: {}", jobId, pageNo, payload);
         } catch (Exception e) {
             log.error("page_done 이벤트 전송 실패: jobId={}, pageNo={}, {}", jobId, pageNo, e.getMessage());
         }
