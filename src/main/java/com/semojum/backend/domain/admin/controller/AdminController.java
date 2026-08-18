@@ -68,6 +68,26 @@ public class AdminController {
         return ApiResponse.success(adminOrgManageService.updateOrg(orgId, request));
     }
 
+    // 쿠폰 발급·목록 (T1-7) — 차감은 쿠폰 잔량부터, 소진되면 계약 크레딧
+    @PostMapping("/orgs/{orgId}/coupons")
+    public ApiResponse<AdminOrgDto.CouponItem> issueCoupon(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId,
+            @RequestBody @Valid AdminOrgDto.CreateCoupon request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.issueCoupon(orgId, request));
+    }
+
+    @GetMapping("/orgs/{orgId}/coupons")
+    public ApiResponse<java.util.List<AdminOrgDto.CouponItem>> listCoupons(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.listCoupons(orgId));
+    }
+
     // 기관 삭제(소프트) — 소속 계정 전부 잠금. 실삭제는 보관 기간 정책 확정 후
     @DeleteMapping("/orgs/{orgId}")
     public ApiResponse<AdminOrgDto.DeleteOrgResult> deleteOrg(

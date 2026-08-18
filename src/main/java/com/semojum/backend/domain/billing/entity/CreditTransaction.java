@@ -43,17 +43,27 @@ public class CreditTransaction {
     @Column(nullable = false)
     private int amount;
 
+    // 차감 출처 — CONTRACT(계약 크레딧) | COUPON(쿠폰 — 계약 잔여 불변, 수익성 매출 0)
+    @Column(nullable = false, length = 20)
+    private String source;
+
+    @Column(name = "coupon_id", columnDefinition = "uuid")
+    private UUID couponId;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
     @Builder
     public CreditTransaction(UUID userId, UUID organizationId, String jobId,
-                             int pageNo, String layoutType, int amount) {
+                             int pageNo, String layoutType, int amount,
+                             String source, UUID couponId) {
         this.userId = userId;
         this.organizationId = organizationId;
         this.jobId = jobId;
         this.pageNo = pageNo;
         this.layoutType = layoutType;
         this.amount = amount;
+        this.source = source == null ? "CONTRACT" : source;
+        this.couponId = couponId;
     }
 }
