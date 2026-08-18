@@ -112,13 +112,14 @@ com.semojum.backend
 
 ### 운영자 API (X-Admin-Key — 관리자 페이지 전까지 임시)
 - 키는 EC2 `.env`의 `ADMIN_API_KEY`(코드·저장소에 없음). **fail-closed**(미설정 시 전부 차단), constant-time 비교
-- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할(ROLE_ADMIN·ROLE_USER) 변경 / 단가표 조회·갱신(`GET·PUT /api/admin/pricing`)
+- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유. 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비 — 네이티브 date_trunc 집계(AdminStatsRepository), 기관별 수익성은 계약 단가 확정 후)**
 - 키 회전: EC2 `.env` 수정 → 재기동. **키를 Git·노션·채팅에 올리지 말 것**
 
 ### Job 생성 (`POST /api/jobs`)
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
 - 페이지 분리: a/c는 PDF 페이지별 / b는 HWP 실제 페이지(레이아웃 기반)·TXT 30줄 청크 → S3 업로드
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
+- **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존). **위치는 저장 안 함** — 표시 시점에 IP로 GeoIP 조회(과거 작업도 가능). T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
 - 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행
 
 ### 스케줄링 (JobDispatcher — 공정 큐)
@@ -189,7 +190,8 @@ com.semojum.backend
 - **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
 - T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
 - 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
-- 미구현(다음 단계): 문의·공지·주문 내역(T1 작성 기능과 세트), 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API
+- **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
+- 미구현(다음 단계): 홈페이지(미가입) 문의 유입 공개 엔드포인트, 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API, 주문 증빙 파일 다운로드
 
 ### 사용량·원가·크레딧 (billing — proto 08.17)
 - **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)
@@ -213,7 +215,7 @@ com.semojum.backend
 
 ## DB 스키마
 
-users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions**
+users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions** / **notices** / **inquiries** / **orders**
 
 - 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)

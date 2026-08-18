@@ -15,6 +15,19 @@ public interface JobRepository extends JpaRepository<Job, String>, JobQueryRepos
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
 
+    // T1-3 실시간 모니터링 — 전 기관 최근 작업 (user·organization 즉시 로딩으로 N+1 방지)
+    // 상태 필터 유무로 쿼리를 나눈다 — ":param IS NULL OR" 패턴은 PG 파라미터 타입 추론이 깨질 수 있음
+    @Query("SELECT j FROM Job j JOIN FETCH j.user u LEFT JOIN FETCH u.organization " +
+            "WHERE j.startedAt >= :since ORDER BY j.startedAt DESC")
+    List<Job> findForMonitoring(@Param("since") java.time.LocalDateTime since,
+                                org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT j FROM Job j JOIN FETCH j.user u LEFT JOIN FETCH u.organization " +
+            "WHERE j.startedAt >= :since AND j.status = :status ORDER BY j.startedAt DESC")
+    List<Job> findForMonitoringByStatus(@Param("since") java.time.LocalDateTime since,
+                                        @Param("status") String status,
+                                        org.springframework.data.domain.Pageable pageable);
+
     // 기간 내 작업 (T2-2 계정 상세 · T3 작업별 크레딧 — 휴지통 제외, 요청 시각 기준)
     @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NULL " +
             "AND j.startedAt >= :from AND j.startedAt < :to ORDER BY j.startedAt DESC")

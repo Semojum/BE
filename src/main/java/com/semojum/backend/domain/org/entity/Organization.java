@@ -47,6 +47,10 @@ public class Organization {
             columnDefinition = "bigint not null default 0")
     private long creditAllocated;
 
+    // 증빙(계산서) 받는 사람 — T2 주문 내역 하단, 기관 관리자가 수정
+    @Column(name = "receipt_email", length = 100)
+    private String receiptEmail;
+
     @Column(nullable = false)
     private String status; // ACTIVE | EXPIRED
 
@@ -60,5 +64,9 @@ public class Organization {
         this.contractExpiresAt = contractExpiresAt;
         this.status = "ACTIVE";
         this.createdAt = LocalDateTime.now();
+    }
+
+    public void changeReceiptEmail(String receiptEmail) {
+        this.receiptEmail = receiptEmail;
     }
 }

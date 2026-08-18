@@ -29,6 +29,7 @@ import java.util.UUID;
 public class JobController {
 
     private final JobService jobService;
+    private final com.semojum.backend.global.util.ClientInfoResolver clientInfoResolver;
     private final SseService sseService;
     private final JobRepository jobRepository;
     private final PageSaveService pageSaveService;
@@ -94,10 +95,12 @@ public class JobController {
             // 점자 판면 마지막 줄에 쪽번호를 넣을지 — 업로드 시 선택 (미전송 시 false)
             @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber,
             // 꼬리말(묵자, 최대 200자) — 다운로드(brf) 때 점역해 페이지행 가운데 배치. 미전송 시 없음
-            @RequestParam(value = "footerText", required = false) String footerText
+            @RequestParam(value = "footerText", required = false) String footerText,
+            jakarta.servlet.http.HttpServletRequest request
     ) throws Exception {
         return ApiResponse.success(
-                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText));
+                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText,
+                        clientInfoResolver.resolve(request)));
     }
 
     // job 상태 확인 API

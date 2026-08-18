@@ -1,0 +1,90 @@
+package com.semojum.backend.domain.admin.repository;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * T1 통계 전용 네이티브 집계 (date_trunc 버킷).
+ * jobs.started_at·page_results.created_at은 KST 고정 LocalDateTime — 타임존 변환 불필요.
+ * 쪽 수는 COUNT(*) — 워커 재시도로 드문 중복 행이 있을 수 있으나 통계 용도로 허용(과금은 credit_transactions가 정본).
+ */
+@Repository
+@RequiredArgsConstructor
+public class AdminStatsRepository {
+
+    private static final Set<String> UNITS = Set.of("hour", "day", "week", "month");
+
+    @PersistenceContext
+    private EntityManager em;
+
+    // date_trunc 단위는 바인딩 불가(식별자) — 화이트리스트 검증 후 문자열 삽입
+    private static String unit(String unit) {
+        if (!UNITS.contains(unit)) throw new IllegalArgumentException("unsupported unit: " + unit);
+        return unit;
+    }
+
+    /** 기간 내 시작된 작업의 상태 분포: [status, canceled(bool), count] */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> jobStatusCounts(LocalDateTime from, LocalDateTime to) {
+        return em.createNativeQuery(
+                        "SELECT status, canceled_at IS NOT NULL, COUNT(*) FROM jobs " +
+                        "WHERE started_at >= :f AND started_at < :t GROUP BY 1, 2")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+    }
+
+    /** 기간 내 처리(성공) 쪽수 */
+    public long successPages(LocalDateTime from, LocalDateTime to) {
+        Object result = em.createNativeQuery(
+                        "SELECT COUNT(*) FROM page_results " +
+                        "WHERE status IN ('COMPLETED','NEEDS_REVIEW') AND created_at >= :f AND created_at < :t")
+                .setParameter("f", from).setParameter("t", to).getSingleResult();
+        return ((Number) result).longValue();
+    }
+
+    /** 처리 쪽수 시계열: [bucket(timestamp), pages] */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> pagesSeries(LocalDateTime from, LocalDateTime to, String bucketUnit) {
+        return em.createNativeQuery(
+                        "SELECT date_trunc('" + unit(bucketUnit) + "', created_at) AS b, COUNT(*) FROM page_results " +
+                        "WHERE status IN ('COMPLETED','NEEDS_REVIEW') AND created_at >= :f AND created_at < :t " +
+                        "GROUP BY b ORDER BY b")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+    }
+
+    /** 기간 원가 합: [Σcost_krw, 미계상 포함] */
+    @SuppressWarnings("unchecked")
+    public Object[] costSum(LocalDateTime from, LocalDateTime to) {
+        List<Object[]> rows = em.createNativeQuery(
+                        "SELECT COALESCE(SUM(cost_krw), 0), COALESCE(BOOL_OR(cost_uncertain), false) " +
+                        "FROM page_results WHERE created_at >= :f AND created_at < :t")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+        return rows.get(0);
+    }
+
+    /** 작업량 스택: [bucket, 완료(취소 제외), 실패·취소] — 진행 중 작업은 어느 쪽에도 안 셈 */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> workload(LocalDateTime from, String bucketUnit) {
+        return em.createNativeQuery(
+                        "SELECT date_trunc('" + unit(bucketUnit) + "', started_at) AS b, " +
+                        "COUNT(*) FILTER (WHERE status = 'COMPLETED' AND canceled_at IS NULL), " +
+                        "COUNT(*) FILTER (WHERE status = 'FAILED' OR canceled_at IS NOT NULL) " +
+                        "FROM jobs WHERE started_at >= :f GROUP BY b ORDER BY b")
+                .setParameter("f", from).getResultList();
+    }
+
+    /** 레이아웃 유형별 집계: [layout_type, pages, Σcost_krw] */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> layoutCost(LocalDateTime from, LocalDateTime to) {
+        return em.createNativeQuery(
+                        "SELECT layout_type, COUNT(*), COALESCE(SUM(cost_krw), 0) FROM page_results " +
+                        "WHERE layout_type IS NOT NULL AND status IN ('COMPLETED','NEEDS_REVIEW') " +
+                        "AND created_at >= :f AND created_at < :t GROUP BY layout_type")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+    }
+}
