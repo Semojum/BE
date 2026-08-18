@@ -190,7 +190,7 @@ com.semojum.backend
 - **잠금 = 즉시**: INACTIVE + 세션 전부 revoke + **진행 중 변환 취소(JobCancelService 재사용)** — 쪽 단위 차감이라 "완료된 쪽까지만 차감" 자동 성립. **본인 잠금 불가**(COMMON4000), 타 기관 계정 403
 - **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
 - T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
-- 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
+- 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·계정 별칭도 V17 (계약 유형은 V24에서 5종으로 개편 — 운영자 API 절 참조)
 - **문의 메일 연동 (V20, MailInboxPoller)**: 회사 메일함(Google Workspace)을 5분 주기 IMAP **읽기 전용** 폴링(메일함 읽음 표시 안 건드림, 답장은 메일함에서) → inquiries에 `type=EMAIL·sender_email·subject`로 저장, 기존 상태 관리 공유. 중복 방지 `mail_uid`("UIDVALIDITY:UID") 유니크. **자격증명은 EC2 `.env`의 `MAIL_INBOX_USERNAME`/`MAIL_INBOX_PASSWORD`(Workspace 앱 비밀번호)** — 미설정이면 폴러 비활성(fail-safe)
 - **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
 - **홈페이지 공개 문의 (`POST /api/public/inquiries`, 무인증)**: 유형 ONBOARDING·ERROR_REPORT·ETC, 미가입 접수(org·user null — T1-9에 이름·이메일 표시). 남용 방어는 서비스 계층 — 허니팟(website 채워지면 성공한 척 폐기) + IP 시간당 5건(Redis, 장애 시 접수 허용)
