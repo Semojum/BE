@@ -24,7 +24,9 @@ public class PricingAdminService {
 
     private static final List<String> REQUIRED_KEYS =
             List.of("modelPrices", "gpuUsdPerHour", "usdKrw", "cardFeeRate", "creditMultiplier",
-                    "creditPriceKrw");   // 크레딧 판매 단가(원) — 수익성 환산 매출의 축
+                    "creditPricesByContract");   // 계약 유형별 크레딧 단가(원) — 수익성 환산 매출의 축
+    private static final List<String> CONTRACT_TYPES =
+            List.of("BASIC", "STANDARD", "PREMIUM", "FREE", "COUPON");
     private static final List<String> LAYOUT_TYPES = List.of(
             "PAGE_LAYOUT_UNSPECIFIED", "PAGE_LAYOUT_TEXT", "PAGE_LAYOUT_FORMULA",
             "PAGE_LAYOUT_TABLE", "PAGE_LAYOUT_VISUAL");
@@ -59,7 +61,14 @@ public class PricingAdminService {
         requireNonNegativeNumber(config.get("gpuUsdPerHour"), "gpuUsdPerHour");
         requireNonNegativeNumber(config.get("usdKrw"), "usdKrw");
         requireNonNegativeNumber(config.get("cardFeeRate"), "cardFeeRate");
-        requireNonNegativeNumber(config.get("creditPriceKrw"), "creditPriceKrw");
+        Object cp = config.get("creditPricesByContract");
+        if (!(cp instanceof Map)) {
+            throw badRequest("creditPricesByContract는 객체여야 함");
+        }
+        // 5개 계약 유형 전부 필수 — 빠진 유형은 런타임에 0원으로 흘러 매출이 어긋난다
+        for (String type : CONTRACT_TYPES) {
+            requireNonNegativeNumber(((Map<String, Object>) cp).get(type), "creditPricesByContract." + type);
+        }
 
         Object mp = config.get("modelPrices");
         if (!(mp instanceof Map) || ((Map<String, Object>) mp).isEmpty()) {

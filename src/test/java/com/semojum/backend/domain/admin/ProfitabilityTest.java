@@ -39,6 +39,13 @@ class ProfitabilityTest {
         f.set(entity, value);
     }
 
+    // contractType은 insertable=false(DB default) — 테스트에선 리플렉션으로 주입
+    private static void setContractType(Organization org, String type) throws Exception {
+        var f = Organization.class.getDeclaredField("contractType");
+        f.setAccessible(true);
+        f.set(org, type);
+    }
+
     @BeforeEach
     void setUp() throws Exception {
         statsRepository = Mockito.mock(AdminStatsRepository.class);
@@ -49,20 +56,24 @@ class ProfitabilityTest {
                 organizationRepository, pricingConfigRepository);
 
         PricingConfig pc = PricingConfig.builder()
-                .config(Map.of("creditPriceKrw", 240)).note("test").build();
+                .config(Map.of("creditPricesByContract",
+                        Map.of("BASIC", 200, "STANDARD", 150, "PREMIUM", 120, "FREE", 0, "COUPON", 0)))
+                .note("test").build();
         when(pricingConfigRepository.findTopByOrderByIdDesc()).thenReturn(Optional.of(pc));
 
         Organization paid = Organization.builder().name("유료기관").code("paid1").build();
         setId(paid, orgPaid);
+        setContractType(paid, "BASIC");
         Organization trial = Organization.builder().name("체험기관").code("trial1").build();
         setId(trial, orgTrial);
+        setContractType(trial, "COUPON");
         when(organizationRepository.findAll()).thenReturn(List.of(paid, trial));
     }
 
     @Test
-    void 차액_계산과_밑지는_기관_정렬() {
-        // 유료: 4,600크레딧 × 240 = 1,104,000 − 원가 147,200 = +956,800
-        // 체험: 0크레딧 → 매출 0 − 원가 77,080 = −77,080 (원가만큼 마이너스 — 기획 예시)
+    void 유형별_단가로_차액_계산과_밑지는_기관_정렬() {
+        // BASIC: 4,600크레딧 × 200 = 920,000 − 원가 147,200 = +772,800
+        // COUPON: 단가 0 → 매출 0 − 원가 77,080 = −77,080 (원가만큼 마이너스 — 기획 예시)
         when(creditTransactionRepository.sumPerOrganizationBetween(any(), any()))
                 .thenReturn(List.<Object[]>of(new Object[]{orgPaid, 4600L}));
         when(statsRepository.orgCostSums(any(), any())).thenReturn(List.<Object[]>of(
@@ -71,18 +82,20 @@ class ProfitabilityTest {
 
         var result = service.getProfitability("2026-08");
 
-        assertEquals(240L, result.creditPriceKrw());
+        assertEquals(200L, result.creditPricesByContract().get("BASIC"));
         assertEquals(2, result.items().size());
         var first = result.items().get(0);   // 차액 큰 순 — 유료기관 먼저
         assertEquals("유료기관", first.orgName());
-        assertEquals(0, new BigDecimal("1104000").compareTo(first.revenueKrw()));
-        assertEquals(0, new BigDecimal("956800.000").compareTo(first.marginKrw()));
+        assertEquals(200L, first.appliedPriceKrw());
+        assertEquals(0, new BigDecimal("920000").compareTo(first.revenueKrw()));
+        assertEquals(0, new BigDecimal("772800.000").compareTo(first.marginKrw()));
         var second = result.items().get(1);
         assertEquals("체험기관", second.orgName());
+        assertEquals(0L, second.appliedPriceKrw());
         assertEquals(0, new BigDecimal("-77080.000").compareTo(second.marginKrw()));
         // 합계
         assertEquals(4600L, result.totals().creditsUsed());
-        assertEquals(0, new BigDecimal("879720.000").compareTo(result.totals().marginKrw()));
+        assertEquals(0, new BigDecimal("695720.000").compareTo(result.totals().marginKrw()));
     }
 
     @Test
@@ -94,7 +107,8 @@ class ProfitabilityTest {
         when(statsRepository.orgCostSums(any(), any())).thenReturn(List.of());
 
         var result = service.getProfitability(null);
-        assertEquals(0L, result.creditPriceKrw());
+        assertTrue(result.creditPricesByContract().isEmpty());
+        assertEquals(0L, result.items().get(0).appliedPriceKrw());
         assertEquals(0, BigDecimal.ZERO.compareTo(result.items().get(0).revenueKrw()));
     }
 }

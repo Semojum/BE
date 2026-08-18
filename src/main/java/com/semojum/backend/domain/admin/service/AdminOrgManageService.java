@@ -43,7 +43,8 @@ import java.util.UUID;
 public class AdminOrgManageService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    private static final Set<String> CONTRACT_TYPES = Set.of("PAID", "TRIAL", "INTERNAL");
+    // 유료 BASIC·STANDARD·PREMIUM / 무료 FREE(체험)·COUPON(쿠폰 제공) — V24 개편
+    private static final Set<String> CONTRACT_TYPES = Set.of("BASIC", "STANDARD", "PREMIUM", "FREE", "COUPON");
     private static final List<String> IN_FLIGHT = List.of("PENDING", "IN_PROGRESS");
 
     private final OrganizationRepository organizationRepository;

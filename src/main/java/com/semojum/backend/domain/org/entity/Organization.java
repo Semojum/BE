@@ -37,10 +37,11 @@ public class Organization {
     @Column(name = "contract_started_at")
     private LocalDate contractStartedAt;
 
-    // 계약 구분 — PAID(유료) | TRIAL(체험) | INTERNAL(내부)
-    // insertable=false: 생성 시 값은 DB default가 채우고, 이후 운영자 API로 수정한다
+    // 계약 유형 (V24 개편) — 유료 BASIC(200원/크레딧)·STANDARD(150)·PREMIUM(120) / 무료 FREE(체험)·COUPON(쿠폰 제공)
+    // 유형별 환산 단가는 pricing_configs.creditPricesByContract(관리 변수)가 정본.
+    // insertable=false: 생성 시 DB default(FREE — 유료 전환은 운영자가 명시)가 채우고, 이후 운영자 API로 수정
     @Column(name = "contract_type", insertable = false,
-            columnDefinition = "varchar(20) not null default 'PAID'")
+            columnDefinition = "varchar(20) not null default 'FREE'")
     private String contractType;
 
     // 계약으로 받은 총 크레딧 (운영자 설정). 사용량은 credit_transactions 합산
