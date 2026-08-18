@@ -118,10 +118,13 @@ public class OrgAdminService {
             log.warn("본인 계정 잠금 시도 거부: loginId={}", loginId);
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
+        // revokeAllActiveByUser의 clearAutomatically가 영속성 컨텍스트를 비워 엔티티가 detach된다
+        // — lazy 프록시(getOrganization())는 그 뒤에 건드리면 LazyInitializationException이므로 미리 확보
+        String orgCode = admin.getOrganization().getCode();
 
         int canceled = 0;
         if (locked) {
-            target.changeStatus(UserStatus.INACTIVE);
+            target.changeStatus(UserStatus.INACTIVE);   // revoke의 flushAutomatically가 이 변경을 먼저 flush
             userSessionRepository.revokeAllActiveByUser(target, LocalDateTime.now());
             // 진행 중이던 변환 중단 — 개별 실패(이미 종료 등)는 잠금 자체를 막지 않는다
             for (Job job : jobRepository.findByUserIdAndStatusInOrderByStartedAtDesc(target.getId(), IN_FLIGHT)) {
@@ -132,10 +135,10 @@ public class OrgAdminService {
                     log.warn("잠금 중 변환 취소 실패(계속 진행): jobId={}, error={}", job.getId(), e.getMessage());
                 }
             }
-            log.info("계정 잠금: org={}, loginId={}, 취소된 작업={}건", admin.getOrganization().getCode(), loginId, canceled);
+            log.info("계정 잠금: org={}, loginId={}, 취소된 작업={}건", orgCode, loginId, canceled);
         } else {
             target.changeStatus(UserStatus.ACTIVE);
-            log.info("계정 잠금 해제: org={}, loginId={}", admin.getOrganization().getCode(), loginId);
+            log.info("계정 잠금 해제: org={}, loginId={}", orgCode, loginId);
         }
         return new OrgDto.LockResult(loginId, target.getStatus().name(), canceled);
     }
