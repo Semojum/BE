@@ -24,7 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 오타 난 경로도 COMMON5000으로 응답하던 회귀를 막는다.
  *
  * <p>인증을 거치지 않고 디스패처까지 도달시키려고 JwtFilter의 PERMIT_URLS에 있는
- * {@code /api/admin/} 하위 경로를 사용한다(운영자 API는 X-Admin-Key로 자체 검증).
+ * {@code /api/public/}·{@code /api/auth/} 하위 경로를 사용한다
+ * (/api/admin/은 2026-08-19부터 JWT 필수라 무인증 접근이 401로 먼저 끊긴다).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,8 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.flyway.enabled=false",
         "JWT_SECRET=test-secret-key-for-context-load-only-32bytes+",
         "DB_PASSWORD=test",
-        "GRPC_CERT_PATH=classpath:grpc/test-server.crt",
-        "ADMIN_API_KEY=test-key"
+        "GRPC_CERT_PATH=classpath:grpc/test-server.crt"
 })
 class UnmappedRequestTest {
 
@@ -55,7 +55,7 @@ class UnmappedRequestTest {
 
     @Test
     void 존재하지_않는_경로는_404를_준다() throws Exception {
-        mockMvc.perform(get("/api/admin/이런건없음"))
+        mockMvc.perform(get("/api/public/이런건없음"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.isSuccess").value(false))
                 .andExpect(jsonPath("$.code").value("COMMON4004"));
@@ -63,8 +63,8 @@ class UnmappedRequestTest {
 
     @Test
     void 경로는_있으나_메서드가_다르면_405를_준다() throws Exception {
-        // /api/admin/orgs 는 POST만 존재한다
-        mockMvc.perform(delete("/api/admin/orgs"))
+        // /api/auth/login 은 POST만 존재한다
+        mockMvc.perform(delete("/api/auth/login"))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("COMMON4005"));
     }
