@@ -119,6 +119,7 @@ com.semojum.backend
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
 - 페이지 분리: a/c는 PDF 페이지별 / b는 HWP 실제 페이지(레이아웃 기반)·TXT 30줄 청크 → S3 업로드
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
+- **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존). **위치는 저장 안 함** — 표시 시점에 IP로 GeoIP 조회(과거 작업도 가능). T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
 - 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행
 
 ### 스케줄링 (JobDispatcher — 공정 큐)
