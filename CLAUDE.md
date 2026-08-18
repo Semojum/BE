@@ -190,6 +190,7 @@ com.semojum.backend
 - **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
 - T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
 - 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
+- **문의 메일 연동 (V20, MailInboxPoller)**: 회사 메일함(Google Workspace)을 5분 주기 IMAP **읽기 전용** 폴링(메일함 읽음 표시 안 건드림, 답장은 메일함에서) → inquiries에 `type=EMAIL·sender_email·subject`로 저장, 기존 상태 관리 공유. 중복 방지 `mail_uid`("UIDVALIDITY:UID") 유니크. **자격증명은 EC2 `.env`의 `MAIL_INBOX_USERNAME`/`MAIL_INBOX_PASSWORD`(Workspace 앱 비밀번호)** — 미설정이면 폴러 비활성(fail-safe)
 - **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
 - 미구현(다음 단계): 홈페이지(미가입) 문의 유입 공개 엔드포인트, 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API, 주문 증빙 파일 다운로드
 
