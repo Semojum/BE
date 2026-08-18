@@ -218,7 +218,7 @@ public class AdminCopyService {
             target = userRepository.findById(UUID.fromString(authUserId))
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         } else {
-            // X-Admin-Key 호출은 계정이 없다 — targetLoginId 필수
+            // JWT 전용 전환(2026-08-19) 후 도달 불가 — 방어적으로 유지
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
         if (target.getRole() != Role.ROLE_ADMIN) {
