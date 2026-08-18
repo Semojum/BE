@@ -1,6 +1,9 @@
 package com.semojum.backend.domain.result.service;
 
 import com.google.protobuf.util.JsonFormat;
+import com.semojum.backend.domain.billing.entity.CreditTransaction;
+import com.semojum.backend.domain.billing.repository.CreditTransactionRepository;
+import com.semojum.backend.domain.billing.service.UsageCostService;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
@@ -37,6 +40,8 @@ public class ResultService {
     private final QualityCriticalErrorRepository qualityCriticalErrorRepository;
     private final QualityReviewFlagRepository qualityReviewFlagRepository;
     private final RedisTemplate<String, String> redisTemplate;
+    private final UsageCostService usageCostService;
+    private final CreditTransactionRepository creditTransactionRepository;
 
     @Transactional
     public void save(BrailleResponse response) {
@@ -72,6 +77,18 @@ public class ResultService {
             scanOnly = meta.getScanOnly();
         }
 
+        // UsageReport(proto 08.17) → 원가·크레딧 계산. AI는 측정값만 주고 금액은 BE가 계산한다.
+        // 계산 실패가 변환 결과 저장을 막으면 안 되므로(비용 기록 < 결과 보존) 실패 시 null로 격하.
+        UsageCostService.CostBreakdown cost = null;
+        if (response.hasUsageReport()) {
+            try {
+                cost = usageCostService.calculate(response.getUsageReport());
+            } catch (Exception e) {
+                log.error("사용량 원가 계산 실패(결과 저장은 계속): jobId={}, pageNo={}, error={}",
+                        jobId, pageNumber, e.getMessage(), e);
+            }
+        }
+
         // PageResult 저장
         PageResult pageResult = PageResult.builder()
                 .job(job)
@@ -88,6 +105,14 @@ public class ResultService {
                 .routingTierUsed(routingTierUsed)
                 .scanOnly(scanOnly)
                 .rawResponse(rawResponse)
+                .layoutType(cost != null ? cost.layoutType() : null)
+                .gpuTimeMs(cost != null ? cost.gpuTimeMs() : null)
+                .modelUsage(cost != null ? cost.modelUsage() : null)
+                .llmCostUsd(cost != null ? cost.llmCostUsd() : null)
+                .gpuCostUsd(cost != null ? cost.gpuCostUsd() : null)
+                .costKrw(cost != null ? cost.costKrw() : null)
+                .costUncertain(cost != null && cost.uncertain())
+                .pricingConfigId(cost != null ? cost.pricingConfigId() : null)
                 .build();
         pageResultRepository.save(pageResult);
 
@@ -191,6 +216,21 @@ public class ResultService {
         // Page 상태 업데이트
         page.updateStatus(status);
         pageRepository.save(page);
+
+        // 크레딧 차감 기록 — 성공한 쪽만(실패 쪽 무차감). UNSPECIFIED의 0 차감도 기록(고객 검산용).
+        // 워커 재시도로 save()가 같은 페이지에 재진입해도 이중 차감되지 않게 멱등 처리.
+        if (cost != null && List.of("COMPLETED", "NEEDS_REVIEW").contains(status)
+                && !creditTransactionRepository.existsByJobIdAndPageNo(jobId, pageNumber)) {
+            var user = job.getUser();
+            creditTransactionRepository.save(CreditTransaction.builder()
+                    .userId(user.getId())
+                    .organizationId(user.getOrganization() != null ? user.getOrganization().getId() : null)
+                    .jobId(jobId)
+                    .pageNo(pageNumber)
+                    .layoutType(cost.layoutType())
+                    .amount(cost.credit())
+                    .build());
+        }
 
         // PENDING→IN_PROGRESS 전이 + updated_at 갱신 (이미 종료된 Job은 가드로 보호)
         jobRepository.touchJob(jobId);

@@ -111,7 +111,7 @@ com.semojum.backend
 
 ### 운영자 API (X-Admin-Key — 관리자 페이지 전까지 임시)
 - 키는 EC2 `.env`의 `ADMIN_API_KEY`(코드·저장소에 없음). **fail-closed**(미설정 시 전부 차단), constant-time 비교
-- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할(ROLE_ADMIN·ROLE_USER) 변경
+- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할(ROLE_ADMIN·ROLE_USER) 변경 / 단가표 조회·갱신(`GET·PUT /api/admin/pricing`)
 - 키 회전: EC2 `.env` 수정 → 재기동. **키를 Git·노션·채팅에 올리지 말 것**
 
 ### Job 생성 (`POST /api/jobs`)
@@ -182,6 +182,14 @@ com.semojum.backend
 - 암호/배포용 문서는 JOB4008 거부. **hwplib 1.1.9 필수** — 1.1.1은 일부 파일에서 무한 대기(다운그레이드 금지)
 - 디버그: `HWP_DEBUG_FILE=<경로> ./gradlew test --tests HwpPageExtractorDebugTest --rerun`
 
+### 사용량·원가·크레딧 (billing — proto 08.17)
+- **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)
+- **단가·배율은 `pricing_configs` 테이블** (수정 = 새 행 추가, 과거 판 불변 — `page_results.pricing_config_id`가 계산 근거를 가리킴). 키: modelPrices / gpuUsdPerHour / usdKrw / cardFeeRate / creditMultiplier. **코드에 하드코딩 금지** — V16 시드가 초기값
+- 계산 결과(원가 USD·KRW·크레딧)는 **쪽 처리 시점 값으로 확정 저장** — 단가를 바꿔도 과거 기록 불변. 원자료(토큰·gpu_time)도 함께 저장(감사·재검산용)
+- **단가표에 없는 모델 = 0원으로 삼키지 않고 `cost_uncertain=true`(미계상) 표시** (proto 주석 명시)
+- 크레딧: **성공한 쪽만** 배율 차감(UNSPECIFIED 0 / TEXT 1 / FORMULA 2 / TABLE 3 / VISUAL 5 — biz 확정 2026-08-17), 실패 쪽 무차감. **0 차감도 `credit_transactions`에 기록**(고객 검산용). `(job_id, page_no)` 유니크 — 워커 재시도 재진입에도 이중 차감 불가
+- 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
+
 ### 로깅
 - 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter) / 워커 `jobId|pN`. `grep <jobId>`로 전 로그 묶임
 - 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=…` 한 줄. 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면
@@ -196,7 +204,7 @@ com.semojum.backend
 
 ## DB 스키마
 
-users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs**
+users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions**
 
 - 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
