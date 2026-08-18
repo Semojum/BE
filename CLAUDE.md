@@ -201,6 +201,7 @@ com.semojum.backend
 - 계산 결과(원가 USD·KRW·크레딧)는 **쪽 처리 시점 값으로 확정 저장** — 단가를 바꿔도 과거 기록 불변. 원자료(토큰·gpu_time)도 함께 저장(감사·재검산용)
 - **단가표에 없는 모델 = 0원으로 삼키지 않고 `cost_uncertain=true`(미계상) 표시** (proto 주석 명시)
 - 크레딧: **성공한 쪽만** 배율 차감(UNSPECIFIED 0 / TEXT 1 / FORMULA 2 / TABLE 3 / VISUAL 5 — biz 확정 2026-08-17), 실패 쪽 무차감. **0 차감도 `credit_transactions`에 기록**(고객 검산용). `(job_id, page_no)` 유니크 — 워커 재시도 재진입에도 이중 차감 불가
+- **쿠폰 우선 차감 (V23, CreditDeductionService)**: 유효 기간 내·전액 들어갈 잔량 있는 쿠폰(오래된 순)이 있으면 `source=COUPON`, 아니면 `CONTRACT`. 쪽 차감은 원자 단위라 잔량 부족 쿠폰은 건너뜀(쪼개 담지 않음). 쿠폰 행 잠금(PESSIMISTIC_WRITE)으로 병렬 워커 초과 소진 방지. **잔여 게이지·수익성 매출은 CONTRACT 차감만** — 쿠폰 차감은 계약 잔여 불변·매출 0(수익성에서 원가만큼 마이너스). 발급·목록: `POST·GET /api/admin/orgs/{orgId}/coupons`
 - 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
 
 ### 로깅

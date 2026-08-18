@@ -6,6 +6,7 @@ import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
+import com.semojum.backend.domain.billing.repository.CouponRepository;
 import com.semojum.backend.domain.billing.repository.CreditTransactionRepository;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.service.JobCancelService;
@@ -53,8 +54,8 @@ class AdminOrgManageServiceTest {
         userSessionRepository = Mockito.mock(UserSessionRepository.class);
         jobRepository = Mockito.mock(JobRepository.class);
         service = new AdminOrgManageService(organizationRepository, userRepository, userSessionRepository,
-                Mockito.mock(CreditTransactionRepository.class), jobRepository,
-                Mockito.mock(JobCancelService.class));
+                Mockito.mock(CreditTransactionRepository.class), Mockito.mock(CouponRepository.class),
+                jobRepository, Mockito.mock(JobCancelService.class));
 
         org = Organization.builder().name("기관A").code("orga")
                 .contractExpiresAt(LocalDate.of(2027, 12, 31)).build();

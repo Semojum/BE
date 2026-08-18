@@ -54,7 +54,7 @@ public class UsageService {
         Long orgAllocated = null, orgUsed = null, orgRemaining = null;
         if (user.getOrganization() != null) {
             orgAllocated = user.getOrganization().getCreditAllocated();
-            orgUsed = creditTransactionRepository.sumByOrganization(user.getOrganization().getId());
+            orgUsed = creditTransactionRepository.sumContractByOrganization(user.getOrganization().getId());
             orgRemaining = orgAllocated - orgUsed;
         }
         return new UsageDto.Summary(ym.toString(), myCredits, orgAllocated, orgUsed, orgRemaining);

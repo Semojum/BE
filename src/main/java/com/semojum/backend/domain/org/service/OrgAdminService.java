@@ -56,7 +56,7 @@ public class OrgAdminService {
         User admin = resolveOrgAdmin(adminUserId);
         Organization org = admin.getOrganization();
 
-        long used = creditTransactionRepository.sumByOrganization(org.getId());
+        long used = creditTransactionRepository.sumContractByOrganization(org.getId());
 
         // 최근 6개월 (이번 달 포함, 빈 달은 0)
         YearMonth thisMonth = YearMonth.now(KST);

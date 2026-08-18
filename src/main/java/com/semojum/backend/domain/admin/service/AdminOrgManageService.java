@@ -6,6 +6,8 @@ import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.auth.enums.UserStatus;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
+import com.semojum.backend.domain.billing.entity.Coupon;
+import com.semojum.backend.domain.billing.repository.CouponRepository;
 import com.semojum.backend.domain.billing.repository.CreditTransactionRepository;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
@@ -48,6 +50,7 @@ public class AdminOrgManageService {
     private final UserRepository userRepository;
     private final UserSessionRepository userSessionRepository;
     private final CreditTransactionRepository creditTransactionRepository;
+    private final CouponRepository couponRepository;
     private final JobRepository jobRepository;
     private final JobCancelService jobCancelService;
 
@@ -99,7 +102,7 @@ public class AdminOrgManageService {
     @Transactional(readOnly = true)
     public AdminOrgDto.OrgDetail getOrg(UUID orgId) {
         Organization org = findActiveOrg(orgId);
-        long used = creditTransactionRepository.sumByOrganization(orgId);
+        long used = creditTransactionRepository.sumContractByOrganization(orgId);
         List<String> loginIds = userRepository.findByOrganizationIdAndDeletedAtIsNullOrderByLoginIdAsc(orgId)
                 .stream().map(User::getLoginId).toList();
         return new AdminOrgDto.OrgDetail(org.getId(), org.getName(), org.getCode(),
@@ -140,7 +143,7 @@ public class AdminOrgManageService {
     }
 
     private AdminOrgDto.OrgDetail getOrgAfterUpdate(Organization org) {
-        long used = creditTransactionRepository.sumByOrganization(org.getId());
+        long used = creditTransactionRepository.sumContractByOrganization(org.getId());
         List<String> loginIds = userRepository.findByOrganizationIdAndDeletedAtIsNullOrderByLoginIdAsc(org.getId())
                 .stream().map(User::getLoginId).toList();
         return new AdminOrgDto.OrgDetail(org.getId(), org.getName(), org.getCode(),
@@ -190,6 +193,43 @@ public class AdminOrgManageService {
             }
         }
         return canceled;
+    }
+
+    /** T1-7 쿠폰 발급 — 체험·무료 제공. 차감은 쿠폰부터(CreditDeductionService) */
+    @Transactional
+    public AdminOrgDto.CouponItem issueCoupon(UUID orgId, AdminOrgDto.CreateCoupon request) {
+        if (request.endsOn().isBefore(request.startsOn())) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        Organization org = findActiveOrg(orgId);
+        Coupon saved = couponRepository.save(Coupon.builder()
+                .organizationId(orgId)
+                .name(request.name().trim())
+                .creditAmount(request.creditAmount())
+                .startsOn(request.startsOn())
+                .endsOn(request.endsOn())
+                .build());
+        log.info("쿠폰 발급: org={}, name={}, {}크레딧, {}~{}", org.getCode(),
+                request.name(), request.creditAmount(), request.startsOn(), request.endsOn());
+        return toCouponItem(couponRepository.findById(saved.getId()).orElse(saved));
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminOrgDto.CouponItem> listCoupons(UUID orgId) {
+        findActiveOrg(orgId);
+        return couponRepository.findByOrganizationIdOrderByCreatedAtDesc(orgId).stream()
+                .map(this::toCouponItem).toList();
+    }
+
+    private AdminOrgDto.CouponItem toCouponItem(Coupon coupon) {
+        long used = creditTransactionRepository.sumByCoupon(coupon.getId());
+        long remaining = coupon.getCreditAmount() - used;
+        java.time.LocalDate today = java.time.LocalDate.now(KST);
+        String status = today.isBefore(coupon.getStartsOn()) ? "SCHEDULED"
+                : today.isAfter(coupon.getEndsOn()) ? "ENDED"
+                : remaining <= 0 ? "EXHAUSTED" : "ACTIVE";
+        return new AdminOrgDto.CouponItem(coupon.getId(), coupon.getName(), coupon.getCreditAmount(),
+                used, remaining, coupon.getStartsOn(), coupon.getEndsOn(), status);
     }
 
     private Organization findActiveOrg(UUID orgId) {

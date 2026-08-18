@@ -1,8 +1,8 @@
 package com.semojum.backend.domain.result.service;
 
 import com.google.protobuf.util.JsonFormat;
-import com.semojum.backend.domain.billing.entity.CreditTransaction;
 import com.semojum.backend.domain.billing.repository.CreditTransactionRepository;
+import com.semojum.backend.domain.billing.service.CreditDeductionService;
 import com.semojum.backend.domain.billing.service.UsageCostService;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
@@ -42,6 +42,7 @@ public class ResultService {
     private final RedisTemplate<String, String> redisTemplate;
     private final UsageCostService usageCostService;
     private final CreditTransactionRepository creditTransactionRepository;
+    private final CreditDeductionService creditDeductionService;
 
     @Transactional
     public void save(BrailleResponse response) {
@@ -218,18 +219,11 @@ public class ResultService {
         pageRepository.save(page);
 
         // 크레딧 차감 기록 — 성공한 쪽만(실패 쪽 무차감). UNSPECIFIED의 0 차감도 기록(고객 검산용).
+        // 출처(쿠폰 우선/계약) 판정은 CreditDeductionService.
         // 워커 재시도로 save()가 같은 페이지에 재진입해도 이중 차감되지 않게 멱등 처리.
         if (cost != null && List.of("COMPLETED", "NEEDS_REVIEW").contains(status)
                 && !creditTransactionRepository.existsByJobIdAndPageNo(jobId, pageNumber)) {
-            var user = job.getUser();
-            creditTransactionRepository.save(CreditTransaction.builder()
-                    .userId(user.getId())
-                    .organizationId(user.getOrganization() != null ? user.getOrganization().getId() : null)
-                    .jobId(jobId)
-                    .pageNo(pageNumber)
-                    .layoutType(cost.layoutType())
-                    .amount(cost.credit())
-                    .build());
+            creditDeductionService.deduct(job.getUser(), jobId, pageNumber, cost.layoutType(), cost.credit());
         }
 
         // PENDING→IN_PROGRESS 전이 + updated_at 갱신 (이미 종료된 Job은 가드로 보호)

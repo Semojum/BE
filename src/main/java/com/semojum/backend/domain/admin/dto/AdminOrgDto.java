@@ -65,4 +65,23 @@ public class AdminOrgDto {
     public record DeleteOrgResult(UUID orgId, int lockedAccounts, int canceledJobs) {}
 
     public record DeleteAccountResult(String loginId, int canceledJobs) {}
+
+    // ── T1-7 쿠폰 ──
+    public record CreateCoupon(
+            @jakarta.validation.constraints.NotBlank @Size(max = 100) String name,
+            @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive Long creditAmount,
+            @jakarta.validation.constraints.NotNull java.time.LocalDate startsOn,
+            @jakarta.validation.constraints.NotNull java.time.LocalDate endsOn
+    ) {}
+
+    public record CouponItem(
+            UUID id,
+            String name,
+            long creditAmount,
+            long used,                 // 이 쿠폰 출처의 차감 합
+            long remaining,
+            LocalDate startsOn,
+            LocalDate endsOn,
+            String displayStatus       // SCHEDULED | ACTIVE | EXHAUSTED(소진) | ENDED(기간 종료)
+    ) {}
 }
