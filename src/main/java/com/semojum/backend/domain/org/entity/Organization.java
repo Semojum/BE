@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -37,15 +38,19 @@ public class Organization {
     private LocalDate contractStartedAt;
 
     // 계약 구분 — PAID(유료) | TRIAL(체험) | INTERNAL(내부)
-    // insertable=false: 값은 DB default가 채운다 (columnDefinition은 테스트의 엔티티 기반 스키마 생성용)
-    @Column(name = "contract_type", insertable = false, updatable = false,
+    // insertable=false: 생성 시 값은 DB default가 채우고, 이후 운영자 API로 수정한다
+    @Column(name = "contract_type", insertable = false,
             columnDefinition = "varchar(20) not null default 'PAID'")
     private String contractType;
 
     // 계약으로 받은 총 크레딧 (운영자 설정). 사용량은 credit_transactions 합산
-    @Column(name = "credit_allocated", insertable = false, updatable = false,
+    @Column(name = "credit_allocated", insertable = false,
             columnDefinition = "bigint not null default 0")
     private long creditAllocated;
+
+    // 삭제 표식 (V21) — 실삭제는 보관 기간 정책 확정 후. 삭제 시 소속 계정 전부 잠김
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 
     // 증빙(계산서) 받는 사람 — T2 주문 내역 하단, 기관 관리자가 수정
     @Column(name = "receipt_email", length = 100)
@@ -68,5 +73,24 @@ public class Organization {
 
     public void changeReceiptEmail(String receiptEmail) {
         this.receiptEmail = receiptEmail;
+    }
+
+    // ===== T1-7 기관 정보 수정 (운영자) =====
+    public void changeName(String name) {
+        this.name = name;
+    }
+
+    public void changeContract(String contractType, LocalDate startedAt, LocalDate expiresAt) {
+        if (contractType != null) this.contractType = contractType;
+        if (startedAt != null) this.contractStartedAt = startedAt;
+        if (expiresAt != null) this.contractExpiresAt = expiresAt;
+    }
+
+    public void allocateCredit(long creditAllocated) {
+        this.creditAllocated = creditAllocated;
+    }
+
+    public void markDeleted() {
+        this.deletedAt = Instant.now();
     }
 }

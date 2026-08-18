@@ -6,6 +6,8 @@ import com.semojum.backend.domain.admin.service.AdminService;
 import com.semojum.backend.domain.billing.dto.PricingDto;
 import com.semojum.backend.domain.billing.service.PricingAdminService;
 import com.semojum.backend.domain.admin.dto.AdminMonitorDto;
+import com.semojum.backend.domain.admin.dto.AdminOrgDto;
+import com.semojum.backend.domain.admin.service.AdminOrgManageService;
 import com.semojum.backend.domain.admin.dto.AdminStatsDto;
 import com.semojum.backend.domain.admin.service.AdminMonitorService;
 import com.semojum.backend.domain.admin.service.AdminStatsService;
@@ -33,6 +35,58 @@ public class AdminController {
     private final AdminSupportService adminSupportService;
     private final AdminMonitorService adminMonitorService;
     private final AdminStatsService adminStatsService;
+    private final AdminOrgManageService adminOrgManageService;
+
+    // ── 기관·계정 통합 표 (T1-6) — 기관별 계정 + 소계(월 사용량·관리자 마지막 로그인) ──
+    @GetMapping("/orgs")
+    public ApiResponse<AdminOrgDto.Orgs> listOrgs(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String month
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.listOrgs(month));
+    }
+
+    // ── 기관 정보 (T1-7) ──
+    @GetMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.OrgDetail> getOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.getOrg(orgId));
+    }
+
+    // 이름·계약(구분/기간)·할당 크레딧 수정 — T2 크레딧 추가 요청 처리 = creditAllocated 상향
+    @PatchMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.OrgDetail> updateOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId,
+            @RequestBody @Valid AdminOrgDto.UpdateOrg request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.updateOrg(orgId, request));
+    }
+
+    // 기관 삭제(소프트) — 소속 계정 전부 잠금. 실삭제는 보관 기간 정책 확정 후
+    @DeleteMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.DeleteOrgResult> deleteOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.deleteOrg(orgId));
+    }
+
+    // 계정 삭제(소프트) — 잠금 + 삭제 표식, 작업물 보관
+    @DeleteMapping("/accounts/{loginId}")
+    public ApiResponse<AdminOrgDto.DeleteAccountResult> deleteAccount(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String loginId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.deleteAccount(loginId));
+    }
 
     // ── 통계 (T1-1 대표 · T1-2 상세) ──
     @GetMapping("/stats/overview")

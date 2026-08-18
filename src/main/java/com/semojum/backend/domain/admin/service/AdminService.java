@@ -59,6 +59,7 @@ public class AdminService {
     @Transactional
     public AdminResponseDto.IssuedAccounts issueAccounts(AdminRequestDto.IssueAccounts request) {
         Organization org = organizationRepository.findById(UUID.fromString(request.organizationId()))
+                .filter(o -> o.getDeletedAt() == null)   // 삭제된 기관에는 계정 발급 불가
                 .orElseThrow(() -> new CustomException(ErrorCode.ORG_NOT_FOUND));
 
         int next = nextSequence(org.getCode());
