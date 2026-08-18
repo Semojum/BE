@@ -52,6 +52,9 @@ public class AuthService {
         // 중복 로그인 금지: 기존 활성 세션 전부 revoke (신규 로그인이 기존을 밀어냄)
         userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
 
+        // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표 — 더티체킹으로 커밋 시 반영)
+        user.touchLastLogin();
+
         // JWT 발급 (subject: UUID)
         String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
         String refreshToken = jwtProvider.generateRefreshToken(user.getId().toString());

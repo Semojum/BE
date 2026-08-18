@@ -105,7 +105,8 @@ com.semojum.backend
 
 ### 인증 (V3 발급형)
 - 자체 가입·소셜 없음 — 운영자가 기관별 계정(loginId/PW) 발급, 1인 1계정
-- 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X)
+- **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
+- 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
 - `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
 - JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/admin/`, `/api/health`, swagger 2종
 
@@ -181,6 +182,14 @@ com.semojum.backend
 - 표·중첩 표 셀까지 재귀 추출(`[표 시작]`/`[표 끝]`, 행=줄·칸=탭), 머리말·꼬리말·각주·미주 추출(판면 순서: 머리말→본문→각주→꼬리말)
 - 암호/배포용 문서는 JOB4008 거부. **hwplib 1.1.9 필수** — 1.1.1은 일부 파일에서 무한 대기(다운그레이드 금지)
 - 디버그: `HWP_DEBUG_FILE=<경로> ./gradlew test --tests HwpPageExtractorDebugTest --rerun`
+
+### 기관 관리 T2 (`/api/org/**`) · 사용량 T3 (`/api/users/usage`)
+- **T2 (ROLE_ORG_ADMIN 전용, 권한 검증은 서비스 403)**: `GET /dashboard`(계약·크레딧 할당/사용/잔여·월별 추이 6개월) / `GET /accounts`(소속 계정 + 월 사용 크레딧) / `PATCH /accounts/{loginId}/alias` / `PATCH /accounts/{loginId}/lock` / `GET /accounts/{loginId}/jobs`(T2-2, 기간 기본 30일)
+- **잠금 = 즉시**: INACTIVE + 세션 전부 revoke + **진행 중 변환 취소(JobCancelService 재사용)** — 쪽 단위 차감이라 "완료된 쪽까지만 차감" 자동 성립. **본인 잠금 불가**(COMMON4000), 타 기관 계정 403
+- **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
+- T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
+- 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
+- 미구현(다음 단계): 문의·공지·주문 내역(T1 작성 기능과 세트), 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API
 
 ### 사용량·원가·크레딧 (billing — proto 08.17)
 - **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)
