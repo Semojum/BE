@@ -5,6 +5,8 @@ import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.admin.service.AdminService;
 import com.semojum.backend.domain.billing.dto.PricingDto;
 import com.semojum.backend.domain.billing.service.PricingAdminService;
+import com.semojum.backend.domain.admin.dto.AdminMonitorDto;
+import com.semojum.backend.domain.admin.service.AdminMonitorService;
 import com.semojum.backend.domain.support.dto.SupportDto;
 import com.semojum.backend.domain.support.service.AdminSupportService;
 import com.semojum.backend.global.exception.ApiResponse;
@@ -27,6 +29,29 @@ public class AdminController {
     private final AdminService adminService;
     private final PricingAdminService pricingAdminService;
     private final AdminSupportService adminSupportService;
+    private final AdminMonitorService adminMonitorService;
+
+    // ── 실시간 모니터링 (T1-3) — 전 기관 최근 작업, 10초 폴링 ──
+    @GetMapping("/jobs")
+    public ApiResponse<AdminMonitorDto.Jobs> listMonitorJobs(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer hours,
+            @RequestParam(required = false) Integer size
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminMonitorService.listJobs(status, hours, size));
+    }
+
+    // ── 작업 상세 (T1-4) — 요청 정보(접속 메타데이터)·처리 비용·쪽별 결과 ──
+    @GetMapping("/jobs/{jobId}")
+    public ApiResponse<AdminMonitorDto.JobDetail> getMonitorJobDetail(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String jobId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminMonitorService.getJobDetail(jobId));
+    }
 
     @Value("${admin.api-key:}")
     private String adminApiKey;

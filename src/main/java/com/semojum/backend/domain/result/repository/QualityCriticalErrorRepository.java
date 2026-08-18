@@ -9,4 +9,7 @@ import java.util.UUID;
 
 public interface QualityCriticalErrorRepository extends JpaRepository<QualityCriticalError, UUID> {
     List<QualityCriticalError> findByPageResult(PageResult pageResult);
+
+    // T1-4 쪽별 결과의 "사유" 열 — 페이지 결과 여러 건의 오류를 한 번에
+    List<QualityCriticalError> findByPageResultIdIn(List<UUID> pageResultIds);
 }
