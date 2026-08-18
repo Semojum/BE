@@ -46,6 +46,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").permitAll()
                         // 헬스체크 — Envoy·배포 스크립트가 무인증으로 호출
                         .requestMatchers("/api/health").permitAll()
+                        // 홈페이지 공개 접수 — 무인증 (남용 방어는 서비스 계층)
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 에러 디스패치(/error 포워드)까지 인가를 요구하면 예외 1건이
                         // AuthorizationDeniedException 스택 수백 줄로 증폭된다(2026-08-10 실측) — 반드시 허용
