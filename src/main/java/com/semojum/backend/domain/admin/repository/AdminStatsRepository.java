@@ -78,6 +78,18 @@ public class AdminStatsRepository {
                 .setParameter("f", from).getResultList();
     }
 
+    /** 기관별 기간 원가 (T1-2 수익성): [organization_id, Σcost_krw, 미계상 포함] — 쪽→작업→계정→기관 */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> orgCostSums(LocalDateTime from, LocalDateTime to) {
+        return em.createNativeQuery(
+                        "SELECT u.organization_id, COALESCE(SUM(p.cost_krw), 0), " +
+                        "COALESCE(BOOL_OR(p.cost_uncertain), false) " +
+                        "FROM page_results p JOIN jobs j ON p.job_id = j.id JOIN users u ON j.user_id = u.id " +
+                        "WHERE u.organization_id IS NOT NULL AND p.created_at >= :f AND p.created_at < :t " +
+                        "GROUP BY u.organization_id")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+    }
+
     /** 레이아웃 유형별 집계: [layout_type, pages, Σcost_krw] */
     @SuppressWarnings("unchecked")
     public List<Object[]> layoutCost(LocalDateTime from, LocalDateTime to) {

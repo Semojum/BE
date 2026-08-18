@@ -50,4 +50,27 @@ public class AdminStatsDto {
             BigDecimal avgKrwPerPage,
             Double pagesDeltaPct          // 전월 대비 쪽수 증감률 (%) — 전월 0쪽이면 null
     ) {}
+
+    // ── T1-2 기관별 수익성 (차액 = 환산 매출 − 원가) ──
+    public record Profitability(
+            String month,
+            long creditPriceKrw,          // 적용된 판매 단가 (관리 변수 — 조회 시점 최신 판)
+            List<ProfitabilityItem> items,
+            ProfitabilityTotals totals
+    ) {}
+
+    public record ProfitabilityItem(
+            java.util.UUID orgId,
+            String orgName,
+            String contractType,          // PAID | TRIAL | INTERNAL
+            long creditsUsed,             // 월 차감 크레딧
+            BigDecimal revenueKrw,        // 환산 매출 = creditsUsed × 단가 (조회 시점 환산)
+            BigDecimal costKrw,
+            BigDecimal marginKrw,         // 차액 — 음수면 밑지는 기관 (화면 빨간 막대)
+            boolean costUncertain         // 미계상 모델 포함 (원가 과소 표시 가능)
+    ) {}
+
+    public record ProfitabilityTotals(
+            long creditsUsed, BigDecimal revenueKrw, BigDecimal costKrw, BigDecimal marginKrw
+    ) {}
 }

@@ -107,6 +107,16 @@ public class AdminController {
         return ApiResponse.success(adminStatsService.getWorkload(unit));
     }
 
+    // 기관별 수익성 — 차액 = 환산 매출(차감 크레딧 × creditPriceKrw) − 원가. 단가는 관리 변수
+    @GetMapping("/stats/profitability")
+    public ApiResponse<AdminStatsDto.Profitability> getStatsProfitability(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String month
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminStatsService.getProfitability(month));
+    }
+
     @GetMapping("/stats/layout-cost")
     public ApiResponse<AdminStatsDto.LayoutCost> getStatsLayoutCost(
             @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
