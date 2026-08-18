@@ -64,6 +64,12 @@ public class JobService {
         User user = userRepository.findById(UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
+        // 기관 관리자는 점역(에디터) 기능 사용 불가 — T2 관리 화면 전용 (기획 확정 2026-08-19)
+        if (user.getRole() == com.semojum.backend.domain.auth.enums.Role.ROLE_ORG_ADMIN) {
+            log.warn("기관 관리자 계정의 Job 생성 시도 거부: user={}", user.getLoginId());
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+
         log.info("Job 생성 시작: mode={}, file={} ({}KB), user={}",
                 mode, file.getOriginalFilename(), file.getSize() / 1024, user.getLoginId());
 
