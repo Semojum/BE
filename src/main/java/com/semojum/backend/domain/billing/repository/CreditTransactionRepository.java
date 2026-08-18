@@ -30,6 +30,11 @@ public interface CreditTransactionRepository extends JpaRepository<CreditTransac
     long sumByUserBetween(@Param("userId") UUID userId,
                           @Param("from") Instant from, @Param("to") Instant to);
 
+    // 전 기관 계정별 기간 사용량 (T1-6 통합 표) — [organizationId, userId, sum]
+    @Query("SELECT t.organizationId, t.userId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
+            "WHERE t.createdAt >= :from AND t.createdAt < :to GROUP BY t.organizationId, t.userId")
+    List<Object[]> sumPerOrgUserBetween(@Param("from") Instant from, @Param("to") Instant to);
+
     // 기관 소속 계정별 기간 사용량 (T2 소속 계정 표의 "사용" 열) — [userId(UUID), sum(Long)]
     @Query("SELECT t.userId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
             "WHERE t.organizationId = :orgId AND t.createdAt >= :from AND t.createdAt < :to GROUP BY t.userId")
