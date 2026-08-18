@@ -275,8 +275,16 @@ public class AdminController {
         return ApiResponse.success(adminService.reissuePassword(loginId));
     }
 
-    // 키 미설정(빈 값) 상태에서는 전부 차단. 비교는 타이밍 공격 방지를 위해 constant-time
+    // 운영자 검증 — 두 경로 중 하나면 통과 (2026-08-18 JWT 전환, 키는 이행기 병행):
+    //  ① T1 콘솔: JWT 로그인 계정의 ROLE_ADMIN 권한 (감사는 액세스 로그의 user= 필드가 담당)
+    //  ② 운영 스크립트(curl): X-Admin-Key — 미설정(빈 값) 상태에서는 차단, constant-time 비교
     private void validateAdminKey(String provided) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))) {
+            return;
+        }
         if (adminApiKey == null || adminApiKey.isBlank() || provided == null
                 || !MessageDigest.isEqual(
                         adminApiKey.getBytes(StandardCharsets.UTF_8),
