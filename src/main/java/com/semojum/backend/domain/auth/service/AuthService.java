@@ -65,7 +65,7 @@ public class AuthService {
         saveSession(user, refreshToken);
 
         log.info("로그인 성공: loginId={}", request.loginId());
-        return new AuthResponseDto.Login(accessToken, refreshToken);
+        return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name());
     }
 
     @Transactional
