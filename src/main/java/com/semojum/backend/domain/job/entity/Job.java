@@ -87,6 +87,19 @@ public class Job {
     @Column(name = "footer_text", length = 200)
     private String footerText;
 
+    // 접속 메타데이터 (V19, T1-4 요청 정보) — 생성 시 1회 기록. 위치는 표시 시점에 IP로 GeoIP 조회
+    @Column(name = "client_ip", length = 45)
+    private String clientIp;
+
+    @Column(name = "client_os", length = 50)
+    private String clientOs;
+
+    @Column(name = "client_browser", length = 80)
+    private String clientBrowser;
+
+    @Column(name = "client_user_agent", length = 300)
+    private String clientUserAgent;
+
     // 마이페이지 즐겨찾기 (목록 필터·정렬용)
     @Column(name = "is_favorite", nullable = false)
     private boolean isFavorite;
@@ -108,6 +121,14 @@ public class Job {
         this.startedAt = LocalDateTime.now();
         this.lastModifiedAt = LocalDateTime.now();
         this.isEdited = false;
+    }
+
+    // 접속 메타데이터 기록 — Job 생성 직후 1회 (ClientInfoResolver 산출값)
+    public void recordClientInfo(String ip, String os, String browser, String userAgent) {
+        this.clientIp = ip;
+        this.clientOs = os;
+        this.clientBrowser = browser;
+        this.clientUserAgent = userAgent;
     }
 
     // ===== V3 도메인 메서드 =====

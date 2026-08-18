@@ -50,7 +50,9 @@ public class JobService {
 
     @Transactional
     public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode,
-                                           boolean insertPageNumber, String footerText) throws Exception {
+                                           boolean insertPageNumber, String footerText,
+                                           com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo)
+            throws Exception {
 
         // 꼬리말(묵자) 정리 — 빈 값은 null, 200자 초과는 거절 (TranslateText 입력 상한)
         footerText = footerText == null || footerText.isBlank() ? null : footerText.trim();
@@ -122,6 +124,9 @@ public class JobService {
                     .insertPageNumber(insertPageNumber)
                     .footerText(footerText)
                     .build();
+            if (clientInfo != null) {
+                job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
+            }
             jobRepository.saveAndFlush(job);
 
             try {
@@ -191,6 +196,9 @@ public class JobService {
                         .insertPageNumber(insertPageNumber)
                         .footerText(footerText)
                         .build();
+                if (clientInfo != null) {
+                    job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
+                }
                 jobRepository.saveAndFlush(job);
 
                 try {
