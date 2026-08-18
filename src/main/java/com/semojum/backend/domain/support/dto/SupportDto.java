@@ -48,10 +48,12 @@ public class SupportDto {
     // ── 문의 ──
     public record InquiryItem(
             UUID id,
-            String type,
+            String type,               // EMAIL이면 보낸 사람 자리에 senderEmail 표시
             String status,
-            String orgName,            // 미가입 문의는 null
+            String orgName,            // 미가입·메일 문의는 null
             String loginId,
+            String senderEmail,        // 메일 문의(EMAIL) 전용
+            String subject,            // 메일 제목 (그 외 null)
             String message,
             Instant createdAt,
             Instant statusChangedAt

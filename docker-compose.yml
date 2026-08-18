@@ -23,6 +23,9 @@ x-backend-common: &backend-common
     - SPRING_PROFILES_ACTIVE=prod
     - GRPC_CERT_PATH=${GRPC_CERT_PATH}
     - ADMIN_API_KEY=${ADMIN_API_KEY}
+    # 문의 메일함 연동 (Google Workspace IMAP — 미설정 시 폴러 비활성, fail-safe)
+    - MAIL_INBOX_USERNAME=${MAIL_INBOX_USERNAME:-}
+    - MAIL_INBOX_PASSWORD=${MAIL_INBOX_PASSWORD:-}
     - S3_BUCKET=${S3_BUCKET}
     - AWS_REGION=${AWS_REGION}
     # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.

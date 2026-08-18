@@ -18,4 +18,7 @@ public interface InquiryRepository extends JpaRepository<Inquiry, UUID> {
 
     // T2 기관 화면 — 자기 기관의 요청·문의와 처리 상태
     List<Inquiry> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
+
+    // 메일 폴링 중복 방지 (DB 유니크가 최종 방어선)
+    boolean existsByMailUid(String mailUid);
 }

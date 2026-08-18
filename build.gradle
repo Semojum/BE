@@ -59,6 +59,9 @@ dependencies {
 	// validation
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+	// 문의 메일함 IMAP 폴링 (T1-9 메일 연동 — 읽기 전용)
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+
 	// Swagger
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8'
 
