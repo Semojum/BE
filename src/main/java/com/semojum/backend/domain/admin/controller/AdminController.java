@@ -3,6 +3,8 @@ package com.semojum.backend.domain.admin.controller;
 import com.semojum.backend.domain.admin.dto.AdminRequestDto;
 import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.admin.service.AdminService;
+import com.semojum.backend.domain.billing.dto.PricingDto;
+import com.semojum.backend.domain.billing.service.PricingAdminService;
 import com.semojum.backend.global.exception.ApiResponse;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -21,9 +23,29 @@ import java.security.MessageDigest;
 public class AdminController {
 
     private final AdminService adminService;
+    private final PricingAdminService pricingAdminService;
 
     @Value("${admin.api-key:}")
     private String adminApiKey;
+
+    // 단가·배율 관리 변수 — 현재(최신) 판 조회
+    @GetMapping("/pricing")
+    public ApiResponse<PricingDto.Response> getPricing(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(pricingAdminService.getCurrent());
+    }
+
+    // 단가·배율 관리 변수 — 새 판 등록 (config 전문 교체, 과거 판은 이력으로 보존)
+    @PutMapping("/pricing")
+    public ApiResponse<PricingDto.Response> updatePricing(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestBody @Valid PricingDto.Update request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(pricingAdminService.update(request));
+    }
 
     @PostMapping("/orgs")
     public ApiResponse<AdminResponseDto.Org> createOrg(
