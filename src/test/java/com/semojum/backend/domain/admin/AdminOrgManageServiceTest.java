@@ -77,16 +77,16 @@ class AdminOrgManageServiceTest {
                 service.updateOrg(org.getId(), new AdminOrgDto.UpdateOrg(null, null, null, null, null)))
                 .getErrorCode());
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class, () ->
-                service.updateOrg(org.getId(), new AdminOrgDto.UpdateOrg(null, "FREE", null, null, null)))
+                service.updateOrg(org.getId(), new AdminOrgDto.UpdateOrg(null, "GOLD", null, null, null)))
                 .getErrorCode());
     }
 
     @Test
     void 할당_크레딧_설정과_계약_수정() {
         var detail = service.updateOrg(org.getId(), new AdminOrgDto.UpdateOrg(
-                null, "TRIAL", LocalDate.of(2026, 8, 1), null, 10_000L));
+                null, "STANDARD", LocalDate.of(2026, 8, 1), null, 10_000L));
         assertEquals(10_000L, detail.creditAllocated());
-        assertEquals("TRIAL", detail.contractType());
+        assertEquals("STANDARD", detail.contractType());
         assertEquals(LocalDate.of(2026, 8, 1), detail.contractStartedAt());
         assertEquals(LocalDate.of(2027, 12, 31), detail.contractExpiresAt());   // 미변경 유지
     }

@@ -205,11 +205,16 @@ public class AdminStatsService {
         java.time.Instant fromI = from.atZone(ZoneId.of("Asia/Seoul")).toInstant();
         java.time.Instant toI = to.atZone(ZoneId.of("Asia/Seoul")).toInstant();
 
-        long creditPrice = pricingConfigRepository.findTopByOrderByIdDesc()
-                .map(pc -> pc.getConfig().get("creditPriceKrw"))
-                .map(v -> new BigDecimal(String.valueOf(v)).longValue())
-                .orElse(0L);
-        if (creditPrice == 0L) log.warn("creditPriceKrw 미설정 — 환산 매출이 0으로 계산됨");
+        // 계약 유형별 단가 (관리 변수) — 유형이 맵에 없으면 0원 + 경고
+        Map<String, Long> prices = new HashMap<>();
+        pricingConfigRepository.findTopByOrderByIdDesc().ifPresent(pc -> {
+            Object raw = pc.getConfig().get("creditPricesByContract");
+            if (raw instanceof Map<?, ?> map) {
+                map.forEach((k, v) -> prices.put(String.valueOf(k),
+                        new BigDecimal(String.valueOf(v)).longValue()));
+            }
+        });
+        if (prices.isEmpty()) log.warn("creditPricesByContract 미설정 — 환산 매출이 0으로 계산됨");
 
         Map<java.util.UUID, Long> credits = new HashMap<>();
         for (Object[] row : creditTransactionRepository.sumPerOrganizationBetween(fromI, toI)) {
@@ -235,18 +240,24 @@ public class AdminStatsService {
             Object[] costRow = costs.get(orgId);
             BigDecimal cost = costRow == null ? BigDecimal.ZERO : (BigDecimal) costRow[1];
             boolean uncertain = costRow != null && (Boolean) costRow[2];
-            BigDecimal revenue = BigDecimal.valueOf(used * creditPrice);
             Organization org = orgs.get(orgId);
+            String contractType = org != null ? org.getContractType() : null;
+            Long price = contractType == null ? null : prices.get(contractType);
+            if (price == null && contractType != null) {
+                log.warn("단가 맵에 없는 계약 유형 — 0원 처리: {}", contractType);
+            }
+            long appliedPrice = price == null ? 0L : price;
+            BigDecimal revenue = BigDecimal.valueOf(used * appliedPrice);
             items.add(new AdminStatsDto.ProfitabilityItem(orgId,
                     org != null ? org.getName() : null,
-                    org != null ? org.getContractType() : null,
+                    contractType, appliedPrice,
                     used, revenue, cost, revenue.subtract(cost), uncertain));
             totalCredits += used;
             totalRevenue = totalRevenue.add(revenue);
             totalCost = totalCost.add(cost);
         }
         items.sort((a, b) -> b.marginKrw().compareTo(a.marginKrw()));   // 차액 큰 순 (밑지는 기관이 아래)
-        return new AdminStatsDto.Profitability(ym.toString(), creditPrice, items,
+        return new AdminStatsDto.Profitability(ym.toString(), prices, items,
                 new AdminStatsDto.ProfitabilityTotals(totalCredits, totalRevenue, totalCost,
                         totalRevenue.subtract(totalCost)));
     }
