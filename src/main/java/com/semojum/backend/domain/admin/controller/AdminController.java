@@ -6,7 +6,10 @@ import com.semojum.backend.domain.admin.service.AdminService;
 import com.semojum.backend.domain.billing.dto.PricingDto;
 import com.semojum.backend.domain.billing.service.PricingAdminService;
 import com.semojum.backend.domain.admin.dto.AdminMonitorDto;
+import com.semojum.backend.domain.admin.dto.AdminOrgDto;
+import com.semojum.backend.domain.admin.service.AdminOrgManageService;
 import com.semojum.backend.domain.admin.dto.AdminStatsDto;
+import com.semojum.backend.domain.admin.service.AdminCopyService;
 import com.semojum.backend.domain.admin.service.AdminMonitorService;
 import com.semojum.backend.domain.admin.service.AdminStatsService;
 import com.semojum.backend.domain.support.dto.SupportDto;
@@ -33,6 +36,80 @@ public class AdminController {
     private final AdminSupportService adminSupportService;
     private final AdminMonitorService adminMonitorService;
     private final AdminStatsService adminStatsService;
+    private final AdminOrgManageService adminOrgManageService;
+    private final AdminCopyService adminCopyService;
+    private final com.semojum.backend.domain.user.service.UserService userService;
+
+    // ── 기관·계정 통합 표 (T1-6) — 기관별 계정 + 소계(월 사용량·관리자 마지막 로그인) ──
+    @GetMapping("/orgs")
+    public ApiResponse<AdminOrgDto.Orgs> listOrgs(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String month
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.listOrgs(month));
+    }
+
+    // ── 기관 정보 (T1-7) ──
+    @GetMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.OrgDetail> getOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.getOrg(orgId));
+    }
+
+    // 이름·계약(구분/기간)·할당 크레딧 수정 — T2 크레딧 추가 요청 처리 = creditAllocated 상향
+    @PatchMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.OrgDetail> updateOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId,
+            @RequestBody @Valid AdminOrgDto.UpdateOrg request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.updateOrg(orgId, request));
+    }
+
+    // 쿠폰 발급·목록 (T1-7) — 차감은 쿠폰 잔량부터, 소진되면 계약 크레딧
+    @PostMapping("/orgs/{orgId}/coupons")
+    public ApiResponse<AdminOrgDto.CouponItem> issueCoupon(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId,
+            @RequestBody @Valid AdminOrgDto.CreateCoupon request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.issueCoupon(orgId, request));
+    }
+
+    @GetMapping("/orgs/{orgId}/coupons")
+    public ApiResponse<java.util.List<AdminOrgDto.CouponItem>> listCoupons(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.listCoupons(orgId));
+    }
+
+    // 기관 삭제(소프트) — 소속 계정 전부 잠금. 실삭제는 보관 기간 정책 확정 후
+    @DeleteMapping("/orgs/{orgId}")
+    public ApiResponse<AdminOrgDto.DeleteOrgResult> deleteOrg(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orgId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.deleteOrg(orgId));
+    }
+
+    // 계정 삭제(소프트) — 잠금 + 삭제 표식, 작업물 보관
+    @DeleteMapping("/accounts/{loginId}")
+    public ApiResponse<AdminOrgDto.DeleteAccountResult> deleteAccount(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String loginId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminOrgManageService.deleteAccount(loginId));
+    }
 
     // ── 통계 (T1-1 대표 · T1-2 상세) ──
     @GetMapping("/stats/overview")
@@ -51,6 +128,16 @@ public class AdminController {
     ) {
         validateAdminKey(adminKey);
         return ApiResponse.success(adminStatsService.getWorkload(unit));
+    }
+
+    // 기관별 수익성 — 차액 = 환산 매출(차감 크레딧 × creditPriceKrw) − 원가. 단가는 관리 변수
+    @GetMapping("/stats/profitability")
+    public ApiResponse<AdminStatsDto.Profitability> getStatsProfitability(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String month
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminStatsService.getProfitability(month));
     }
 
     @GetMapping("/stats/layout-cost")
@@ -72,6 +159,32 @@ public class AdminController {
     ) {
         validateAdminKey(adminKey);
         return ApiResponse.success(adminMonitorService.listJobs(status, hours, size));
+    }
+
+    // ── 결과 미리보기 (T1-5) — 페이지 결과+원본(presigned). 확인용 — 편집·재변환 없음 ──
+    @GetMapping("/jobs/{jobId}/pages/{pageNo}")
+    public ApiResponse<com.semojum.backend.domain.job.dto.JobResponseDto.JobDetail> getMonitorJobPage(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String jobId,
+            @PathVariable int pageNo
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(userService.getJobPageAsAdmin(jobId, pageNo));
+    }
+
+    // ── 마이페이지로 보내기 (T1-5) — 사본을 운영자 계정으로. targetLoginId 없으면 JWT 본인 ──
+    @PostMapping("/jobs/{jobId}/send-to-mypage")
+    public ApiResponse<java.util.Map<String, Object>> sendToMypage(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable String jobId,
+            @RequestBody(required = false) java.util.Map<String, String> body,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+            org.springframework.security.core.userdetails.UserDetails userDetails
+    ) {
+        validateAdminKey(adminKey);
+        String targetLoginId = body == null ? null : body.get("targetLoginId");
+        return ApiResponse.success(adminCopyService.copyToMypage(jobId, targetLoginId,
+                userDetails == null ? null : userDetails.getUsername()));
     }
 
     // ── 작업 상세 (T1-4) — 요청 정보(접속 메타데이터)·처리 비용·쪽별 결과 ──
@@ -221,8 +334,16 @@ public class AdminController {
         return ApiResponse.success(adminService.reissuePassword(loginId));
     }
 
-    // 키 미설정(빈 값) 상태에서는 전부 차단. 비교는 타이밍 공격 방지를 위해 constant-time
+    // 운영자 검증 — 두 경로 중 하나면 통과 (2026-08-18 JWT 전환, 키는 이행기 병행):
+    //  ① T1 콘솔: JWT 로그인 계정의 ROLE_ADMIN 권한 (감사는 액세스 로그의 user= 필드가 담당)
+    //  ② 운영 스크립트(curl): X-Admin-Key — 미설정(빈 값) 상태에서는 차단, constant-time 비교
     private void validateAdminKey(String provided) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))) {
+            return;
+        }
         if (adminApiKey == null || adminApiKey.isBlank() || provided == null
                 || !MessageDigest.isEqual(
                         adminApiKey.getBytes(StandardCharsets.UTF_8),

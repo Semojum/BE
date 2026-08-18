@@ -37,6 +37,7 @@ public class JwtFilter extends OncePerRequestFilter {
             "/api/auth/logout",
             "/api/admin/",      // 운영자 API — X-Admin-Key로 자체 검증
             "/api/health",      // 헬스체크 — Envoy·deploy.sh가 토큰 없이 호출
+            "/api/public/",     // 홈페이지 공개 접수(문의) — 무인증, 남용 방어는 서비스 계층(허니팟·레이트리밋)
             "/swagger-ui",
             "/v3/api-docs"
     );
@@ -49,9 +50,21 @@ public class JwtFilter extends OncePerRequestFilter {
 
         String requestUri = request.getRequestURI();
 
-        // permitAll 경로는 토큰 검사 없이 통과
+        // permitAll 경로는 토큰이 없어도 통과하되, 토큰이 있으면 인증을 실어준다(best-effort).
+        // — 운영자 API(/api/admin/)가 JWT(ROLE_ADMIN)로도 통과하려면 permitted 경로에서도
+        //   SecurityContext에 권한이 실려 있어야 한다 (실패해도 401 내지 않고 그냥 무인증 통과)
         boolean isPermitted = PERMIT_URLS.stream().anyMatch(requestUri::startsWith);
         if (isPermitted) {
+            String optionalToken = resolveToken(request);
+            if (optionalToken != null && jwtProvider.isValid(optionalToken)) {
+                try {
+                    UserDetails details = userDetailsService.loadUserByUsername(jwtProvider.getUserId(optionalToken));
+                    SecurityContextHolder.getContext().setAuthentication(
+                            new UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
+                } catch (Exception e) {
+                    log.debug("permitted 경로 best-effort 인증 실패(무인증 통과): {}", e.getMessage());
+                }
+            }
             filterChain.doFilter(request, response);
             return;
         }

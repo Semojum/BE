@@ -107,6 +107,7 @@ public class AdminSupportService {
                 i.getId(), i.getType(), i.getStatus(),
                 i.getOrganizationId() == null ? null : orgNames.get(i.getOrganizationId()),
                 i.getUserId() == null ? null : loginIds.get(i.getUserId()),
+                i.getSenderEmail(), i.getSubject(),
                 i.getMessage(), i.getCreatedAt(), i.getStatusChangedAt())).toList();
     }
 
@@ -125,7 +126,8 @@ public class AdminSupportService {
         String loginId = inquiry.getUserId() == null ? null
                 : userRepository.findById(inquiry.getUserId()).map(u -> u.getLoginId()).orElse(null);
         return new SupportDto.InquiryItem(inquiry.getId(), inquiry.getType(), inquiry.getStatus(),
-                orgName, loginId, inquiry.getMessage(), inquiry.getCreatedAt(), inquiry.getStatusChangedAt());
+                orgName, loginId, inquiry.getSenderEmail(), inquiry.getSubject(),
+                inquiry.getMessage(), inquiry.getCreatedAt(), inquiry.getStatusChangedAt());
     }
 
     // ── 주문·수납 ──

@@ -24,6 +24,7 @@ public class Inquiry {
     public static final String TYPE_ACCOUNT_ISSUE = "ACCOUNT_ISSUE";
     public static final String TYPE_ERROR_REPORT = "ERROR_REPORT";
     public static final String TYPE_ONBOARDING = "ONBOARDING";
+    public static final String TYPE_EMAIL = "EMAIL";     // 회사 메일함 수신 (MailInboxPoller)
     public static final String TYPE_ETC = "ETC";
 
     public static final String STATUS_OPEN = "OPEN";
@@ -50,6 +51,17 @@ public class Inquiry {
     @Column(columnDefinition = "text")
     private String message;
 
+    // 메일 문의(TYPE_EMAIL) 전용 — 보낸 사람 자리에 메일 주소를 표시한다
+    @Column(name = "sender_email", length = 100)
+    private String senderEmail;
+
+    @Column(length = 300)
+    private String subject;
+
+    // "UIDVALIDITY:UID" — 폴링 재수집 시 중복 방지 (DB 유니크)
+    @Column(name = "mail_uid", length = 60)
+    private String mailUid;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
@@ -57,12 +69,16 @@ public class Inquiry {
     private Instant statusChangedAt;
 
     @Builder
-    public Inquiry(String type, UUID organizationId, UUID userId, String message) {
+    public Inquiry(String type, UUID organizationId, UUID userId, String message,
+                   String senderEmail, String subject, String mailUid) {
         this.type = type;
         this.status = STATUS_OPEN;
         this.organizationId = organizationId;
         this.userId = userId;
         this.message = message;
+        this.senderEmail = senderEmail;
+        this.subject = subject;
+        this.mailUid = mailUid;
     }
 
     public void changeStatus(String status) {

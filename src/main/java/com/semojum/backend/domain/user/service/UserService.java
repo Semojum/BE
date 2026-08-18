@@ -216,6 +216,23 @@ public class UserService {
         );
     }
 
+    // 운영자 열람(T1-5 미리보기) — 소유자 검증 없이 페이지 결과+원본 조회.
+    // 접속·열람 범위는 운영자 전용(AdminController에서 키/ROLE_ADMIN 검증) — 편집·재변환은 없다.
+    @Transactional(readOnly = true)
+    public JobResponseDto.JobDetail getJobPageAsAdmin(String jobId, int pageNo) {
+        Job job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        Page page = pageRepository.findByJobAndPageNo(job, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        return new JobResponseDto.JobDetail(
+                jobId, job.getMode(), job.getStatus(), job.getTotalPages(), job.getFailedPages(),
+                job.getOriginalFileName(), job.getStartedAt(), job.getFinishedAt(), pageNo,
+                job.isInsertPageNumber(), pageResultSerializer.buildResult(pageResult),
+                buildOriginal(job.getMode(), page));
+    }
+
     // 원본 PDF presigned URL 수명 — FE는 페이지 진입 직후 1회 fetch하므로 짧아도 되지만,
     // 느린 회선에서 대용량 페이지를 받는 경우까지 감안해 15분. 만료 후엔 페이지 조회를 다시 호출하면 된다.
     private static final java.time.Duration ORIGINAL_URL_TTL = java.time.Duration.ofMinutes(15);

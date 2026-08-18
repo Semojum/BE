@@ -56,7 +56,7 @@ public class OrgAdminService {
         User admin = resolveOrgAdmin(adminUserId);
         Organization org = admin.getOrganization();
 
-        long used = creditTransactionRepository.sumByOrganization(org.getId());
+        long used = creditTransactionRepository.sumContractByOrganization(org.getId());
 
         // 최근 6개월 (이번 달 포함, 빈 달은 0)
         YearMonth thisMonth = YearMonth.now(KST);
@@ -90,7 +90,7 @@ public class OrgAdminService {
             perUser.put((UUID) row[0], ((Number) row[1]).longValue());
         }
 
-        List<OrgDto.Account> items = userRepository.findByOrganizationIdOrderByLoginIdAsc(org.getId()).stream()
+        List<OrgDto.Account> items = userRepository.findByOrganizationIdAndDeletedAtIsNullOrderByLoginIdAsc(org.getId()).stream()
                 .map(u -> new OrgDto.Account(u.getLoginId(), u.getAlias(),
                         u.getStatus().name(), u.getRole().name(), u.getLastLoginAt(),
                         perUser.getOrDefault(u.getId(), 0L), u.getId().equals(admin.getId())))
@@ -195,9 +195,10 @@ public class OrgAdminService {
         return admin;
     }
 
-    // 대상 계정이 같은 기관 소속인지 확인 — 타 기관은 존재 여부를 숨기지 않고 403
+    // 대상 계정이 같은 기관 소속인지 확인 — 타 기관은 존재 여부를 숨기지 않고 403. 삭제 계정은 404
     private User resolveSameOrgTarget(User admin, String loginId) {
         User target = userRepository.findByLoginId(loginId)
+                .filter(u -> u.getDeletedAt() == null)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
         if (target.getOrganization() == null
                 || !target.getOrganization().getId().equals(admin.getOrganization().getId())) {

@@ -112,7 +112,8 @@ com.semojum.backend
 
 ### 운영자 API (X-Admin-Key — 관리자 페이지 전까지 임시)
 - 키는 EC2 `.env`의 `ADMIN_API_KEY`(코드·저장소에 없음). **fail-closed**(미설정 시 전부 차단), constant-time 비교
-- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유. 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비 — 네이티브 date_trunc 집계(AdminStatsRepository), 기관별 수익성은 계약 단가 확정 후)**
+- **기관·계정 관리(T1-6·7)**: 통합 표(`GET /api/admin/orgs?month=` — 기관별 계정+소계) / 기관 상세·수정(`GET·PATCH /api/admin/orgs/{orgId}` — 이름·계약 구분(PAID/TRIAL/INTERNAL)·기간·**할당 크레딧 설정**) / **삭제는 소프트**(`DELETE /api/admin/orgs/{orgId}`=소속 계정 전부 잠금+deleted_at, `DELETE /api/admin/accounts/{loginId}` — 실삭제는 보관 기간 정책 확정 후, V21). 삭제된 기관엔 계정 발급 불가, 삭제 계정은 T2 목록·제어에서 제외
+- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유, `GET .../pages/{pageNo}` — T1-5 미리보기(소유자 검증 없는 페이지 결과+presigned 원본, UserService.getJobPageAsAdmin), `POST .../send-to-mypage` — 사본을 운영자 계정 마이페이지로(AdminCopyService: Job~품질 행 전체+S3 서버사이드 복사, 편집 original/current 보존, page_edit_logs 미복사, 대상은 ROLE_ADMIN만·진행 중 작업 거부). 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비, `/stats/profitability?month=` **기관별 수익성 — 차액=환산 매출(차감 크레딧×creditPriceKrw)−원가. 판매 단가는 pricing_configs 관리 변수(임시 240원, biz 확정 시 PUT으로 교체), 매출은 조회 시점 환산(확정 회계는 orders 담당)** — 네이티브 date_trunc 집계(AdminStatsRepository))**
 - 키 회전: EC2 `.env` 수정 → 재기동. **키를 Git·노션·채팅에 올리지 말 것**
 
 ### Job 생성 (`POST /api/jobs`)
@@ -190,8 +191,10 @@ com.semojum.backend
 - **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
 - T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
 - 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
+- **문의 메일 연동 (V20, MailInboxPoller)**: 회사 메일함(Google Workspace)을 5분 주기 IMAP **읽기 전용** 폴링(메일함 읽음 표시 안 건드림, 답장은 메일함에서) → inquiries에 `type=EMAIL·sender_email·subject`로 저장, 기존 상태 관리 공유. 중복 방지 `mail_uid`("UIDVALIDITY:UID") 유니크. **자격증명은 EC2 `.env`의 `MAIL_INBOX_USERNAME`/`MAIL_INBOX_PASSWORD`(Workspace 앱 비밀번호)** — 미설정이면 폴러 비활성(fail-safe)
 - **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
-- 미구현(다음 단계): 홈페이지(미가입) 문의 유입 공개 엔드포인트, 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API, 주문 증빙 파일 다운로드
+- **홈페이지 공개 문의 (`POST /api/public/inquiries`, 무인증)**: 유형 ONBOARDING·ERROR_REPORT·ETC, 미가입 접수(org·user null — T1-9에 이름·이메일 표시). 남용 방어는 서비스 계층 — 허니팟(website 채워지면 성공한 척 폐기) + IP 시간당 5건(Redis, 장애 시 접수 허용)
+- 미구현(다음 단계): 점역 기본 설정(AI 스키마 대기), 실삭제(보관 기간 정책 대기), 주문 증빙 파일 다운로드
 
 ### 사용량·원가·크레딧 (billing — proto 08.17)
 - **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)
@@ -199,6 +202,7 @@ com.semojum.backend
 - 계산 결과(원가 USD·KRW·크레딧)는 **쪽 처리 시점 값으로 확정 저장** — 단가를 바꿔도 과거 기록 불변. 원자료(토큰·gpu_time)도 함께 저장(감사·재검산용)
 - **단가표에 없는 모델 = 0원으로 삼키지 않고 `cost_uncertain=true`(미계상) 표시** (proto 주석 명시)
 - 크레딧: **성공한 쪽만** 배율 차감(UNSPECIFIED 0 / TEXT 1 / FORMULA 2 / TABLE 3 / VISUAL 5 — biz 확정 2026-08-17), 실패 쪽 무차감. **0 차감도 `credit_transactions`에 기록**(고객 검산용). `(job_id, page_no)` 유니크 — 워커 재시도 재진입에도 이중 차감 불가
+- **쿠폰 우선 차감 (V23, CreditDeductionService)**: 유효 기간 내·전액 들어갈 잔량 있는 쿠폰(오래된 순)이 있으면 `source=COUPON`, 아니면 `CONTRACT`. 쪽 차감은 원자 단위라 잔량 부족 쿠폰은 건너뜀(쪼개 담지 않음). 쿠폰 행 잠금(PESSIMISTIC_WRITE)으로 병렬 워커 초과 소진 방지. **잔여 게이지·수익성 매출은 CONTRACT 차감만** — 쿠폰 차감은 계약 잔여 불변·매출 0(수익성에서 원가만큼 마이너스). 발급·목록: `POST·GET /api/admin/orgs/{orgId}/coupons`
 - 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
 
 ### 로깅

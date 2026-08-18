@@ -54,6 +54,10 @@ public class User {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    // 삭제 표식 (V21) — 실삭제는 보관 기간 정책 확정 후. 삭제 시 INACTIVE로도 전환돼 로그인 차단
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -86,6 +90,11 @@ public class User {
 
     public void touchLastLogin() {
         this.lastLoginAt = Instant.now();
+    }
+
+    public void markDeleted() {
+        this.deletedAt = Instant.now();
+        this.status = UserStatus.INACTIVE;   // 기존 차단 경로(로그인·refresh AUTH4004) 재사용
     }
 
     public boolean isActive() {

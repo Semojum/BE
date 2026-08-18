@@ -24,11 +24,31 @@ public interface CreditTransactionRepository extends JpaRepository<CreditTransac
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t WHERE t.organizationId = :orgId")
     long sumByOrganization(@Param("orgId") UUID orgId);
 
+    // 계약분 차감만 (잔여 게이지·수익성 매출의 축 — 쿠폰 차감은 계약 잔여를 안 깎음)
+    @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
+            "WHERE t.organizationId = :orgId AND t.source = 'CONTRACT'")
+    long sumContractByOrganization(@Param("orgId") UUID orgId);
+
+    // 쿠폰 사용량 (잔량 = coupon.credit_amount − 이 값)
+    @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t WHERE t.couponId = :couponId")
+    long sumByCoupon(@Param("couponId") UUID couponId);
+
     // 계정의 기간 사용량 (T3 이번 달/지난달)
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
             "WHERE t.userId = :userId AND t.createdAt >= :from AND t.createdAt < :to")
     long sumByUserBetween(@Param("userId") UUID userId,
                           @Param("from") Instant from, @Param("to") Instant to);
+
+    // 기관별 기간 "유료(계약분)" 차감 합 (T1-2 수익성 — 환산 매출의 축. 쿠폰 차감은 매출 0)
+    @Query("SELECT t.organizationId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
+            "WHERE t.organizationId IS NOT NULL AND t.source = 'CONTRACT' " +
+            "AND t.createdAt >= :from AND t.createdAt < :to GROUP BY t.organizationId")
+    List<Object[]> sumPerOrganizationBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    // 전 기관 계정별 기간 사용량 (T1-6 통합 표) — [organizationId, userId, sum]
+    @Query("SELECT t.organizationId, t.userId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
+            "WHERE t.createdAt >= :from AND t.createdAt < :to GROUP BY t.organizationId, t.userId")
+    List<Object[]> sumPerOrgUserBetween(@Param("from") Instant from, @Param("to") Instant to);
 
     // 기관 소속 계정별 기간 사용량 (T2 소속 계정 표의 "사용" 열) — [userId(UUID), sum(Long)]
     @Query("SELECT t.userId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
