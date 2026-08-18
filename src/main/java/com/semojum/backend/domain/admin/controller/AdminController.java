@@ -5,6 +5,8 @@ import com.semojum.backend.domain.admin.dto.AdminResponseDto;
 import com.semojum.backend.domain.admin.service.AdminService;
 import com.semojum.backend.domain.billing.dto.PricingDto;
 import com.semojum.backend.domain.billing.service.PricingAdminService;
+import com.semojum.backend.domain.support.dto.SupportDto;
+import com.semojum.backend.domain.support.service.AdminSupportService;
 import com.semojum.backend.global.exception.ApiResponse;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -24,9 +26,78 @@ public class AdminController {
 
     private final AdminService adminService;
     private final PricingAdminService pricingAdminService;
+    private final AdminSupportService adminSupportService;
 
     @Value("${admin.api-key:}")
     private String adminApiKey;
+
+    // ── 공지 (T1-10) ──
+    @PostMapping("/notices")
+    public ApiResponse<SupportDto.NoticeItem> createNotice(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestBody @Valid SupportDto.CreateNotice request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.createNotice(request));
+    }
+
+    @GetMapping("/notices")
+    public ApiResponse<java.util.List<SupportDto.NoticeItem>> listNotices(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.listNotices());
+    }
+
+    // ── 문의 (T1-9) ──
+    @GetMapping("/inquiries")
+    public ApiResponse<java.util.List<SupportDto.InquiryItem>> listInquiries(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.listInquiries(status, type));
+    }
+
+    @PatchMapping("/inquiries/{inquiryId}/status")
+    public ApiResponse<SupportDto.InquiryItem> updateInquiryStatus(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID inquiryId,
+            @RequestBody @Valid SupportDto.UpdateInquiryStatus request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.updateInquiryStatus(inquiryId, request.status()));
+    }
+
+    // ── 주문·수납 (T1-7) ──
+    @PostMapping("/orders")
+    public ApiResponse<SupportDto.OrderItem> createOrder(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestBody @Valid SupportDto.CreateOrder request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.createOrder(request));
+    }
+
+    @PatchMapping("/orders/{orderId}")
+    public ApiResponse<SupportDto.OrderItem> updateOrder(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @PathVariable java.util.UUID orderId,
+            @RequestBody @Valid SupportDto.UpdateOrder request
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.updateOrder(orderId, request));
+    }
+
+    @GetMapping("/orders")
+    public ApiResponse<java.util.List<SupportDto.OrderItem>> listOrders(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) java.util.UUID organizationId
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminSupportService.listOrders(organizationId));
+    }
 
     // 단가·배율 관리 변수 — 현재(최신) 판 조회
     @GetMapping("/pricing")
