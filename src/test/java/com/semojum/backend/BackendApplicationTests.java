@@ -27,8 +27,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         // 운영에서 환경변수로 주입되는 값들 — 컨텍스트 기동에만 필요한 더미
         "JWT_SECRET=test-secret-key-for-context-load-only-32bytes+",
         "DB_PASSWORD=test",
-        "GRPC_CERT_PATH=classpath:grpc/test-server.crt",
-        "ADMIN_API_KEY=test-key"
+        "GRPC_CERT_PATH=classpath:grpc/test-server.crt"
 })
 class BackendApplicationTests {
 

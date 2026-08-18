@@ -27,7 +27,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * T1 운영자의 문의·공지·주문 관리 (X-Admin-Key — AdminController 경유).
+ * T1 운영자의 문의·공지·주문 관리 (ROLE_ADMIN JWT — AdminController 경유).
  * 공지 노출 종료는 스케줄러 없이 조회 시 기간으로 판정한다.
  */
 @Slf4j

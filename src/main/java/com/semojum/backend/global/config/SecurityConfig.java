@@ -42,8 +42,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // refresh/logout은 refreshToken으로 자체 검증하므로 액세스 토큰을 요구하지 않는다
                         .requestMatchers("/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
-                        // 운영자 API는 JWT 대신 X-Admin-Key 헤더로 자체 검증 (AdminController)
-                        .requestMatchers("/api/admin/**").permitAll()
+                        // 운영자 API — JWT(ROLE_ADMIN) 전용 (X-Admin-Key는 2026-08-19 폐기)
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // 헬스체크 — Envoy·배포 스크립트가 무인증으로 호출
                         .requestMatchers("/api/health").permitAll()
                         // 홈페이지 공개 접수 — 무인증 (남용 방어는 서비스 계층)
@@ -65,6 +65,17 @@ public class SecurityConfig {
                                     ApiResponse.failure(ErrorCode.COMMON_UNAUTHORIZED)
                             );
                         })
+                        // 인증은 됐지만 역할이 부족한 경우(예: 점역사 토큰으로 /api/admin/**) — 403 JSON
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            log.warn("인가 거부: {} {} → 403", request.getMethod(), request.getRequestURI());
+                            response.setStatus(403);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
+                            new ObjectMapper().writeValue(
+                                    response.getWriter(),
+                                    ApiResponse.failure(ErrorCode.COMMON_FORBIDDEN)
+                            );
+                        })
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -84,7 +95,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(s -> !s.isBlank()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Admin-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setMaxAge(3600L);
         var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);

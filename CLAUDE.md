@@ -51,7 +51,7 @@
 com.semojum.backend
 ├── domain
 │   ├── auth      로그인/로그아웃/refresh, User·UserSession (V3 발급형 계정)
-│   ├── admin     운영자 API (X-Admin-Key 검증)
+│   ├── admin     운영자 API (ROLE_ADMIN JWT 전용)
 │   ├── org       Organization (기관, 계약 만료일)
 │   ├── user      마이페이지 목록·페이지 조회 (UserService)
 │   ├── folder    폴더 CRUD·트리·contents (FolderService, FolderTouch)
@@ -108,13 +108,13 @@ com.semojum.backend
 - **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
 - 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
 - `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
-- JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/admin/`, `/api/health`, swagger 2종
+- JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/health`, `/api/public/`, swagger 2종 — `/api/admin/`은 JWT 필수
 
-### 운영자 API (X-Admin-Key — 관리자 페이지 전까지 임시)
-- 키는 EC2 `.env`의 `ADMIN_API_KEY`(코드·저장소에 없음). **fail-closed**(미설정 시 전부 차단), constant-time 비교
+### 운영자 API (ROLE_ADMIN JWT 전용 — X-Admin-Key는 2026-08-19 폐기)
+- 인증 = 운영자 콘솔(admin.semo-jum.com) 로그인 → Bearer 토큰. SecurityConfig `hasRole(ADMIN)` + AdminController `validateAdminRole()` 이중 방어, 비ADMIN 토큰 403·무토큰 401(JSON)
 - **기관·계정 관리(T1-6·7)**: 통합 표(`GET /api/admin/orgs?month=` — 기관별 계정+소계) / 기관 상세·수정(`GET·PATCH /api/admin/orgs/{orgId}` — 이름·**계약 유형(V24: 유료 BASIC·STANDARD·PREMIUM / 무료 FREE(체험)·COUPON(쿠폰 제공) — 신규 기본 FREE)**·기간·**할당 크레딧 설정**) / **삭제는 소프트**(`DELETE /api/admin/orgs/{orgId}`=소속 계정 전부 잠금+deleted_at, `DELETE /api/admin/accounts/{loginId}` — 실삭제는 보관 기간 정책 확정 후, V21). 삭제된 기관엔 계정 발급 불가, 삭제 계정은 T2 목록·제어에서 제외
 - 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유, `GET .../pages/{pageNo}` — T1-5 미리보기(소유자 검증 없는 페이지 결과+presigned 원본, UserService.getJobPageAsAdmin), `POST .../send-to-mypage` — 사본을 운영자 계정 마이페이지로(AdminCopyService: Job~품질 행 전체+S3 서버사이드 복사, 편집 original/current 보존, page_edit_logs 미복사, 대상은 ROLE_ADMIN만·진행 중 작업 거부). 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비, `/stats/profitability?month=` **기관별 수익성 — 차액=환산 매출(계약분 차감×유형별 단가)−원가. 단가는 pricing_configs.creditPricesByContract(관리 변수, biz 확정 2026-08-18: BASIC 200/STANDARD 150/PREMIUM 120/FREE·COUPON 0), 매출은 조회 시점 환산(확정 회계는 orders 담당)** — 네이티브 date_trunc 집계(AdminStatsRepository))**
-- 키 회전: EC2 `.env` 수정 → 재기동. **키를 Git·노션·채팅에 올리지 말 것**
+- 구 X-Admin-Key·`ADMIN_API_KEY`(.env)·어드민 키 파일은 폐기 — 운영 스크립트도 로그인 토큰 사용
 
 ### Job 생성 (`POST /api/jobs`)
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
