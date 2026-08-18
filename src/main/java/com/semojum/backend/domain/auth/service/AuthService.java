@@ -49,11 +49,13 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 
+        // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표).
+        // 반드시 revoke "앞"에서 — revokeAllActiveByUser의 clearAutomatically가 영속성 컨텍스트를
+        // 비워 user가 detach되므로, 뒤에서 바꾸면 커밋에 안 실린다(flushAutomatically가 이 변경을 먼저 flush).
+        user.touchLastLogin();
+
         // 중복 로그인 금지: 기존 활성 세션 전부 revoke (신규 로그인이 기존을 밀어냄)
         userSessionRepository.revokeAllActiveByUser(user, LocalDateTime.now());
-
-        // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표 — 더티체킹으로 커밋 시 반영)
-        user.touchLastLogin();
 
         // JWT 발급 (subject: UUID)
         String accessToken = jwtProvider.generateAccessToken(user.getId().toString());
