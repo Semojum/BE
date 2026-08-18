@@ -15,6 +15,13 @@ public interface JobRepository extends JpaRepository<Job, String>, JobQueryRepos
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
 
+    // 기간 내 작업 (T2-2 계정 상세 · T3 작업별 크레딧 — 휴지통 제외, 요청 시각 기준)
+    @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NULL " +
+            "AND j.startedAt >= :from AND j.startedAt < :to ORDER BY j.startedAt DESC")
+    List<Job> findActiveByUserIdAndStartedAtRange(@Param("userId") UUID userId,
+                                                  @Param("from") java.time.LocalDateTime from,
+                                                  @Param("to") java.time.LocalDateTime to);
+
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 끝나지 않은 Job 목록
     List<Job> findByUserIdAndStatusInOrderByStartedAtDesc(UUID userId, List<String> statuses);
 

@@ -32,6 +32,21 @@ public class Organization {
     // 계약 만료일 (마이페이지 보관 기간 기준)
     private LocalDate contractExpiresAt;
 
+    // 계약 시작일 (T2 계약 카드 "시작 YYYY-MM-DD")
+    @Column(name = "contract_started_at")
+    private LocalDate contractStartedAt;
+
+    // 계약 구분 — PAID(유료) | TRIAL(체험) | INTERNAL(내부)
+    // insertable=false: 값은 DB default가 채운다 (columnDefinition은 테스트의 엔티티 기반 스키마 생성용)
+    @Column(name = "contract_type", insertable = false, updatable = false,
+            columnDefinition = "varchar(20) not null default 'PAID'")
+    private String contractType;
+
+    // 계약으로 받은 총 크레딧 (운영자 설정). 사용량은 credit_transactions 합산
+    @Column(name = "credit_allocated", insertable = false, updatable = false,
+            columnDefinition = "bigint not null default 0")
+    private long creditAllocated;
+
     @Column(nullable = false)
     private String status; // ACTIVE | EXPIRED
 

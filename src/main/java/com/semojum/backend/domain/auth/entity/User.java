@@ -9,6 +9,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -45,6 +46,14 @@ public class User {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    // 별칭 — 기관 관리자가 "누가 쓰는 계정인지"를 역할명으로 적는다 (실명 대신 "수학 담당" 권장)
+    @Column(length = 50)
+    private String alias;
+
+    // 마지막 로그인 시각 (T1-6·T2 소속 계정 표) — 로그인 성공 시 갱신
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -69,6 +78,14 @@ public class User {
 
     public void changeRole(Role role) {
         this.role = role;
+    }
+
+    public void changeAlias(String alias) {
+        this.alias = alias;
+    }
+
+    public void touchLastLogin() {
+        this.lastLoginAt = Instant.now();
     }
 
     public boolean isActive() {
