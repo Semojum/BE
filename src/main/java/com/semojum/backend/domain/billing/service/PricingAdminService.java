@@ -23,7 +23,8 @@ import java.util.Map;
 public class PricingAdminService {
 
     private static final List<String> REQUIRED_KEYS =
-            List.of("modelPrices", "gpuUsdPerHour", "usdKrw", "cardFeeRate", "creditMultiplier");
+            List.of("modelPrices", "gpuUsdPerHour", "usdKrw", "cardFeeRate", "creditMultiplier",
+                    "creditPriceKrw");   // 크레딧 판매 단가(원) — 수익성 환산 매출의 축
     private static final List<String> LAYOUT_TYPES = List.of(
             "PAGE_LAYOUT_UNSPECIFIED", "PAGE_LAYOUT_TEXT", "PAGE_LAYOUT_FORMULA",
             "PAGE_LAYOUT_TABLE", "PAGE_LAYOUT_VISUAL");
@@ -58,6 +59,7 @@ public class PricingAdminService {
         requireNonNegativeNumber(config.get("gpuUsdPerHour"), "gpuUsdPerHour");
         requireNonNegativeNumber(config.get("usdKrw"), "usdKrw");
         requireNonNegativeNumber(config.get("cardFeeRate"), "cardFeeRate");
+        requireNonNegativeNumber(config.get("creditPriceKrw"), "creditPriceKrw");
 
         Object mp = config.get("modelPrices");
         if (!(mp instanceof Map) || ((Map<String, Object>) mp).isEmpty()) {

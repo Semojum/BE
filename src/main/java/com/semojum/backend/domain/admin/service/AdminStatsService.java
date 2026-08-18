@@ -2,6 +2,10 @@ package com.semojum.backend.domain.admin.service;
 
 import com.semojum.backend.domain.admin.dto.AdminStatsDto;
 import com.semojum.backend.domain.admin.repository.AdminStatsRepository;
+import com.semojum.backend.domain.billing.repository.CreditTransactionRepository;
+import com.semojum.backend.domain.billing.repository.PricingConfigRepository;
+import com.semojum.backend.domain.org.entity.Organization;
+import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +38,9 @@ import java.util.Map;
 public class AdminStatsService {
 
     private final AdminStatsRepository statsRepository;
+    private final CreditTransactionRepository creditTransactionRepository;
+    private final OrganizationRepository organizationRepository;
+    private final PricingConfigRepository pricingConfigRepository;
 
     /** T1-1 — 기간 탭(today/week/month)에 따른 건수·쪽수·시계열 + 누적 원가 패널 */
     @Transactional(readOnly = true)
@@ -183,5 +190,64 @@ public class AdminStatsService {
         }
         items.sort((a, b) -> b.avgKrwPerPage().compareTo(a.avgKrwPerPage()));   // 비싼 순
         return new AdminStatsDto.LayoutCost(ym.toString(), items);
+    }
+
+    /**
+     * T1-2 기관별 수익성 — 차액 = 환산 매출(차감 크레딧 × 판매 단가) − 원가.
+     * 매출은 조회 시점 최신 단가로 환산하는 파생값(단가 변경 시 과거 월도 재환산) —
+     * 확정 회계는 orders의 실제 계약 금액이 담당. 원가·차감 원본은 처리 시점 확정 저장분.
+     */
+    @Transactional(readOnly = true)
+    public AdminStatsDto.Profitability getProfitability(String month) {
+        YearMonth ym = month == null || month.isBlank() ? YearMonth.now() : YearMonth.parse(month);
+        LocalDateTime from = ym.atDay(1).atStartOfDay();
+        LocalDateTime to = ym.plusMonths(1).atDay(1).atStartOfDay();
+        java.time.Instant fromI = from.atZone(ZoneId.of("Asia/Seoul")).toInstant();
+        java.time.Instant toI = to.atZone(ZoneId.of("Asia/Seoul")).toInstant();
+
+        long creditPrice = pricingConfigRepository.findTopByOrderByIdDesc()
+                .map(pc -> pc.getConfig().get("creditPriceKrw"))
+                .map(v -> new BigDecimal(String.valueOf(v)).longValue())
+                .orElse(0L);
+        if (creditPrice == 0L) log.warn("creditPriceKrw 미설정 — 환산 매출이 0으로 계산됨");
+
+        Map<java.util.UUID, Long> credits = new HashMap<>();
+        for (Object[] row : creditTransactionRepository.sumPerOrganizationBetween(fromI, toI)) {
+            credits.put((java.util.UUID) row[0], ((Number) row[1]).longValue());
+        }
+        Map<java.util.UUID, Object[]> costs = new HashMap<>();
+        for (Object[] row : statsRepository.orgCostSums(from, to)) {
+            costs.put((java.util.UUID) row[0], row);
+        }
+        Map<java.util.UUID, Organization> orgs = new HashMap<>();
+        for (Organization org : organizationRepository.findAll()) orgs.put(org.getId(), org);
+
+        // 크레딧·원가 어느 쪽이든 데이터가 있는 기관 전부 (삭제 기관도 과거 월 이력은 표시)
+        java.util.Set<java.util.UUID> orgIds = new java.util.LinkedHashSet<>();
+        orgIds.addAll(credits.keySet());
+        orgIds.addAll(costs.keySet());
+
+        long totalCredits = 0;
+        BigDecimal totalRevenue = BigDecimal.ZERO, totalCost = BigDecimal.ZERO;
+        java.util.List<AdminStatsDto.ProfitabilityItem> items = new java.util.ArrayList<>();
+        for (java.util.UUID orgId : orgIds) {
+            long used = credits.getOrDefault(orgId, 0L);
+            Object[] costRow = costs.get(orgId);
+            BigDecimal cost = costRow == null ? BigDecimal.ZERO : (BigDecimal) costRow[1];
+            boolean uncertain = costRow != null && (Boolean) costRow[2];
+            BigDecimal revenue = BigDecimal.valueOf(used * creditPrice);
+            Organization org = orgs.get(orgId);
+            items.add(new AdminStatsDto.ProfitabilityItem(orgId,
+                    org != null ? org.getName() : null,
+                    org != null ? org.getContractType() : null,
+                    used, revenue, cost, revenue.subtract(cost), uncertain));
+            totalCredits += used;
+            totalRevenue = totalRevenue.add(revenue);
+            totalCost = totalCost.add(cost);
+        }
+        items.sort((a, b) -> b.marginKrw().compareTo(a.marginKrw()));   // 차액 큰 순 (밑지는 기관이 아래)
+        return new AdminStatsDto.Profitability(ym.toString(), creditPrice, items,
+                new AdminStatsDto.ProfitabilityTotals(totalCredits, totalRevenue, totalCost,
+                        totalRevenue.subtract(totalCost)));
     }
 }
