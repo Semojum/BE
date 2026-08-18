@@ -193,7 +193,8 @@ com.semojum.backend
 - 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·구분(PAID/TRIAL/INTERNAL)·계정 별칭도 V17
 - **문의 메일 연동 (V20, MailInboxPoller)**: 회사 메일함(Google Workspace)을 5분 주기 IMAP **읽기 전용** 폴링(메일함 읽음 표시 안 건드림, 답장은 메일함에서) → inquiries에 `type=EMAIL·sender_email·subject`로 저장, 기존 상태 관리 공유. 중복 방지 `mail_uid`("UIDVALIDITY:UID") 유니크. **자격증명은 EC2 `.env`의 `MAIL_INBOX_USERNAME`/`MAIL_INBOX_PASSWORD`(Workspace 앱 비밀번호)** — 미설정이면 폴러 비활성(fail-safe)
 - **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
-- 미구현(다음 단계): 홈페이지(미가입) 문의 유입 공개 엔드포인트, 점역 기본 설정(AI 스키마 대기), 기관 할당량 설정 운영자 API, 주문 증빙 파일 다운로드
+- **홈페이지 공개 문의 (`POST /api/public/inquiries`, 무인증)**: 유형 ONBOARDING·ERROR_REPORT·ETC, 미가입 접수(org·user null — T1-9에 이름·이메일 표시). 남용 방어는 서비스 계층 — 허니팟(website 채워지면 성공한 척 폐기) + IP 시간당 5건(Redis, 장애 시 접수 허용)
+- 미구현(다음 단계): 점역 기본 설정(AI 스키마 대기), 실삭제(보관 기간 정책 대기), 주문 증빙 파일 다운로드
 
 ### 사용량·원가·크레딧 (billing — proto 08.17)
 - **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)

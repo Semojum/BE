@@ -37,6 +37,7 @@ public class JwtFilter extends OncePerRequestFilter {
             "/api/auth/logout",
             "/api/admin/",      // 운영자 API — X-Admin-Key로 자체 검증
             "/api/health",      // 헬스체크 — Envoy·deploy.sh가 토큰 없이 호출
+            "/api/public/",     // 홈페이지 공개 접수(문의) — 무인증, 남용 방어는 서비스 계층(허니팟·레이트리밋)
             "/swagger-ui",
             "/v3/api-docs"
     );
