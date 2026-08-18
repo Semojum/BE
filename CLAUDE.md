@@ -112,7 +112,7 @@ com.semojum.backend
 
 ### 운영자 API (X-Admin-Key — 관리자 페이지 전까지 임시)
 - 키는 EC2 `.env`의 `ADMIN_API_KEY`(코드·저장소에 없음). **fail-closed**(미설정 시 전부 차단), constant-time 비교
-- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유. 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)**
+- 기관 생성(`POST /api/admin/orgs`) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, PW는 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries`, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유. 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비 — 네이티브 date_trunc 집계(AdminStatsRepository), 기관별 수익성은 계약 단가 확정 후)**
 - 키 회전: EC2 `.env` 수정 → 재기동. **키를 Git·노션·채팅에 올리지 말 것**
 
 ### Job 생성 (`POST /api/jobs`)
