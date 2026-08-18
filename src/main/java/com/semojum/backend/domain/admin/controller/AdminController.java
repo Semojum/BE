@@ -6,7 +6,9 @@ import com.semojum.backend.domain.admin.service.AdminService;
 import com.semojum.backend.domain.billing.dto.PricingDto;
 import com.semojum.backend.domain.billing.service.PricingAdminService;
 import com.semojum.backend.domain.admin.dto.AdminMonitorDto;
+import com.semojum.backend.domain.admin.dto.AdminStatsDto;
 import com.semojum.backend.domain.admin.service.AdminMonitorService;
+import com.semojum.backend.domain.admin.service.AdminStatsService;
 import com.semojum.backend.domain.support.dto.SupportDto;
 import com.semojum.backend.domain.support.service.AdminSupportService;
 import com.semojum.backend.global.exception.ApiResponse;
@@ -30,6 +32,35 @@ public class AdminController {
     private final PricingAdminService pricingAdminService;
     private final AdminSupportService adminSupportService;
     private final AdminMonitorService adminMonitorService;
+    private final AdminStatsService adminStatsService;
+
+    // ── 통계 (T1-1 대표 · T1-2 상세) ──
+    @GetMapping("/stats/overview")
+    public ApiResponse<AdminStatsDto.Overview> getStatsOverview(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String period
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminStatsService.getOverview(period));
+    }
+
+    @GetMapping("/stats/workload")
+    public ApiResponse<AdminStatsDto.Workload> getStatsWorkload(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String unit
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminStatsService.getWorkload(unit));
+    }
+
+    @GetMapping("/stats/layout-cost")
+    public ApiResponse<AdminStatsDto.LayoutCost> getStatsLayoutCost(
+            @RequestHeader(value = "X-Admin-Key", required = false) String adminKey,
+            @RequestParam(required = false) String month
+    ) {
+        validateAdminKey(adminKey);
+        return ApiResponse.success(adminStatsService.getLayoutCost(month));
+    }
 
     // ── 실시간 모니터링 (T1-3) — 전 기관 최근 작업, 10초 폴링 ──
     @GetMapping("/jobs")
