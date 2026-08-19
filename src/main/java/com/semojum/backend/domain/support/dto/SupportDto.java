@@ -35,6 +35,12 @@ public class SupportDto {
             Instant createdAt
     ) {}
 
+    // 로그인 전 공개 공지 (무인증) — 전체 대상 공지만, 기관 정보 미포함
+    public record PublicNotice(
+            UUID id, String title, String body,
+            LocalDate startsOn, LocalDate endsOn, Instant createdAt
+    ) {}
+
     public record OrgNotice(
             UUID id,
             String scope,              // ALL(전체) | ORG(우리 기관)
