@@ -239,6 +239,24 @@ public class AdminController {
         return ApiResponse.success(adminSupportService.listOrders(organizationId));
     }
 
+    // 증빙(계산서·전표) 파일 — 업로드(재업로드=교체) / 내려받기 presigned (V25)
+    @PostMapping("/orders/{orderId}/receipt")
+    public ApiResponse<SupportDto.OrderItem> uploadOrderReceipt(
+            @PathVariable java.util.UUID orderId,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.uploadOrderReceipt(orderId, file));
+    }
+
+    @GetMapping("/orders/{orderId}/receipt")
+    public ApiResponse<SupportDto.ReceiptDownload> getOrderReceipt(
+            @PathVariable java.util.UUID orderId
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.getOrderReceipt(orderId));
+    }
+
     // 단가·배율 관리 변수 — 현재(최신) 판 조회
     @GetMapping("/pricing")
     public ApiResponse<PricingDto.Response> getPricing() {
