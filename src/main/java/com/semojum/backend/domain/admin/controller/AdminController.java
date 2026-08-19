@@ -35,6 +35,7 @@ public class AdminController {
     private final AdminStatsService adminStatsService;
     private final AdminOrgManageService adminOrgManageService;
     private final AdminCopyService adminCopyService;
+    private final com.semojum.backend.domain.app.service.AppVersionService appVersionService;
     private final com.semojum.backend.domain.user.service.UserService userService;
 
     // ── 기관·계정 통합 표 (T1-6) — 기관별 계정 + 소계(월 사용량·관리자 마지막 로그인) ──
@@ -255,6 +256,21 @@ public class AdminController {
     ) {
         validateAdminRole();
         return ApiResponse.success(adminSupportService.getOrderReceipt(orderId));
+    }
+
+    // ── 앱 버전 (V26) — 등록(새 행=이력 보존)·이력. 앱의 조회는 무인증 GET /api/public/app-version ──
+    @PostMapping("/app-version")
+    public ApiResponse<com.semojum.backend.domain.app.dto.AppVersionDto.HistoryItem> registerAppVersion(
+            @RequestBody @Valid com.semojum.backend.domain.app.dto.AppVersionDto.Register request
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(appVersionService.register(request));
+    }
+
+    @GetMapping("/app-versions")
+    public ApiResponse<java.util.List<com.semojum.backend.domain.app.dto.AppVersionDto.HistoryItem>> listAppVersions() {
+        validateAdminRole();
+        return ApiResponse.success(appVersionService.listHistory());
     }
 
     // 단가·배율 관리 변수 — 현재(최신) 판 조회

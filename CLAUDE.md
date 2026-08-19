@@ -198,6 +198,7 @@ com.semojum.backend
 - **공개 공지 (`GET /api/public/notices`, 무인증)**: 로그인 전 공지 확인용 — 전체 대상(기관 미지정) 공지만, 노출 기간 내, 최신순. 기관별 공지는 로그인 후 T2 공지가 담당
 - **홈페이지 공개 문의 (`POST /api/public/inquiries`, 무인증)**: 유형 ONBOARDING·ERROR_REPORT·ETC, 미가입 접수(org·user null — T1-9에 이름·이메일 표시). 남용 방어는 서비스 계층 — 허니팟(website 채워지면 성공한 척 폐기) + IP 시간당 5건(Redis, 장애 시 접수 허용)
 - **주문 증빙 파일 (V25)**: 운영자 업로드 `POST /api/admin/orders/{id}/receipt`(multipart, pdf·png·jpg ≤10MB, 재업로드=교체 — S3 `receipts/{orderId}/` 기존 삭제 후 저장) / 내려받기 `GET /api/admin/orders/{id}/receipt`·`GET /api/org/orders/{id}/receipt`(자기 기관만 403, presigned 15분). 주문 목록 응답에 `receiptFileName`(null=미첨부)
+- **앱 버전 체크 (V26)**: 앱 시작 시 `GET /api/public/app-version`(무인증) — `{latestVersion, minSupportedVersion, downloadUrl, releaseNotes}`, minSupportedVersion 미만이면 앱이 강제 업데이트 화면(피그마 V3-05). 등록은 `POST /api/admin/app-version`(새 행=이력, 세 자리 semver 강제·min>latest 거절), 이력 `GET /api/admin/app-versions`. 미등록이면 result null(앱은 검사 생략)
 - 미구현(다음 단계): 점역 기본 설정(AI 스키마 대기), 실삭제(보관 기간 정책 대기)
 
 ### 사용량·원가·크레딧 (billing — proto 08.17)
