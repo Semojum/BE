@@ -90,9 +90,10 @@ grpc:
     # 최악 케이스가 대기(~180s) + 자기 변환(180s) ≈ 360s이므로 400s로 감싼다.
     # 슬롯을 늘려 대기가 길어지면 DEADLINE_EXCEEDED가 늘 수 있으니 로그를 보고 이 값도 함께 조정.
     deadline-seconds: ${GRPC_AI_DEADLINE_SECONDS:400}
-# T1 운영자 콘솔(별도 웹) 브라우저 접근용 CORS — origin 추가는 이 값(쉼표 구분)만 수정
+# CORS origin 패턴 — 기본 전면 허용(쿠키 미사용 Bearer 구조라 제한 실익 없음).
+# ⚠️ 좁히면 데스크톱 앱(Origin: null)이 깨진다 — 좁힐 땐 앱 origin 포함 필수 (2026-08-20 회귀 실측)
 cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://admin.semo-jum.com}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 # 문의 메일함 연동 (T1-9) — Google Workspace IMAP 읽기 전용 폴링.
 # 자격증명 미설정이면 폴러 비활성(fail-safe). PASSWORD는 Workspace "앱 비밀번호"(2단계 인증 필요)
