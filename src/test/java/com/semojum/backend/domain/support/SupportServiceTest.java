@@ -7,6 +7,7 @@ import com.semojum.backend.domain.org.entity.Organization;
 import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.domain.support.dto.SupportDto;
 import com.semojum.backend.domain.support.entity.Inquiry;
+import com.semojum.backend.domain.support.entity.Order;
 import com.semojum.backend.domain.support.repository.InquiryRepository;
 import com.semojum.backend.domain.support.repository.NoticeRepository;
 import com.semojum.backend.domain.support.repository.OrderRepository;
@@ -39,6 +40,8 @@ class SupportServiceTest {
     private Organization orgA;
     private Organization orgB;
     private User orgAdmin;
+    private OrderRepository orderRepository;
+    private com.semojum.backend.global.s3.S3Service s3Service;
 
     private static void setId(Object entity, Object value) throws Exception {
         var f = entity.getClass().getDeclaredField("id");
@@ -53,10 +56,12 @@ class SupportServiceTest {
         noticeRepository = Mockito.mock(NoticeRepository.class);
         organizationRepository = Mockito.mock(OrganizationRepository.class);
         OrderRepository orderRepository = Mockito.mock(OrderRepository.class);
+        this.orderRepository = orderRepository;
+        s3Service = Mockito.mock(com.semojum.backend.global.s3.S3Service.class);
 
-        orgService = new OrgSupportService(userRepository, noticeRepository, orderRepository, inquiryRepository);
+        orgService = new OrgSupportService(userRepository, noticeRepository, orderRepository, inquiryRepository, s3Service);
         adminService = new AdminSupportService(noticeRepository, inquiryRepository, orderRepository,
-                organizationRepository, userRepository);
+                organizationRepository, userRepository, s3Service);
 
         orgA = Organization.builder().name("기관A").code("orga").build();
         setId(orgA, UUID.randomUUID());
@@ -143,5 +148,67 @@ class SupportServiceTest {
         CustomException e = assertThrows(CustomException.class,
                 () -> adminService.updateOrder(UUID.randomUUID(), new SupportDto.UpdateOrder(null, null)));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+    }
+
+    // ── 증빙 파일 (V25) ──
+    private Order receiptOrder(Organization owner) throws Exception {
+        Order order = Order.builder().organizationId(owner.getId()).orderDate(java.time.LocalDate.now())
+                .description("연간 계약").amountKrw(1000).build();
+        setId(order, UUID.randomUUID());
+        Mockito.when(orderRepository.findById(order.getId())).thenReturn(java.util.Optional.of(order));
+        return order;
+    }
+
+    @Test
+    void 증빙_업로드_교체_후_파일명이_남는다() throws Exception {
+        Order order = receiptOrder(orgA);
+        Mockito.when(organizationRepository.findById(orgA.getId())).thenReturn(java.util.Optional.of(orgA));
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "계산서_2월.pdf",
+                "application/pdf", new byte[]{1, 2});
+        SupportDto.OrderItem item = adminService.uploadOrderReceipt(order.getId(), file);
+        assertEquals("계산서_2월.pdf", item.receiptFileName());
+        Mockito.verify(s3Service).deleteByPrefix("receipts/" + order.getId() + "/");
+        Mockito.verify(s3Service).uploadFile(Mockito.eq("receipts/" + order.getId() + "/receipt.pdf"),
+                Mockito.any(), Mockito.eq("application/pdf"));
+    }
+
+    @Test
+    void 증빙_허용_외_형식은_거절() throws Exception {
+        Order order = receiptOrder(orgA);
+        var file = new org.springframework.mock.web.MockMultipartFile("file", "virus.exe",
+                "application/octet-stream", new byte[]{1});
+        CustomException e = assertThrows(CustomException.class,
+                () -> adminService.uploadOrderReceipt(order.getId(), file));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+    }
+
+    @Test
+    void 증빙_타_기관_주문은_403() throws Exception {
+        Order order = receiptOrder(orgB);   // orgAdmin은 orgA 소속
+        Mockito.when(userRepository.findById(orgAdmin.getId())).thenReturn(java.util.Optional.of(orgAdmin));
+        CustomException e = assertThrows(CustomException.class,
+                () -> orgService.getOrderReceipt(orgAdmin.getId().toString(), order.getId()));
+        assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+    }
+
+    @Test
+    void 증빙_없는_주문은_404() throws Exception {
+        Order order = receiptOrder(orgA);
+        Mockito.when(userRepository.findById(orgAdmin.getId())).thenReturn(java.util.Optional.of(orgAdmin));
+        CustomException e = assertThrows(CustomException.class,
+                () -> orgService.getOrderReceipt(orgAdmin.getId().toString(), order.getId()));
+        assertEquals(ErrorCode.COMMON_NOT_FOUND, e.getErrorCode());
+    }
+
+    @Test
+    void 증빙_내려받기_presigned() throws Exception {
+        Order order = receiptOrder(orgA);
+        order.attachReceipt("receipts/" + order.getId() + "/receipt.pdf", "계산서.pdf");
+        Mockito.when(userRepository.findById(orgAdmin.getId())).thenReturn(java.util.Optional.of(orgAdmin));
+        Mockito.when(s3Service.getPresignedUrl(Mockito.anyString(), Mockito.any()))
+                .thenReturn("https://presigned.example/x");
+        SupportDto.ReceiptDownload dl = orgService.getOrderReceipt(orgAdmin.getId().toString(), order.getId());
+        assertEquals("계산서.pdf", dl.fileName());
+        assertEquals("https://presigned.example/x", dl.url());
     }
 }

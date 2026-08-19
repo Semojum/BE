@@ -52,6 +52,16 @@ public class Order {
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
+    // 증빙(계산서·전표) 파일 (V25) — 운영자 업로드, S3 receipts/{orderId}/ (presigned GET 전용). 재업로드 = 교체
+    @Column(name = "receipt_file_key", length = 300)
+    private String receiptFileKey;
+
+    @Column(name = "receipt_file_name", length = 200)
+    private String receiptFileName;
+
+    @Column(name = "receipt_uploaded_at")
+    private Instant receiptUploadedAt;
+
     @Builder
     public Order(UUID organizationId, LocalDate orderDate, String description,
                  long amountKrw, Long creditAmount) {
@@ -69,5 +79,11 @@ public class Order {
 
     public void changeInvoiceStatus(String invoiceStatus) {
         this.invoiceStatus = invoiceStatus;
+    }
+
+    public void attachReceipt(String fileKey, String fileName) {
+        this.receiptFileKey = fileKey;
+        this.receiptFileName = fileName;
+        this.receiptUploadedAt = Instant.now();
     }
 }

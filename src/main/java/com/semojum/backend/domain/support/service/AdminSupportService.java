@@ -12,6 +12,7 @@ import com.semojum.backend.domain.support.repository.NoticeRepository;
 import com.semojum.backend.domain.support.repository.OrderRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
+import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class AdminSupportService {
     private final OrderRepository orderRepository;
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final S3Service s3Service;
 
     // ── 공지 ──
     @Transactional
@@ -175,10 +177,57 @@ public class AdminSupportService {
         return orders.stream().map(o -> toOrderItem(o, orgNames.get(o.getOrganizationId()))).toList();
     }
 
+    // ── 증빙(계산서·전표) 파일 — 운영자 업로드, 재업로드 = 교체 (V25) ──
+    private static final Set<String> RECEIPT_EXTS = Set.of("pdf", "png", "jpg", "jpeg");
+    private static final long RECEIPT_MAX_BYTES = 10L * 1024 * 1024;
+
+    @Transactional
+    public SupportDto.OrderItem uploadOrderReceipt(UUID orderId, org.springframework.web.multipart.MultipartFile file) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
+        String name = file.getOriginalFilename();
+        String ext = name != null && name.contains(".")
+                ? name.substring(name.lastIndexOf('.') + 1).toLowerCase() : "";
+        if (!RECEIPT_EXTS.contains(ext)) {
+            log.warn("증빙 파일 형식 오류: {}", name);
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        if (file.getSize() > RECEIPT_MAX_BYTES) {
+            log.warn("증빙 파일 크기 초과: {} ({}KB)", name, file.getSize() / 1024);
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        try {
+            // 교체 의미 — 기존 파일을 지우고 새 파일 하나만 유지
+            s3Service.deleteByPrefix("receipts/" + orderId + "/");
+            String key = "receipts/" + orderId + "/receipt." + ext;
+            String contentType = ext.equals("pdf") ? "application/pdf" : "image/" + (ext.equals("jpg") ? "jpeg" : ext);
+            s3Service.uploadFile(key, file.getBytes(), contentType);
+            order.attachReceipt(key, name);
+        } catch (java.io.IOException e) {
+            log.error("증빙 파일 업로드 실패: order={}", orderId, e);
+            throw new CustomException(ErrorCode.COMMON_INTERNAL_ERROR);
+        }
+        log.info("증빙 업로드: order={}, file={}", orderId, name);
+        String orgName = organizationRepository.findById(order.getOrganizationId())
+                .map(Organization::getName).orElse(null);
+        return toOrderItem(order, orgName);
+    }
+
+    @Transactional(readOnly = true)
+    public SupportDto.ReceiptDownload getOrderReceipt(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
+        if (order.getReceiptFileKey() == null) {
+            throw new CustomException(ErrorCode.COMMON_NOT_FOUND);
+        }
+        return new SupportDto.ReceiptDownload(order.getReceiptFileName(),
+                s3Service.getPresignedUrl(order.getReceiptFileKey(), java.time.Duration.ofMinutes(15)));
+    }
+
     private SupportDto.OrderItem toOrderItem(Order o, String orgName) {
         return new SupportDto.OrderItem(o.getId(), o.getOrganizationId(), orgName, o.getOrderDate(),
                 o.getDescription(), o.getAmountKrw(), o.getCreditAmount(), o.getPaidAt(),
-                o.getInvoiceStatus(), o.getCreatedAt());
+                o.getInvoiceStatus(), o.getReceiptFileName(), o.getCreatedAt());
     }
 
     private Map<UUID, String> orgNameMap() {

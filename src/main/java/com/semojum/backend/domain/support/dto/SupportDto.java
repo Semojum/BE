@@ -98,6 +98,7 @@ public class SupportDto {
             Long creditAmount,
             LocalDate paidAt,          // null = 미납
             String invoiceStatus,
+            String receiptFileName,    // 증빙 파일명 (null = 미첨부)
             Instant createdAt
     ) {}
 
@@ -110,8 +111,12 @@ public class SupportDto {
             long amountKrw,
             Long creditAmount,
             LocalDate paidAt,
-            String invoiceStatus
+            String invoiceStatus,
+            String receiptFileName     // 증빙 파일명 (null = 미첨부 → 내려받기 버튼 숨김)
     ) {}
+
+    // 증빙 내려받기 — presigned URL(15분). FE는 즉시 열거나 저장 (URL 장기 캐시 금지)
+    public record ReceiptDownload(String fileName, String url) {}
 
     public record UpdateReceiptEmail(@Email @Size(max = 100) String email) {}   // null = 제거
 }
