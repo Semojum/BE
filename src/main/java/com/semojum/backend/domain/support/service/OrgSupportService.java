@@ -43,6 +43,15 @@ public class OrgSupportService {
     private final InquiryRepository inquiryRepository;
     private final com.semojum.backend.global.s3.S3Service s3Service;
 
+    // 로그인 전 공개 공지 (무인증) — 전체 대상만. 기관별 공지는 로그인 후 getNotices가 담당
+    @Transactional(readOnly = true)
+    public List<SupportDto.PublicNotice> getPublicNotices() {
+        return noticeRepository.findVisibleForAll(LocalDate.now(KST)).stream()
+                .map(n -> new SupportDto.PublicNotice(n.getId(), n.getTitle(), n.getBody(),
+                        n.getStartsOn(), n.getEndsOn(), n.getCreatedAt()))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public List<SupportDto.OrgNotice> getNotices(String adminUserId) {
         Organization org = resolveOrgAdmin(adminUserId).getOrganization();

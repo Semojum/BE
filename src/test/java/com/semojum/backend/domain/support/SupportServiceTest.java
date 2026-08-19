@@ -7,6 +7,7 @@ import com.semojum.backend.domain.org.entity.Organization;
 import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.domain.support.dto.SupportDto;
 import com.semojum.backend.domain.support.entity.Inquiry;
+import com.semojum.backend.domain.support.entity.Notice;
 import com.semojum.backend.domain.support.entity.Order;
 import com.semojum.backend.domain.support.repository.InquiryRepository;
 import com.semojum.backend.domain.support.repository.NoticeRepository;
@@ -210,5 +211,18 @@ class SupportServiceTest {
         SupportDto.ReceiptDownload dl = orgService.getOrderReceipt(orgAdmin.getId().toString(), order.getId());
         assertEquals("계산서.pdf", dl.fileName());
         assertEquals("https://presigned.example/x", dl.url());
+    }
+
+    // ── 공개 공지 (무인증, 로그인 전) ──
+    @Test
+    void 공개_공지는_전체_대상_기간_내만() throws Exception {
+        Notice all = Notice.builder().title("서버 점검").body("8/25 새벽")
+                .startsOn(java.time.LocalDate.now().minusDays(1)).endsOn(java.time.LocalDate.now().plusDays(1)).build();
+        setId(all, UUID.randomUUID());
+        Mockito.when(noticeRepository.findVisibleForAll(Mockito.any())).thenReturn(java.util.List.of(all));
+        var result = orgService.getPublicNotices();
+        assertEquals(1, result.size());
+        assertEquals("서버 점검", result.get(0).title());
+        Mockito.verify(noticeRepository).findVisibleForAll(Mockito.any());  // 전체 대상·기간 필터는 쿼리가 담당
     }
 }
