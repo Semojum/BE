@@ -9,6 +9,7 @@ import com.semojum.backend.domain.support.entity.Inquiry;
 import com.semojum.backend.domain.support.entity.Notice;
 import com.semojum.backend.domain.support.repository.InquiryRepository;
 import com.semojum.backend.domain.support.repository.NoticeRepository;
+import com.semojum.backend.domain.support.entity.Order;
 import com.semojum.backend.domain.support.repository.OrderRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -40,6 +41,7 @@ public class OrgSupportService {
     private final NoticeRepository noticeRepository;
     private final OrderRepository orderRepository;
     private final InquiryRepository inquiryRepository;
+    private final com.semojum.backend.global.s3.S3Service s3Service;
 
     @Transactional(readOnly = true)
     public List<SupportDto.OrgNotice> getNotices(String adminUserId) {
@@ -57,9 +59,27 @@ public class OrgSupportService {
         List<SupportDto.OrgOrderItem> items = orderRepository
                 .findByOrganizationIdOrderByOrderDateDesc(org.getId()).stream()
                 .map(o -> new SupportDto.OrgOrderItem(o.getId(), o.getOrderDate(), o.getDescription(),
-                        o.getAmountKrw(), o.getCreditAmount(), o.getPaidAt(), o.getInvoiceStatus()))
+                        o.getAmountKrw(), o.getCreditAmount(), o.getPaidAt(), o.getInvoiceStatus(),
+                        o.getReceiptFileName()))
                 .toList();
         return new SupportDto.OrgOrders(org.getReceiptEmail(), items);
+    }
+
+    // 증빙(계산서·전표) 내려받기 — 자기 기관 주문만, presigned 15분 (V25)
+    @Transactional(readOnly = true)
+    public SupportDto.ReceiptDownload getOrderReceipt(String adminUserId, java.util.UUID orderId) {
+        Organization org = resolveOrgAdmin(adminUserId).getOrganization();
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
+        if (!order.getOrganizationId().equals(org.getId())) {
+            log.warn("타 기관 주문 증빙 접근 거부: org={}, order={}", org.getCode(), orderId);
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+        if (order.getReceiptFileKey() == null) {
+            throw new CustomException(ErrorCode.COMMON_NOT_FOUND);
+        }
+        return new SupportDto.ReceiptDownload(order.getReceiptFileName(),
+                s3Service.getPresignedUrl(order.getReceiptFileKey(), java.time.Duration.ofMinutes(15)));
     }
 
     @Transactional
