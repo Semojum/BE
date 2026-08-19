@@ -18,4 +18,9 @@ public interface NoticeRepository extends JpaRepository<Notice, UUID> {
     @Query("SELECT n FROM Notice n WHERE (n.targetOrganizationId IS NULL OR n.targetOrganizationId = :orgId) " +
             "AND n.startsOn <= :today AND n.endsOn >= :today ORDER BY n.startsOn DESC, n.createdAt DESC")
     List<Notice> findVisibleForOrganization(@Param("orgId") UUID orgId, @Param("today") LocalDate today);
+
+    // 로그인 전 공개 공지 — 전체 대상(기관 지정 없음)만, 노출 기간 내
+    @Query("SELECT n FROM Notice n WHERE n.targetOrganizationId IS NULL " +
+            "AND n.startsOn <= :today AND n.endsOn >= :today ORDER BY n.startsOn DESC, n.createdAt DESC")
+    List<Notice> findVisibleForAll(@Param("today") LocalDate today);
 }
