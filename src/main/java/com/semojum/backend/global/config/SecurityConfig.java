@@ -27,8 +27,9 @@ public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
 
-    // T1 운영자 콘솔(별도 웹) 등 브라우저 클라이언트 origin — 데스크톱 앱은 CORS 무관
-    @org.springframework.beans.factory.annotation.Value("${cors.allowed-origins:https://admin.semo-jum.com}")
+    // CORS origin 패턴 (쉼표 구분). 기본 * — 쿠키 미사용(Bearer 토큰) 구조라 제한해도 얻는 보안이 없고,
+    // 제한하면 데스크톱 앱(Electron, Origin: null·file 등)이 깨진다
+    @org.springframework.beans.factory.annotation.Value("${cors.allowed-origins:*}")
     private String allowedOrigins;
 
     @Bean
@@ -87,12 +88,13 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // T1 콘솔 브라우저 fetch용 CORS — 허용 origin은 cors.allowed-origins(쉼표 구분)로 관리.
-    // JWT는 Authorization 헤더로 실리므로 쿠키 자격증명(allowCredentials)은 불필요
+    // T1 콘솔 브라우저 fetch용 CORS. JWT는 Authorization 헤더로 실리고 쿠키를 안 쓰므로(allowCredentials 없음)
+    // origin 제한이 보안상 의미가 없다 — 기본 전면 허용. ⚠️ 허용 목록으로 좁히면 Electron 앱(Origin: null 등)의
+    // 로그인이 "Invalid CORS request" 403으로 깨진다 (2026-08-20 실측 회귀). 좁힐 일이 생기면 앱 origin까지 포함할 것.
     @Bean
     public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
         var config = new org.springframework.web.cors.CorsConfiguration();
-        config.setAllowedOrigins(java.util.Arrays.stream(allowedOrigins.split(","))
+        config.setAllowedOriginPatterns(java.util.Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(s -> !s.isBlank()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
