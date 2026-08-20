@@ -225,4 +225,26 @@ class SupportServiceTest {
         assertEquals("서버 점검", result.get(0).title());
         Mockito.verify(noticeRepository).findVisibleForAll(Mockito.any());  // 전체 대상·기간 필터는 쿼리가 담당
     }
+
+    @Test
+    void 요청_접수는_점역사도_가능_기관_미소속은_403() throws Exception {
+        User member = User.builder().loginId("orga02").organization(orgA).password("pw").build();
+        setId(member, UUID.randomUUID());   // 기본 ROLE_USER
+        Mockito.when(userRepository.findById(member.getId())).thenReturn(java.util.Optional.of(member));
+        Mockito.when(inquiryRepository.save(Mockito.any())).thenAnswer(inv -> {
+            Inquiry i = inv.getArgument(0); setId(i, UUID.randomUUID()); return i;
+        });
+        Mockito.when(inquiryRepository.findById(Mockito.any())).thenReturn(java.util.Optional.empty());
+        var item = orgService.createRequest(member.getId().toString(),
+                new SupportDto.CreateRequest("CREDIT_ADD", "요청"));
+        assertEquals("CREDIT_ADD", item.type());
+
+        User orphan = User.builder().loginId("noorg01").password("pw").build();
+        setId(orphan, UUID.randomUUID());
+        Mockito.when(userRepository.findById(orphan.getId())).thenReturn(java.util.Optional.of(orphan));
+        CustomException e = assertThrows(CustomException.class, () ->
+                orgService.createRequest(orphan.getId().toString(),
+                        new SupportDto.CreateRequest("CREDIT_ADD", "요청")));
+        assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+    }
 }
