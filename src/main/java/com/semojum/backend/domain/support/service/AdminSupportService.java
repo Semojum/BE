@@ -93,13 +93,18 @@ public class AdminSupportService {
     }
 
     // ── 문의 ──
+    // 페이지네이션 (2026-08-20) — page 0부터, size 기본 20·최대 100
     @Transactional(readOnly = true)
-    public List<SupportDto.InquiryItem> listInquiries(String status, String type) {
-        List<Inquiry> inquiries;
-        if (status != null && type != null) inquiries = inquiryRepository.findByStatusAndTypeOrderByCreatedAtDesc(status, type);
-        else if (status != null) inquiries = inquiryRepository.findByStatusOrderByCreatedAtDesc(status);
-        else if (type != null) inquiries = inquiryRepository.findByTypeOrderByCreatedAtDesc(type);
-        else inquiries = inquiryRepository.findAllByOrderByCreatedAtDesc();
+    public SupportDto.InquiryPage listInquiries(String status, String type, Integer page, Integer size) {
+        var pageable = org.springframework.data.domain.PageRequest.of(
+                page == null || page < 0 ? 0 : page,
+                size == null || size < 1 ? 20 : Math.min(size, 100));
+        org.springframework.data.domain.Page<Inquiry> result;
+        if (status != null && type != null) result = inquiryRepository.findByStatusAndTypeOrderByCreatedAtDesc(status, type, pageable);
+        else if (status != null) result = inquiryRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
+        else if (type != null) result = inquiryRepository.findByTypeOrderByCreatedAtDesc(type, pageable);
+        else result = inquiryRepository.findAllByOrderByCreatedAtDesc(pageable);
+        List<Inquiry> inquiries = result.getContent();
 
         Map<UUID, String> orgNames = orgNameMap();
         Map<UUID, String> loginIds = inquiries.stream()
@@ -111,13 +116,15 @@ public class AdminSupportService {
         Map<UUID, List<SupportDto.InquiryAttachmentItem>> attachments = attachmentsFor(
                 inquiries.stream().map(Inquiry::getId).toList());
 
-        return inquiries.stream().map(i -> new SupportDto.InquiryItem(
+        List<SupportDto.InquiryItem> items = inquiries.stream().map(i -> new SupportDto.InquiryItem(
                 i.getId(), i.getType(), i.getStatus(),
                 i.getOrganizationId() == null ? null : orgNames.get(i.getOrganizationId()),
                 i.getUserId() == null ? null : loginIds.get(i.getUserId()),
                 i.getSenderEmail(), i.getSubject(),
                 i.getMessage(), i.getCreatedAt(), i.getStatusChangedAt(),
                 attachments.getOrDefault(i.getId(), List.of()))).toList();
+        return new SupportDto.InquiryPage(items, result.getNumber(), result.getSize(),
+                result.getTotalElements(), result.getTotalPages());
     }
 
     @Transactional

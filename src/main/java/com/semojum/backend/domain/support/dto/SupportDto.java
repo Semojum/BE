@@ -69,6 +69,13 @@ public class SupportDto {
     // 문의 첨부 메타 — 다운로드는 GET /api/admin/inquiries/{inquiryId}/attachments/{attachmentId}
     public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes) {}
 
+    // T1-9 목록 페이지 응답 (2026-08-20 페이지네이션)
+    public record InquiryPage(
+            List<InquiryItem> items,
+            int page, int size,
+            long totalElements, int totalPages
+    ) {}
+
     public record UpdateInquiryStatus(@NotBlank String status) {}   // OPEN | IN_REVIEW | ANSWERED
 
     public record CreateRequest(
