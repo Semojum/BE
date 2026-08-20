@@ -67,4 +67,11 @@ class ClientInfoResolverTest {
         assertNull(info.userAgent());
         assertEquals("1.2.3.4", info.ip());
     }
+
+    @Test
+    void 타우리_앱_UA는_앱으로_판정하고_OS는_헤더가_담당() {
+        ClientInfoResolver r = new ClientInfoResolver();
+        assertEquals("세모점 앱 (Tauri 2.5.8)", r.parseBrowser("tauri-plugin-http/2.5.8"));
+        assertNull(r.parseOs("tauri-plugin-http/2.5.8"));   // UA에 OS 없음 — X-Client-Os 헤더로 보완
+    }
 }

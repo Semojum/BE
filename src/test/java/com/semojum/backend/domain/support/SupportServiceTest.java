@@ -82,10 +82,16 @@ class SupportServiceTest {
     }
 
     @Test
-    void 요청_유형은_크레딧_추가와_계정_발급만() {
+    void 요청_유형은_크레딧_계정발급_오류신고_3종() {
+        // ERROR_REPORT는 2026-08-20부터 허용 — 접수 성공
+        var item = orgService.createRequest(orgAdmin.getId().toString(),
+                new SupportDto.CreateRequest("ERROR_REPORT", "변환이 멈춥니다"));
+        assertEquals("ERROR_REPORT", item.type());
+
+        // 그 외 유형은 여전히 거절
         CustomException e = assertThrows(CustomException.class, () ->
                 orgService.createRequest(orgAdmin.getId().toString(),
-                        new SupportDto.CreateRequest("ERROR_REPORT", "메시지")));
+                        new SupportDto.CreateRequest("ONBOARDING", "메시지")));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 

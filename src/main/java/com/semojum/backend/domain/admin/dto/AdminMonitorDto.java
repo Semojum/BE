@@ -43,7 +43,8 @@ public class AdminMonitorDto {
             String alias,
             String orgName,
             LocalDateTime requestedAt,
-            String clientIp,          // 위치는 표시 시점에 IP로 GeoIP 조회 (BE는 IP만)
+            String clientIp,
+            String clientLocation,    // IP 기반 위치 (조회 시점 GeoIP, 실패·사설 IP는 null — 2026-08-20)
             String clientOs,
             String clientBrowser,
             String clientUserAgent
