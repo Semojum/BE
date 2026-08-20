@@ -91,7 +91,7 @@ class AdminAccountIssueTest {
                 new AdminRequestDto.IssueAccounts(orgId, 3)).accounts();
         assertEquals(List.of("kblib01", "kblib02", "kblib03"),
                 first.stream().map(AdminResponseDto.IssuedAccount::loginId).toList());
-        assertTrue(first.stream().allMatch(a -> a.password().length() == 12));
+        assertTrue(first.stream().allMatch(a -> a.password().matches("[a-z0-9]{6}")));   // 소문자+숫자 6자리 (2026-08-20)
 
         List<AdminResponseDto.IssuedAccount> second = adminService.issueAccounts(
                 new AdminRequestDto.IssueAccounts(orgId, 2)).accounts();
