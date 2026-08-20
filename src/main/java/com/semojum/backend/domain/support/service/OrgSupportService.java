@@ -35,7 +35,7 @@ public class OrgSupportService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     // T2에서 넣을 수 있는 요청 유형 — 오류 신고 등은 후속(문의 UI가 생기면)
-    private static final Set<String> REQUEST_TYPES = Set.of(Inquiry.TYPE_CREDIT_ADD, Inquiry.TYPE_ACCOUNT_ISSUE);
+    private static final Set<String> REQUEST_TYPES = Set.of(Inquiry.TYPE_CREDIT_ADD, Inquiry.TYPE_ACCOUNT_ISSUE, Inquiry.TYPE_ERROR_REPORT);
 
     private final UserRepository userRepository;
     private final NoticeRepository noticeRepository;

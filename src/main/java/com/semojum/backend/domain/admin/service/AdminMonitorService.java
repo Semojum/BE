@@ -50,6 +50,7 @@ public class AdminMonitorService {
     private final QualityCriticalErrorRepository qualityCriticalErrorRepository;
     private final CreditTransactionRepository creditTransactionRepository;
     private final JobProgressReader jobProgressReader;
+    private final com.semojum.backend.global.util.GeoIpResolver geoIpResolver;
 
     /** T1-3 목록 — 최근 hours(기본 24)시간의 전 기관 작업, 10초 폴링용. 휴지통 여부 무관(운영 시야) */
     @Transactional(readOnly = true)
@@ -102,8 +103,9 @@ public class AdminMonitorService {
         AdminMonitorDto.RequestInfo request = new AdminMonitorDto.RequestInfo(
                 user.getLoginId(), user.getAlias(),
                 user.getOrganization() != null ? user.getOrganization().getName() : null,
-                job.getStartedAt(), job.getClientIp(), job.getClientOs(),
-                job.getClientBrowser(), job.getClientUserAgent());
+                job.getStartedAt(), job.getClientIp(),
+                geoIpResolver.resolve(job.getClientIp()),   // 표시 시점 조회 — 과거 작업도 최신 DB 기준
+                job.getClientOs(), job.getClientBrowser(), job.getClientUserAgent());
 
         // 쪽 상태 (pages 테이블이 정본 — RUNNING/PENDING 포함)
         List<Page> pages = pageRepository.findByJobId(jobId).stream()
