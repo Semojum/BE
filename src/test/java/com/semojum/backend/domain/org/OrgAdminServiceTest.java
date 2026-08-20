@@ -85,7 +85,7 @@ class OrgAdminServiceTest {
     @Test
     void 일반_점역사는_기관_관리_접근_불가() {
         CustomException e = assertThrows(CustomException.class,
-                () -> service.getAccounts(member.getId().toString(), null));
+                () -> service.getAccounts(member.getId().toString()));
         assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
     }
 

@@ -76,17 +76,18 @@ public class OrgAdminService {
                 org.getCreditAllocated(), used, org.getCreditAllocated() - used, monthly);
     }
 
+    // "사용" 열 = 계약 시작일 이후 누적 사용 크레딧 (기획 확정 2026-08-20 — 월 단위 아님).
+    // 계약 시작일 미설정 기관은 전체 누적
     @Transactional(readOnly = true)
-    public OrgDto.Accounts getAccounts(String adminUserId, String month) {
+    public OrgDto.Accounts getAccounts(String adminUserId) {
         User admin = resolveOrgAdmin(adminUserId);
         Organization org = admin.getOrganization();
 
-        YearMonth ym = month == null || month.isBlank() ? YearMonth.now(KST) : YearMonth.parse(month);
-        Instant from = ym.atDay(1).atStartOfDay(KST).toInstant();
-        Instant to = ym.plusMonths(1).atDay(1).atStartOfDay(KST).toInstant();
+        java.time.LocalDate started = org.getContractStartedAt();
+        Instant from = started == null ? Instant.EPOCH : started.atStartOfDay(KST).toInstant();
 
         Map<UUID, Long> perUser = new HashMap<>();
-        for (Object[] row : creditTransactionRepository.sumPerUserByOrganizationBetween(org.getId(), from, to)) {
+        for (Object[] row : creditTransactionRepository.sumPerUserByOrganizationSince(org.getId(), from)) {
             perUser.put((UUID) row[0], ((Number) row[1]).longValue());
         }
 
@@ -95,7 +96,7 @@ public class OrgAdminService {
                         u.getStatus().name(), u.getRole().name(), u.getLastLoginAt(),
                         perUser.getOrDefault(u.getId(), 0L), u.getId().equals(admin.getId())))
                 .toList();
-        return new OrgDto.Accounts(ym.toString(), items);
+        return new OrgDto.Accounts(started, items);
     }
 
     @Transactional

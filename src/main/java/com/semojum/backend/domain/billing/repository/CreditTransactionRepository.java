@@ -50,11 +50,11 @@ public interface CreditTransactionRepository extends JpaRepository<CreditTransac
             "WHERE t.createdAt >= :from AND t.createdAt < :to GROUP BY t.organizationId, t.userId")
     List<Object[]> sumPerOrgUserBetween(@Param("from") Instant from, @Param("to") Instant to);
 
-    // 기관 소속 계정별 기간 사용량 (T2 소속 계정 표의 "사용" 열) — [userId(UUID), sum(Long)]
+    // 기관 소속 계정별 누적 사용량 (T2 소속 계정 표의 "사용" 열 — 계약 시작일 이후, 기획 확정 2026-08-20)
+    // 시작일 미설정 기관은 Instant.EPOCH를 넘겨 전체 누적 — ":x IS NULL OR" 패턴은 PG 타입 추론 리스크로 회피
     @Query("SELECT t.userId, COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
-            "WHERE t.organizationId = :orgId AND t.createdAt >= :from AND t.createdAt < :to GROUP BY t.userId")
-    List<Object[]> sumPerUserByOrganizationBetween(@Param("orgId") UUID orgId,
-                                                   @Param("from") Instant from, @Param("to") Instant to);
+            "WHERE t.organizationId = :orgId AND t.createdAt >= :from GROUP BY t.userId")
+    List<Object[]> sumPerUserByOrganizationSince(@Param("orgId") UUID orgId, @Param("from") Instant from);
 
     // 기관 월별 사용 추이 (T2 차트) — KST 월 기준 [월("YYYY-MM"), sum]
     @Query(value = "SELECT to_char(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM') AS month, " +
