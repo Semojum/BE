@@ -62,8 +62,12 @@ public class SupportDto {
             String subject,            // 메일 제목 (그 외 null)
             String message,
             Instant createdAt,
-            Instant statusChangedAt
+            Instant statusChangedAt,
+            List<InquiryAttachmentItem> attachments   // 메일 첨부·인라인 이미지 메타 (V27, 없으면 빈 배열)
     ) {}
+
+    // 문의 첨부 메타 — 다운로드는 GET /api/admin/inquiries/{inquiryId}/attachments/{attachmentId}
+    public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes) {}
 
     public record UpdateInquiryStatus(@NotBlank String status) {}   // OPEN | IN_REVIEW | ANSWERED
 

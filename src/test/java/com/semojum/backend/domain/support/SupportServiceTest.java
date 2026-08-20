@@ -42,6 +42,7 @@ class SupportServiceTest {
     private Organization orgB;
     private User orgAdmin;
     private OrderRepository orderRepository;
+    private com.semojum.backend.domain.support.repository.InquiryAttachmentRepository inquiryAttachmentRepository;
     private com.semojum.backend.global.s3.S3Service s3Service;
 
     private static void setId(Object entity, Object value) throws Exception {
@@ -61,8 +62,10 @@ class SupportServiceTest {
         s3Service = Mockito.mock(com.semojum.backend.global.s3.S3Service.class);
 
         orgService = new OrgSupportService(userRepository, noticeRepository, orderRepository, inquiryRepository, s3Service);
-        adminService = new AdminSupportService(noticeRepository, inquiryRepository, orderRepository,
-                organizationRepository, userRepository, s3Service);
+        inquiryAttachmentRepository = Mockito.mock(
+                com.semojum.backend.domain.support.repository.InquiryAttachmentRepository.class);
+        adminService = new AdminSupportService(noticeRepository, inquiryRepository, inquiryAttachmentRepository,
+                orderRepository, organizationRepository, userRepository, s3Service);
 
         orgA = Organization.builder().name("기관A").code("orga").build();
         setId(orgA, UUID.randomUUID());
@@ -246,5 +249,23 @@ class SupportServiceTest {
                 orgService.createRequest(orphan.getId().toString(),
                         new SupportDto.CreateRequest("CREDIT_ADD", "요청")));
         assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+    }
+
+    // ── 문의 첨부 (V27) ──
+    @Test
+    void 첨부_내려받기_presigned_불일치는_404() throws Exception {
+        var att = com.semojum.backend.domain.support.entity.InquiryAttachment.builder()
+                .inquiryId(UUID.randomUUID()).fileName("스크린샷.png")
+                .contentType("image/png").sizeBytes(1234).storagePath("inquiries/x/a_스크린샷.png").build();
+        setId(att, UUID.randomUUID());
+        Mockito.when(inquiryAttachmentRepository.findById(att.getId())).thenReturn(java.util.Optional.of(att));
+        Mockito.when(s3Service.getPresignedUrl(Mockito.anyString(), Mockito.any())).thenReturn("https://p/x");
+
+        var dl = adminService.getInquiryAttachment(att.getInquiryId(), att.getId());
+        assertEquals("스크린샷.png", dl.fileName());
+
+        CustomException e = assertThrows(CustomException.class,
+                () -> adminService.getInquiryAttachment(UUID.randomUUID(), att.getId()));
+        assertEquals(ErrorCode.COMMON_NOT_FOUND, e.getErrorCode());
     }
 }

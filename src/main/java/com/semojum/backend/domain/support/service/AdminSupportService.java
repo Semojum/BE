@@ -7,6 +7,8 @@ import com.semojum.backend.domain.support.dto.SupportDto;
 import com.semojum.backend.domain.support.entity.Inquiry;
 import com.semojum.backend.domain.support.entity.Notice;
 import com.semojum.backend.domain.support.entity.Order;
+import com.semojum.backend.domain.support.entity.InquiryAttachment;
+import com.semojum.backend.domain.support.repository.InquiryAttachmentRepository;
 import com.semojum.backend.domain.support.repository.InquiryRepository;
 import com.semojum.backend.domain.support.repository.NoticeRepository;
 import com.semojum.backend.domain.support.repository.OrderRepository;
@@ -43,6 +45,7 @@ public class AdminSupportService {
 
     private final NoticeRepository noticeRepository;
     private final InquiryRepository inquiryRepository;
+    private final InquiryAttachmentRepository inquiryAttachmentRepository;
     private final OrderRepository orderRepository;
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
@@ -105,12 +108,16 @@ public class AdminSupportService {
                 .filter(java.util.Optional::isPresent).map(java.util.Optional::get)
                 .collect(Collectors.toMap(u -> u.getId(), u -> u.getLoginId()));
 
+        Map<UUID, List<SupportDto.InquiryAttachmentItem>> attachments = attachmentsFor(
+                inquiries.stream().map(Inquiry::getId).toList());
+
         return inquiries.stream().map(i -> new SupportDto.InquiryItem(
                 i.getId(), i.getType(), i.getStatus(),
                 i.getOrganizationId() == null ? null : orgNames.get(i.getOrganizationId()),
                 i.getUserId() == null ? null : loginIds.get(i.getUserId()),
                 i.getSenderEmail(), i.getSubject(),
-                i.getMessage(), i.getCreatedAt(), i.getStatusChangedAt())).toList();
+                i.getMessage(), i.getCreatedAt(), i.getStatusChangedAt(),
+                attachments.getOrDefault(i.getId(), List.of()))).toList();
     }
 
     @Transactional
@@ -129,7 +136,27 @@ public class AdminSupportService {
                 : userRepository.findById(inquiry.getUserId()).map(u -> u.getLoginId()).orElse(null);
         return new SupportDto.InquiryItem(inquiry.getId(), inquiry.getType(), inquiry.getStatus(),
                 orgName, loginId, inquiry.getSenderEmail(), inquiry.getSubject(),
-                inquiry.getMessage(), inquiry.getCreatedAt(), inquiry.getStatusChangedAt());
+                inquiry.getMessage(), inquiry.getCreatedAt(), inquiry.getStatusChangedAt(),
+                attachmentsFor(List.of(inquiry.getId())).getOrDefault(inquiry.getId(), List.of()));
+    }
+
+    private Map<UUID, List<SupportDto.InquiryAttachmentItem>> attachmentsFor(List<UUID> inquiryIds) {
+        if (inquiryIds.isEmpty()) return Map.of();
+        return inquiryAttachmentRepository.findByInquiryIdInOrderByCreatedAtAsc(inquiryIds).stream()
+                .collect(Collectors.groupingBy(InquiryAttachment::getInquiryId,
+                        Collectors.mapping(a -> new SupportDto.InquiryAttachmentItem(
+                                a.getId(), a.getFileName(), a.getContentType(), a.getSizeBytes()),
+                                Collectors.toList())));
+    }
+
+    // 문의 첨부 내려받기 — presigned 15분. 이미지면 FE가 미리보기로 렌더 가능 (V27)
+    @Transactional(readOnly = true)
+    public SupportDto.ReceiptDownload getInquiryAttachment(UUID inquiryId, UUID attachmentId) {
+        InquiryAttachment att = inquiryAttachmentRepository.findById(attachmentId)
+                .filter(a -> a.getInquiryId().equals(inquiryId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
+        return new SupportDto.ReceiptDownload(att.getFileName(),
+                s3Service.getPresignedUrl(att.getStoragePath(), java.time.Duration.ofMinutes(15)));
     }
 
     // ── 주문·수납 ──

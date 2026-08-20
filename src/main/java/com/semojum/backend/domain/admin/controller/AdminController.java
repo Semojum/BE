@@ -214,6 +214,16 @@ public class AdminController {
         return ApiResponse.success(adminSupportService.updateInquiryStatus(inquiryId, request.status()));
     }
 
+    // 문의 첨부 내려받기 (V27) — 메일 첨부·인라인 이미지, presigned 15분
+    @GetMapping("/inquiries/{inquiryId}/attachments/{attachmentId}")
+    public ApiResponse<SupportDto.ReceiptDownload> getInquiryAttachment(
+            @PathVariable java.util.UUID inquiryId,
+            @PathVariable java.util.UUID attachmentId
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.getInquiryAttachment(inquiryId, attachmentId));
+    }
+
     // ── 주문·수납 (T1-7) ──
     @PostMapping("/orders")
     public ApiResponse<SupportDto.OrderItem> createOrder(
