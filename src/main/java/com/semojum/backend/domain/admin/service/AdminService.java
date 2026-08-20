@@ -36,9 +36,10 @@ public class AdminService {
     private final UserSessionRepository userSessionRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // 헷갈리는 문자(0/O, 1/l/I) 제외한 난수 비밀번호 문자셋
-    private static final String PW_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    private static final int PW_LENGTH = 12;
+    // 초기 비밀번호 = 영어 소문자+숫자 혼합 난수 6자리 (유저 확정 2026-08-20 — 전달·입력 편의, 12자에서 축소)
+    // 헷갈리는 문자(0/o, 1/l) 제외 관례 유지. 계정은 운영자 발급 전용 + 중복 로그인 금지라 노출면이 작다
+    private static final String PW_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+    private static final int PW_LENGTH = 6;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     // 생성 시 계약 유형 지정 가능 (2026-08-20) — 미지정 시 FREE(과금 실수 방지 기본값 유지)
