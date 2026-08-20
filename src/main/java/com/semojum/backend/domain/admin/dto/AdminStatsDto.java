@@ -38,7 +38,8 @@ public class AdminStatsDto {
     // ── T1-2 작업량 (완료 / 실패·취소 스택) ──
     public record Workload(String unit, List<WorkloadPoint> buckets) {}
 
-    public record WorkloadPoint(LocalDateTime bucket, long completed, long failedOrCanceled) {}
+    // pages = 해당 버킷 처리(성공) 쪽수 (2026-08-20 추가 — 건수 스택과 함께 두 지표 제공)
+    public record WorkloadPoint(LocalDateTime bucket, long completed, long failedOrCanceled, long pages) {}
 
     // ── T1-2 레이아웃 유형별 평균 원가 ──
     public record LayoutCost(String month, List<LayoutCostItem> items) {}
