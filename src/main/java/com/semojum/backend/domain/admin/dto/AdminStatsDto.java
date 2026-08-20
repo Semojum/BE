@@ -15,13 +15,13 @@ public class AdminStatsDto {
             JobCounts jobs,              // 기간 내 시작된 작업 (건수 KPI)
             long pagesProcessed,         // 기간 내 처리(성공) 쪽수
             long prevPagesProcessed,     // 직전 기간 전체 (예: "어제 1,020쪽" 비교)
-            List<SeriesPoint> series,    // 차트 — today: 시간별 / week·month: 일별
+            List<SeriesPoint> series,    // 차트 — today: 시간별 / week·month: 일별. 각 버킷에 쪽수+건수 (2026-08-20)
             CostSummary cost             // 누적 원가 패널 (period와 무관하게 고정 구성)
     ) {}
 
     public record JobCounts(long total, long completed, long inProgress, long failed) {}
 
-    public record SeriesPoint(LocalDateTime bucket, long pages) {}
+    public record SeriesPoint(LocalDateTime bucket, long pages, long jobs) {}   // jobs = 시작 작업 건수 (2026-08-20 추가)
 
     public record CostSummary(
             BigDecimal todayKrw,

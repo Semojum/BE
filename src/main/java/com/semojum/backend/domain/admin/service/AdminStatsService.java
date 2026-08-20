@@ -90,8 +90,16 @@ public class AdminStatsService {
         long pages = statsRepository.successPages(from, now);
         long prevPages = statsRepository.successPages(prevFrom, prevTo);
 
-        List<AdminStatsDto.SeriesPoint> series = statsRepository.pagesSeries(from, now, seriesUnit).stream()
-                .map(row -> new AdminStatsDto.SeriesPoint(toLocalDateTime(row[0]), ((Number) row[1]).longValue()))
+        // 쪽수·건수 시계열 병합 — 모든 기간에서 두 지표를 함께 (기획 정정 2026-08-20)
+        java.util.TreeMap<LocalDateTime, long[]> buckets = new java.util.TreeMap<>();
+        for (Object[] row : statsRepository.pagesSeries(from, now, seriesUnit)) {
+            buckets.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[2])[0] = ((Number) row[1]).longValue();
+        }
+        for (Object[] row : statsRepository.jobsSeries(from, now, seriesUnit)) {
+            buckets.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[2])[1] = ((Number) row[1]).longValue();
+        }
+        List<AdminStatsDto.SeriesPoint> series = buckets.entrySet().stream()
+                .map(e -> new AdminStatsDto.SeriesPoint(e.getKey(), e.getValue()[0], e.getValue()[1]))
                 .toList();
 
         return new AdminStatsDto.Overview(period == null ? "today" : period, from, now,
