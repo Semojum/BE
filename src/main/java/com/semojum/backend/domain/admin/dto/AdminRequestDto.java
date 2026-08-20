@@ -18,7 +18,8 @@ public class AdminRequestDto {
             @Pattern(regexp = "^[a-z][a-z0-9]{1,11}$",
                     message = "기관 코드는 소문자 영숫자 2~12자(첫 글자는 영문)여야 합니다.")
             String code,
-            LocalDate contractExpiresAt
+            LocalDate contractExpiresAt,
+            String contractType        // BASIC|STANDARD|PREMIUM|FREE|COUPON — 미지정 시 FREE (2026-08-20)
     ) {}
 
     // 계정 일괄 발급 — 서버가 {기관코드}{순번}으로 loginId를 생성 (예: kblib01)
