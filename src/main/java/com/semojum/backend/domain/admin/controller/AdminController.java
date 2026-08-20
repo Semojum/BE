@@ -197,12 +197,14 @@ public class AdminController {
 
     // ── 문의 (T1-9) ──
     @GetMapping("/inquiries")
-    public ApiResponse<java.util.List<SupportDto.InquiryItem>> listInquiries(
+    public ApiResponse<SupportDto.InquiryPage> listInquiries(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String type
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size
     ) {
         validateAdminRole();
-        return ApiResponse.success(adminSupportService.listInquiries(status, type));
+        return ApiResponse.success(adminSupportService.listInquiries(status, type, page, size));
     }
 
     @PatchMapping("/inquiries/{inquiryId}/status")

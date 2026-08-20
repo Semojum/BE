@@ -8,13 +8,18 @@ import java.util.UUID;
 
 public interface InquiryRepository extends JpaRepository<Inquiry, UUID> {
 
-    List<Inquiry> findAllByOrderByCreatedAtDesc();
+    // T1-9 목록 — 페이지네이션 (2026-08-20). 필터 조합별 4종
+    org.springframework.data.domain.Page<Inquiry> findAllByOrderByCreatedAtDesc(
+            org.springframework.data.domain.Pageable pageable);
 
-    List<Inquiry> findByStatusOrderByCreatedAtDesc(String status);
+    org.springframework.data.domain.Page<Inquiry> findByStatusOrderByCreatedAtDesc(
+            String status, org.springframework.data.domain.Pageable pageable);
 
-    List<Inquiry> findByTypeOrderByCreatedAtDesc(String type);
+    org.springframework.data.domain.Page<Inquiry> findByTypeOrderByCreatedAtDesc(
+            String type, org.springframework.data.domain.Pageable pageable);
 
-    List<Inquiry> findByStatusAndTypeOrderByCreatedAtDesc(String status, String type);
+    org.springframework.data.domain.Page<Inquiry> findByStatusAndTypeOrderByCreatedAtDesc(
+            String status, String type, org.springframework.data.domain.Pageable pageable);
 
     // T2 기관 화면 — 자기 기관의 요청·문의와 처리 상태
     List<Inquiry> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
