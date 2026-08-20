@@ -187,7 +187,7 @@ com.semojum.backend
 - 디버그: `HWP_DEBUG_FILE=<경로> ./gradlew test --tests HwpPageExtractorDebugTest --rerun`
 
 ### 기관 관리 T2 (`/api/org/**`) · 사용량 T3 (`/api/users/usage`)
-- **T2 (ROLE_ORG_ADMIN 전용, 권한 검증은 서비스 403)**: `GET /dashboard`(계약·크레딧 할당/사용/잔여·월별 추이 6개월) / `GET /accounts`(소속 계정 + 월 사용 크레딧) / `PATCH /accounts/{loginId}/alias` / `PATCH /accounts/{loginId}/lock` / `GET /accounts/{loginId}/jobs`(T2-2, 기간 기본 30일)
+- **T2 (ROLE_ORG_ADMIN 전용, 권한 검증은 서비스 403)**: `GET /dashboard`(계약·크레딧 할당/사용/잔여·월별 추이 6개월) / `GET /accounts`(소속 계정 + **계약 시작일 이후 누적** 사용 크레딧 — 월 단위 아님, 기획 확정 2026-08-20) / `PATCH /accounts/{loginId}/alias` / `PATCH /accounts/{loginId}/lock` / `GET /accounts/{loginId}/jobs`(T2-2, 기간 기본 30일)
 - **잠금 = 즉시**: INACTIVE + 세션 전부 revoke + **진행 중 변환 취소(JobCancelService 재사용)** — 쪽 단위 차감이라 "완료된 쪽까지만 차감" 자동 성립. **본인 잠금 불가**(COMMON4000), 타 기관 계정 403
 - **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
 - **기관 관리자는 점역(에디터) 사용 불가(기획 확정 2026-08-19)**: ROLE_ORG_ADMIN의 Job 생성은 COMMON4003 — JobService.createJob 가드. FE도 T2 화면만 노출

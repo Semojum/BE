@@ -29,13 +29,12 @@ public class OrgAdminController {
         return ApiResponse.success(orgAdminService.getDashboard(userDetails.getUsername()));
     }
 
-    /** 소속 계정 목록 — 별칭·상태·마지막 로그인·해당 월 사용 크레딧. month 미지정 시 이번 달(KST) */
+    /** 소속 계정 목록 — 별칭·상태·마지막 로그인·누적 사용 크레딧(계약 시작일 이후, 기획 확정 2026-08-20) */
     @GetMapping("/accounts")
     public ApiResponse<OrgDto.Accounts> getAccounts(
-            @AuthenticationPrincipal UserDetails userDetails,
-            @RequestParam(required = false) String month
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ApiResponse.success(orgAdminService.getAccounts(userDetails.getUsername(), month));
+        return ApiResponse.success(orgAdminService.getAccounts(userDetails.getUsername()));
     }
 
     /** 별칭 지정 — null·빈 문자열이면 제거. 실명 대신 역할명 권장 */
