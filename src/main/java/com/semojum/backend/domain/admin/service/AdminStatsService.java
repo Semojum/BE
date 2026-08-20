@@ -90,8 +90,16 @@ public class AdminStatsService {
         long pages = statsRepository.successPages(from, now);
         long prevPages = statsRepository.successPages(prevFrom, prevTo);
 
-        List<AdminStatsDto.SeriesPoint> series = statsRepository.pagesSeries(from, now, seriesUnit).stream()
-                .map(row -> new AdminStatsDto.SeriesPoint(toLocalDateTime(row[0]), ((Number) row[1]).longValue()))
+        // 쪽수·건수 시계열 병합 — 모든 기간에서 두 지표를 함께 (기획 정정 2026-08-20)
+        java.util.TreeMap<LocalDateTime, long[]> buckets = new java.util.TreeMap<>();
+        for (Object[] row : statsRepository.pagesSeries(from, now, seriesUnit)) {
+            buckets.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[2])[0] = ((Number) row[1]).longValue();
+        }
+        for (Object[] row : statsRepository.jobsSeries(from, now, seriesUnit)) {
+            buckets.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[2])[1] = ((Number) row[1]).longValue();
+        }
+        List<AdminStatsDto.SeriesPoint> series = buckets.entrySet().stream()
+                .map(e -> new AdminStatsDto.SeriesPoint(e.getKey(), e.getValue()[0], e.getValue()[1]))
                 .toList();
 
         return new AdminStatsDto.Overview(period == null ? "today" : period, from, now,
@@ -153,9 +161,19 @@ public class AdminStatsService {
                 throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
             }
         }
-        List<AdminStatsDto.WorkloadPoint> buckets = statsRepository.workload(from, bucketUnit).stream()
-                .map(row -> new AdminStatsDto.WorkloadPoint(toLocalDateTime(row[0]),
-                        ((Number) row[1]).longValue(), ((Number) row[2]).longValue()))
+        // 건수 스택 + 처리 쪽수 병합 — 각 버킷에 두 지표 (기획 정정 2026-08-20)
+        java.util.TreeMap<LocalDateTime, long[]> merged = new java.util.TreeMap<>();
+        for (Object[] row : statsRepository.workload(from, bucketUnit)) {
+            long[] v = merged.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[3]);
+            v[0] = ((Number) row[1]).longValue();
+            v[1] = ((Number) row[2]).longValue();
+        }
+        for (Object[] row : statsRepository.pagesSeries(from, LocalDateTime.now(), bucketUnit)) {
+            merged.computeIfAbsent(toLocalDateTime(row[0]), k -> new long[3])[2] = ((Number) row[1]).longValue();
+        }
+        List<AdminStatsDto.WorkloadPoint> buckets = merged.entrySet().stream()
+                .map(e -> new AdminStatsDto.WorkloadPoint(e.getKey(),
+                        e.getValue()[0], e.getValue()[1], e.getValue()[2]))
                 .toList();
         return new AdminStatsDto.Workload(unit == null ? "weekly" : unit, buckets);
     }

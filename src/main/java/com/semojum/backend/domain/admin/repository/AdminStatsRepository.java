@@ -57,6 +57,16 @@ public class AdminStatsRepository {
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
 
+    /** 시작 작업 건수 시계열: [bucket(timestamp), jobs] — 요청 시각(started_at) 기준 */
+    @SuppressWarnings("unchecked")
+    public List<Object[]> jobsSeries(LocalDateTime from, LocalDateTime to, String bucketUnit) {
+        return em.createNativeQuery(
+                        "SELECT date_trunc('" + unit(bucketUnit) + "', started_at) AS b, COUNT(*) FROM jobs " +
+                        "WHERE started_at >= :f AND started_at < :t " +
+                        "GROUP BY b ORDER BY b")
+                .setParameter("f", from).setParameter("t", to).getResultList();
+    }
+
     /** 기간 원가 합: [Σcost_krw, 미계상 포함] */
     @SuppressWarnings("unchecked")
     public Object[] costSum(LocalDateTime from, LocalDateTime to) {

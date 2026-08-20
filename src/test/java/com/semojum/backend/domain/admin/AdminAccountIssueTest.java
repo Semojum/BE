@@ -61,13 +61,13 @@ class AdminAccountIssueTest {
 
     private String createOrg(String name, String code) {
         return adminService.createOrganization(
-                new AdminRequestDto.CreateOrg(name, code, null)).organizationId();
+                new AdminRequestDto.CreateOrg(name, code, null, null)).organizationId();
     }
 
     @Test
     void 코드를_주면_그_코드로_생성되고_중복이면_거부된다() {
         AdminResponseDto.Org org = adminService.createOrganization(
-                new AdminRequestDto.CreateOrg("한국점자도서관", "kblib", null));
+                new AdminRequestDto.CreateOrg("한국점자도서관", "kblib", null, null));
         assertEquals("kblib", org.code());
 
         CustomException e = assertThrows(CustomException.class,
@@ -78,9 +78,9 @@ class AdminAccountIssueTest {
     @Test
     void 코드_미입력_시_orgNN이_순서대로_자동_부여된다() {
         assertEquals("org01", adminService.createOrganization(
-                new AdminRequestDto.CreateOrg("기관A", null, null)).code());
+                new AdminRequestDto.CreateOrg("기관A", null, null, null)).code());
         assertEquals("org02", adminService.createOrganization(
-                new AdminRequestDto.CreateOrg("기관B", null, null)).code());
+                new AdminRequestDto.CreateOrg("기관B", null, null, null)).code());
     }
 
     @Test
@@ -91,7 +91,7 @@ class AdminAccountIssueTest {
                 new AdminRequestDto.IssueAccounts(orgId, 3)).accounts();
         assertEquals(List.of("kblib01", "kblib02", "kblib03"),
                 first.stream().map(AdminResponseDto.IssuedAccount::loginId).toList());
-        assertTrue(first.stream().allMatch(a -> a.password().length() == 12));
+        assertTrue(first.stream().allMatch(a -> a.password().matches("[A-Za-z0-9]{6}")));   // 소문자+숫자 6자리 (2026-08-20)
 
         List<AdminResponseDto.IssuedAccount> second = adminService.issueAccounts(
                 new AdminRequestDto.IssueAccounts(orgId, 2)).accounts();
@@ -164,5 +164,20 @@ class AdminAccountIssueTest {
                 () -> adminService.issueAccounts(new AdminRequestDto.IssueAccounts(
                         "00000000-0000-0000-0000-000000000000", 1)));
         assertEquals(ErrorCode.ORG_NOT_FOUND, e.getErrorCode());
+    }
+
+    @Test
+    void 생성_시_계약_유형_지정_미지정은_FREE() {
+        AdminResponseDto.Org premium = adminService.createOrganization(
+                new AdminRequestDto.CreateOrg("유료기관", "paidorg", null, "PREMIUM"));
+        assertEquals("PREMIUM", premium.contractType());
+
+        AdminResponseDto.Org free = adminService.createOrganization(
+                new AdminRequestDto.CreateOrg("체험기관", "freeorg", null, null));
+        assertEquals("FREE", free.contractType());
+
+        CustomException e = assertThrows(CustomException.class, () -> adminService.createOrganization(
+                new AdminRequestDto.CreateOrg("오타기관", "badorg", null, "PLATINUM")));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 }

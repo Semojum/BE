@@ -12,6 +12,7 @@ import com.semojum.backend.domain.org.repository.OrganizationRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
 // V3 운영자 기능: 기관 생성·계정 발급·비밀번호 재발급 (관리자 페이지는 2차 — 최소 API로 제공)
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AdminService {
 
     private final OrganizationRepository organizationRepository;
@@ -34,10 +36,15 @@ public class AdminService {
     private final UserSessionRepository userSessionRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // 헷갈리는 문자(0/O, 1/l/I) 제외한 난수 비밀번호 문자셋
+    // 초기 비밀번호 = 영어 대·소문자+숫자 혼합 난수 6자리 (유저 확정 2026-08-20 — 전달·입력 편의, 12자에서 축소)
+    // 헷갈리는 문자(0/O/o, 1/l/I) 제외 관례 유지. 계정은 운영자 발급 전용 + 중복 로그인 금지라 노출면이 작다
     private static final String PW_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    private static final int PW_LENGTH = 12;
+    private static final int PW_LENGTH = 6;
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    // 생성 시 계약 유형 지정 가능 (2026-08-20) — 미지정 시 FREE(과금 실수 방지 기본값 유지)
+    private static final java.util.Set<String> CONTRACT_TYPES =
+            java.util.Set.of("BASIC", "STANDARD", "PREMIUM", "FREE", "COUPON");
 
     @Transactional
     public AdminResponseDto.Org createOrganization(AdminRequestDto.CreateOrg request) {
@@ -45,13 +52,18 @@ public class AdminService {
         if (organizationRepository.existsByCode(code)) {
             throw new CustomException(ErrorCode.ORG_CODE_DUPLICATE);
         }
+        if (request.contractType() != null && !CONTRACT_TYPES.contains(request.contractType())) {
+            log.warn("계약 유형 오류: {}", request.contractType());
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
         Organization org = Organization.builder()
                 .name(request.name())
                 .code(code)
                 .contractExpiresAt(request.contractExpiresAt())
+                .contractType(request.contractType())
                 .build();
         organizationRepository.save(org);
-        return new AdminResponseDto.Org(org.getId().toString(), org.getName(), org.getCode());
+        return new AdminResponseDto.Org(org.getId().toString(), org.getName(), org.getCode(), org.getContractType());
     }
 
     // 계정 일괄 발급: loginId = {기관코드}{순번 2자리, 99 초과 시 자릿수 증가} (예: kblib01 … kblib99, kblib100)

@@ -35,7 +35,7 @@ public class OrgSupportService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     // T2에서 넣을 수 있는 요청 유형 — 오류 신고 등은 후속(문의 UI가 생기면)
-    private static final Set<String> REQUEST_TYPES = Set.of(Inquiry.TYPE_CREDIT_ADD, Inquiry.TYPE_ACCOUNT_ISSUE);
+    private static final Set<String> REQUEST_TYPES = Set.of(Inquiry.TYPE_CREDIT_ADD, Inquiry.TYPE_ACCOUNT_ISSUE, Inquiry.TYPE_ERROR_REPORT);
 
     private final UserRepository userRepository;
     private final NoticeRepository noticeRepository;
@@ -98,9 +98,10 @@ public class OrgSupportService {
         log.info("증빙 이메일 변경: org={}", org.getCode());
     }
 
+    // 접수는 역할 제한 없음 (2026-08-20 기획 변경 — 점역사도 접수 가능). 목록·취소는 기관 관리자 전용 유지
     @Transactional
     public SupportDto.RequestItem createRequest(String adminUserId, SupportDto.CreateRequest request) {
-        User admin = resolveOrgAdmin(adminUserId);
+        User admin = resolveOrgMember(adminUserId);
         if (!REQUEST_TYPES.contains(request.type())) {
             log.warn("허용되지 않는 요청 유형: {}", request.type());
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
@@ -111,7 +112,8 @@ public class OrgSupportService {
                 .userId(admin.getId())
                 .message(request.message())
                 .build());
-        log.info("기관 요청 접수: org={}, type={}, id={}", admin.getOrganization().getCode(), request.type(), saved.getId());
+        log.info("기관 요청 접수: org={}, by={}, type={}, id={}",
+                admin.getOrganization().getCode(), admin.getLoginId(), request.type(), saved.getId());
         Inquiry loaded = inquiryRepository.findById(saved.getId()).orElse(saved);
         return new SupportDto.RequestItem(loaded.getId(), loaded.getType(), loaded.getStatus(),
                 loaded.getMessage(), loaded.getCreatedAt());
@@ -143,6 +145,17 @@ public class OrgSupportService {
         }
         inquiryRepository.delete(inquiry);
         log.info("기관 요청 취소: org={}, id={}", org.getCode(), requestId);
+    }
+
+    // 기관 소속 확인만 (역할 무관) — 요청 접수용
+    private User resolveOrgMember(String userId) {
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        if (user.getOrganization() == null) {
+            log.warn("기관 미소속 계정의 요청 접수 거부: loginId={}", user.getLoginId());
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+        return user;
     }
 
     // ROLE_ORG_ADMIN + 소속 기관 확인 — OrgAdminService와 동일 규칙 (아니면 403)

@@ -22,6 +22,7 @@ public class ClientInfoResolver {
     private static final Pattern FIREFOX = Pattern.compile("Firefox/(\\d+)");
     private static final Pattern SAFARI_VER = Pattern.compile("Version/(\\d+)[.\\d]*.*Safari");
     private static final Pattern ELECTRON = Pattern.compile("Electron/(\\d+)");
+    private static final Pattern TAURI = Pattern.compile("(?i)tauri[^/]*/(\\d+[.\\d]*)");
     private static final Pattern ANDROID = Pattern.compile("Android (\\d+)");
     private static final Pattern IOS = Pattern.compile("(?:iPhone|iPad|CPU) OS (\\d+)");
 
@@ -29,7 +30,12 @@ public class ClientInfoResolver {
         String ip = resolveIp(request);
         String ua = request.getHeader("User-Agent");
         String uaStored = ua == null ? null : ua.length() > 300 ? ua.substring(0, 300) : ua;
-        return new ClientInfo(ip, parseOs(ua), parseBrowser(ua), uaStored);
+        // 앱(Tauri)의 UA에는 OS 정보가 없다 — FE가 보내는 X-Client-Os 헤더가 있으면 그 값 우선 (2026-08-20)
+        String headerOs = request.getHeader("X-Client-Os");
+        String os = headerOs != null && !headerOs.isBlank()
+                ? headerOs.trim().substring(0, Math.min(headerOs.trim().length(), 50))
+                : parseOs(ua);
+        return new ClientInfo(ip, os, parseBrowser(ua), uaStored);
     }
 
     private String resolveIp(HttpServletRequest request) {
@@ -58,7 +64,9 @@ public class ClientInfoResolver {
 
     String parseBrowser(String ua) {
         if (ua == null || ua.isBlank()) return null;
-        // 데스크톱 앱(Electron)이 Chrome 토큰도 포함하므로 먼저 판정
+        // 데스크톱 앱을 먼저 판정 — Tauri(현행 앱)·Electron 모두 브라우저 토큰과 겹칠 수 있다
+        Matcher tauri = TAURI.matcher(ua);
+        if (tauri.find()) return "세모점 앱 (Tauri " + tauri.group(1) + ")";
         Matcher electron = ELECTRON.matcher(ua);
         if (electron.find()) return "Electron " + electron.group(1);
         Matcher edge = EDGE.matcher(ua);

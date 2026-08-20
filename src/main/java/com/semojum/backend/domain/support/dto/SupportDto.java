@@ -62,7 +62,18 @@ public class SupportDto {
             String subject,            // 메일 제목 (그 외 null)
             String message,
             Instant createdAt,
-            Instant statusChangedAt
+            Instant statusChangedAt,
+            List<InquiryAttachmentItem> attachments   // 메일 첨부·인라인 이미지 메타 (V27, 없으면 빈 배열)
+    ) {}
+
+    // 문의 첨부 메타 — 다운로드는 GET /api/admin/inquiries/{inquiryId}/attachments/{attachmentId}
+    public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes) {}
+
+    // T1-9 목록 페이지 응답 (2026-08-20 페이지네이션)
+    public record InquiryPage(
+            List<InquiryItem> items,
+            int page, int size,
+            long totalElements, int totalPages
     ) {}
 
     public record UpdateInquiryStatus(@NotBlank String status) {}   // OPEN | IN_REVIEW | ANSWERED

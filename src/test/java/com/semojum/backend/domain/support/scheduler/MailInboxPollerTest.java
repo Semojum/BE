@@ -79,4 +79,47 @@ class MailInboxPollerTest {
         assertEquals("ab", MailInboxPoller.truncate("abcdef", 2));
         assertNull(MailInboxPoller.truncate(null, 10));
     }
+
+    @Test
+    void 첨부와_인라인_이미지를_수집하고_본문은_제외한다() throws Exception {
+        var session = jakarta.mail.Session.getInstance(new java.util.Properties());
+        var msg = new jakarta.mail.internet.MimeMessage(session);
+        var mp = new jakarta.mail.internet.MimeMultipart();
+
+        var body = new jakarta.mail.internet.MimeBodyPart();
+        body.setText("본문입니다");
+        mp.addBodyPart(body);
+
+        var file = new jakarta.mail.internet.MimeBodyPart();
+        file.setDataHandler(new jakarta.activation.DataHandler(
+                new jakarta.mail.util.ByteArrayDataSource(new byte[]{1, 2, 3}, "application/pdf")));
+        file.setFileName("견적요청.pdf");
+        file.setDisposition(jakarta.mail.Part.ATTACHMENT);
+        mp.addBodyPart(file);
+
+        var image = new jakarta.mail.internet.MimeBodyPart();   // 파일명 없는 인라인 이미지
+        image.setDataHandler(new jakarta.activation.DataHandler(
+                new jakarta.mail.util.ByteArrayDataSource(new byte[]{9, 9}, "image/png")));
+        image.setDisposition(jakarta.mail.Part.INLINE);
+        mp.addBodyPart(image);
+
+        msg.setContent(mp);
+        msg.saveChanges();
+
+        var out = new java.util.ArrayList<MailInboxPoller.MailFile>();
+        MailInboxPoller.collectFiles(msg, out);
+
+        org.junit.jupiter.api.Assertions.assertEquals(2, out.size());
+        org.junit.jupiter.api.Assertions.assertEquals("견적요청.pdf", out.get(0).name());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[]{1, 2, 3}, out.get(0).bytes());
+        org.junit.jupiter.api.Assertions.assertTrue(out.get(1).name().startsWith("inline-"));
+        org.junit.jupiter.api.Assertions.assertTrue(out.get(1).name().endsWith(".png"));
+    }
+
+    @Test
+    void 파일명_경로문자는_S3키에서_치환() {
+        String cleaned = MailInboxPoller.sanitize("../etc/passwd");
+        org.junit.jupiter.api.Assertions.assertFalse(cleaned.contains("/"));
+        org.junit.jupiter.api.Assertions.assertFalse(MailInboxPoller.sanitize("a\\b").contains("\\"));
+    }
 }

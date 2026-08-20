@@ -25,7 +25,8 @@ public class OrgDto {
 
     public record MonthlyUsage(String month, long credits) {}   // month = "YYYY-MM" (KST)
 
-    public record Accounts(String month, List<Account> items) {}
+    // usageSince = 사용량 집계 시작일(계약 시작일, null=전체 누적)
+    public record Accounts(java.time.LocalDate usageSince, List<Account> items) {}
 
     public record Account(
             String loginId,
@@ -33,7 +34,7 @@ public class OrgDto {
             String status,        // ACTIVE | INACTIVE(잠김)
             String role,
             Instant lastLoginAt,
-            long monthCredits,    // 해당 월 사용 크레딧
+            long usedCredits,     // 계약 시작일 이후 누적 사용 크레딧
             boolean self          // 본인(기관 관리자) 여부 — 본인은 제어 불가
     ) {}
 
