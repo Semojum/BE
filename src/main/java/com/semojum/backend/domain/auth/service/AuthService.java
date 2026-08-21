@@ -60,6 +60,14 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_DEVICE_NOT_ALLOWED);
         }
 
+        // 역방향: X-Device-Mac을 보낸 로그인 = 운영자 콘솔 — 웹 관리자(WEB) 외 계정은 전부 거부 (2026-08-21).
+        // 콘솔 FE는 항상 이 헤더를 보내므로 "웹사이트 로그인은 webadmin 계정만"이 성립한다. 앱은 헤더가 없어 무관
+        if (deviceMac != null && !deviceMac.isBlank()
+                && !(user.getRole() == Role.ROLE_ADMIN && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope()))) {
+            log.warn("로그인 거부: loginId={} (콘솔은 웹 관리자 전용)", request.loginId());
+            throw new CustomException(ErrorCode.AUTH_DEVICE_NOT_ALLOWED);
+        }
+
         // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표).
         // 반드시 revoke "앞"에서 — revokeAllActiveByUser의 clearAutomatically가 영속성 컨텍스트를
         // 비워 user가 detach되므로, 뒤에서 바꾸면 커밋에 안 실린다(flushAutomatically가 이 변경을 먼저 flush).
@@ -76,7 +84,8 @@ public class AuthService {
         saveSession(user, refreshToken);
 
         log.info("로그인 성공: loginId={}", request.loginId());
-        return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name());
+        return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name(),
+                user.getRole() == Role.ROLE_ADMIN ? user.getAdminScope() : null);
     }
 
     @Transactional

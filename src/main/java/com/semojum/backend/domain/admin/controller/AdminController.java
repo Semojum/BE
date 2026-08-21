@@ -37,6 +37,7 @@ public class AdminController {
     private final AdminCopyService adminCopyService;
     private final com.semojum.backend.domain.app.service.AppVersionService appVersionService;
     private final com.semojum.backend.domain.user.service.UserService userService;
+    private final com.semojum.backend.domain.auth.repository.UserRepository userRepository;
 
     // ── 기관·계정 통합 표 (T1-6) — 기관별 계정 + 소계(월 사용량·관리자 마지막 로그인) ──
     @GetMapping("/orgs")
@@ -353,12 +354,18 @@ public class AdminController {
     }
 
     // 운영자 검증 — JWT(ROLE_ADMIN) 전용 (X-Admin-Key는 2026-08-19 폐기, 감사는 액세스 로그의 user= 필드가 담당).
-    // SecurityConfig의 hasRole과 이중 방어
+    // SecurityConfig의 hasRole과 이중 방어. 앱 관리자(admin_scope=APP)는 에디터 전용이라 운영자 API도 차단 (2026-08-21)
     private void validateAdminRole() {
         var auth = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();
         if (auth == null || auth.getAuthorities().stream()
                 .noneMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))) {
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+        com.semojum.backend.domain.auth.entity.User user = userRepository
+                .findById(java.util.UUID.fromString(auth.getName())).orElse(null);
+        if (user != null && com.semojum.backend.domain.auth.entity.User.ADMIN_SCOPE_APP
+                .equals(user.getAdminScope())) {
             throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
         }
     }
