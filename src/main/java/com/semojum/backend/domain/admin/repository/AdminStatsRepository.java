@@ -13,6 +13,7 @@ import java.util.Set;
  * T1 통계 전용 네이티브 집계 (date_trunc 버킷).
  * jobs.started_at·page_results.created_at은 KST 고정 LocalDateTime — 타임존 변환 불필요.
  * 쪽 수는 COUNT(*) — 워커 재시도로 드문 중복 행이 있을 수 있으나 통계 용도로 허용(과금은 credit_transactions가 정본).
+ * 관리자 사본(jobs.admin_copy)은 전 쿼리에서 제외 — 실제 변환이 아니므로 건수·쪽수·원가에 안 센다 (V28).
  */
 @Repository
 @RequiredArgsConstructor
@@ -34,15 +35,16 @@ public class AdminStatsRepository {
     public List<Object[]> jobStatusCounts(LocalDateTime from, LocalDateTime to) {
         return em.createNativeQuery(
                         "SELECT status, canceled_at IS NOT NULL, COUNT(*) FROM jobs " +
-                        "WHERE started_at >= :f AND started_at < :t GROUP BY 1, 2")
+                        "WHERE started_at >= :f AND started_at < :t AND admin_copy = false GROUP BY 1, 2")
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
 
     /** 기간 내 처리(성공) 쪽수 */
     public long successPages(LocalDateTime from, LocalDateTime to) {
         Object result = em.createNativeQuery(
-                        "SELECT COUNT(*) FROM page_results " +
-                        "WHERE status IN ('COMPLETED','NEEDS_REVIEW') AND created_at >= :f AND created_at < :t")
+                        "SELECT COUNT(*) FROM page_results p JOIN jobs j ON p.job_id = j.id " +
+                        "WHERE p.status IN ('COMPLETED','NEEDS_REVIEW') AND p.created_at >= :f AND p.created_at < :t " +
+                        "AND j.admin_copy = false")
                 .setParameter("f", from).setParameter("t", to).getSingleResult();
         return ((Number) result).longValue();
     }
@@ -51,9 +53,10 @@ public class AdminStatsRepository {
     @SuppressWarnings("unchecked")
     public List<Object[]> pagesSeries(LocalDateTime from, LocalDateTime to, String bucketUnit) {
         return em.createNativeQuery(
-                        "SELECT date_trunc('" + unit(bucketUnit) + "', created_at) AS b, COUNT(*) FROM page_results " +
-                        "WHERE status IN ('COMPLETED','NEEDS_REVIEW') AND created_at >= :f AND created_at < :t " +
-                        "GROUP BY b ORDER BY b")
+                        "SELECT date_trunc('" + unit(bucketUnit) + "', p.created_at) AS b, COUNT(*) " +
+                        "FROM page_results p JOIN jobs j ON p.job_id = j.id " +
+                        "WHERE p.status IN ('COMPLETED','NEEDS_REVIEW') AND p.created_at >= :f AND p.created_at < :t " +
+                        "AND j.admin_copy = false GROUP BY b ORDER BY b")
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
 
@@ -62,7 +65,7 @@ public class AdminStatsRepository {
     public List<Object[]> jobsSeries(LocalDateTime from, LocalDateTime to, String bucketUnit) {
         return em.createNativeQuery(
                         "SELECT date_trunc('" + unit(bucketUnit) + "', started_at) AS b, COUNT(*) FROM jobs " +
-                        "WHERE started_at >= :f AND started_at < :t " +
+                        "WHERE started_at >= :f AND started_at < :t AND admin_copy = false " +
                         "GROUP BY b ORDER BY b")
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
@@ -71,8 +74,9 @@ public class AdminStatsRepository {
     @SuppressWarnings("unchecked")
     public Object[] costSum(LocalDateTime from, LocalDateTime to) {
         List<Object[]> rows = em.createNativeQuery(
-                        "SELECT COALESCE(SUM(cost_krw), 0), COALESCE(BOOL_OR(cost_uncertain), false) " +
-                        "FROM page_results WHERE created_at >= :f AND created_at < :t")
+                        "SELECT COALESCE(SUM(p.cost_krw), 0), COALESCE(BOOL_OR(p.cost_uncertain), false) " +
+                        "FROM page_results p JOIN jobs j ON p.job_id = j.id " +
+                        "WHERE p.created_at >= :f AND p.created_at < :t AND j.admin_copy = false")
                 .setParameter("f", from).setParameter("t", to).getResultList();
         return rows.get(0);
     }
@@ -84,7 +88,7 @@ public class AdminStatsRepository {
                         "SELECT date_trunc('" + unit(bucketUnit) + "', started_at) AS b, " +
                         "COUNT(*) FILTER (WHERE status = 'COMPLETED' AND canceled_at IS NULL), " +
                         "COUNT(*) FILTER (WHERE status = 'FAILED' OR canceled_at IS NOT NULL) " +
-                        "FROM jobs WHERE started_at >= :f GROUP BY b ORDER BY b")
+                        "FROM jobs WHERE started_at >= :f AND admin_copy = false GROUP BY b ORDER BY b")
                 .setParameter("f", from).getResultList();
     }
 
@@ -96,7 +100,7 @@ public class AdminStatsRepository {
                         "COALESCE(BOOL_OR(p.cost_uncertain), false) " +
                         "FROM page_results p JOIN jobs j ON p.job_id = j.id JOIN users u ON j.user_id = u.id " +
                         "WHERE u.organization_id IS NOT NULL AND p.created_at >= :f AND p.created_at < :t " +
-                        "GROUP BY u.organization_id")
+                        "AND j.admin_copy = false GROUP BY u.organization_id")
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
 
@@ -104,9 +108,11 @@ public class AdminStatsRepository {
     @SuppressWarnings("unchecked")
     public List<Object[]> layoutCost(LocalDateTime from, LocalDateTime to) {
         return em.createNativeQuery(
-                        "SELECT layout_type, COUNT(*), COALESCE(SUM(cost_krw), 0) FROM page_results " +
-                        "WHERE layout_type IS NOT NULL AND status IN ('COMPLETED','NEEDS_REVIEW') " +
-                        "AND created_at >= :f AND created_at < :t GROUP BY layout_type")
+                        "SELECT p.layout_type, COUNT(*), COALESCE(SUM(p.cost_krw), 0) " +
+                        "FROM page_results p JOIN jobs j ON p.job_id = j.id " +
+                        "WHERE p.layout_type IS NOT NULL AND p.status IN ('COMPLETED','NEEDS_REVIEW') " +
+                        "AND p.created_at >= :f AND p.created_at < :t AND j.admin_copy = false " +
+                        "GROUP BY p.layout_type")
                 .setParameter("f", from).setParameter("t", to).getResultList();
     }
 }

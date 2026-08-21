@@ -23,4 +23,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // 계정 일괄 발급 시 다음 순번 계산용 — 기관 코드 프리픽스로 시작하는 loginId 전체
     @Query("select u.loginId from User u where u.loginId like concat(:prefix, '%')")
     List<String> findLoginIdsByPrefix(@Param("prefix") String prefix);
+
+    // 웹 관리자 send-to-mypage 배포 대상 — 앱 관리자(ROLE_ADMIN + admin_scope=APP) 전원 (V28)
+    List<User> findByRoleAndAdminScopeAndDeletedAtIsNull(
+            com.semojum.backend.domain.auth.enums.Role role, String adminScope);
 }

@@ -166,6 +166,7 @@ public class MailInboxPoller {
                             .contentType(f.contentType())
                             .sizeBytes(f.bytes().length)
                             .storagePath(key)
+                            .isInline(f.inline())
                             .build());
                     stored++;
                 } catch (Exception e) {
@@ -178,9 +179,10 @@ public class MailInboxPoller {
         }
     }
 
-    record MailFile(String name, String contentType, byte[] bytes) {}
+    record MailFile(String name, String contentType, byte[] bytes, boolean inline) {}
 
-    // 첨부(disposition ATTACHMENT·파일명 보유) + 인라인 이미지(image/*)를 재귀 수집
+    // 첨부(disposition ATTACHMENT·파일명 보유) + 인라인 이미지(image/*)를 재귀 수집.
+    // inline = 본문에 박힌 이미지(disposition이 ATTACHMENT가 아닌 image/*) — 상세 화면에서 바로 렌더 (V28)
     static void collectFiles(Part part, java.util.List<MailFile> out) throws Exception {
         if (part.isMimeType("multipart/*")) {
             Multipart mp = (Multipart) part.getContent();
@@ -188,8 +190,9 @@ public class MailInboxPoller {
             return;
         }
         String rawName = part.getFileName();
-        boolean isAttachment = Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition()) || rawName != null;
-        boolean isInlineImage = part.isMimeType("image/*");
+        boolean attachmentDisposition = Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition());
+        boolean isAttachment = attachmentDisposition || rawName != null;
+        boolean isInlineImage = part.isMimeType("image/*") && !attachmentDisposition;
         if (!isAttachment && !isInlineImage) return;
 
         String name = rawName != null
@@ -198,7 +201,7 @@ public class MailInboxPoller {
         String contentType = part.getContentType();
         if (contentType != null) contentType = contentType.split(";")[0].trim();
         byte[] bytes = part.getInputStream().readAllBytes();
-        out.add(new MailFile(name, contentType, bytes));
+        out.add(new MailFile(name, contentType, bytes, isInlineImage));
     }
 
     static String guessExt(String contentType) {

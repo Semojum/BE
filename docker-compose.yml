@@ -26,6 +26,8 @@ x-backend-common: &backend-common
     # 문의 메일함 연동 (Google Workspace IMAP — 미설정 시 폴러 비활성, fail-safe)
     - MAIL_INBOX_USERNAME=${MAIL_INBOX_USERNAME:-}
     - MAIL_INBOX_PASSWORD=${MAIL_INBOX_PASSWORD:-}
+    # 웹 관리자(admin_scope=WEB) 로그인 허용 기기 MAC 목록 (V28 — 미설정 시 웹 관리자 로그인 전면 거부)
+    - ADMIN_ALLOWED_MACS=${ADMIN_ALLOWED_MACS:-}
     - S3_BUCKET=${S3_BUCKET}
     - AWS_REGION=${AWS_REGION}
     # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.

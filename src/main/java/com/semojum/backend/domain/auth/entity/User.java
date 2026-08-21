@@ -46,6 +46,15 @@ public class User {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    // ROLE_ADMIN 사용처 구분 (V28) — WEB: 운영자 콘솔 전용(등록 기기(MAC)에서만 로그인, 앱 불가)
+    //                              APP: 에디터 앱용(웹 관리자의 "마이페이지로 보내기" 수신 대상)
+    // null = 기존 관리자(verify01 등), 종전과 동일하게 동작. ROLE_ADMIN 외 계정에선 의미 없음
+    @Column(name = "admin_scope", length = 10)
+    private String adminScope;
+
+    public static final String ADMIN_SCOPE_WEB = "WEB";
+    public static final String ADMIN_SCOPE_APP = "APP";
+
     // 별칭 — 기관 관리자가 "누가 쓰는 계정인지"를 역할명으로 적는다 (실명 대신 "수학 담당" 권장)
     @Column(length = 50)
     private String alias;
