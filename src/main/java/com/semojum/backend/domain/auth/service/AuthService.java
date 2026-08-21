@@ -10,7 +10,7 @@ import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.jwt.JwtProvider;
-import com.semojum.backend.global.util.AdminMacAllowlist;
+import com.semojum.backend.global.util.ConsoleOrigins;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -28,10 +28,10 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
-    private final AdminMacAllowlist adminMacAllowlist;
+    private final ConsoleOrigins consoleOrigins;
 
     @Transactional
-    public AuthResponseDto.Login login(AuthRequestDto.Login request, String deviceMac) {
+    public AuthResponseDto.Login login(AuthRequestDto.Login request, String origin) {
         // 발급 ID로 유저 조회
         User user = userRepository.findByLoginId(request.loginId())
                 .orElseThrow(() -> {
@@ -52,20 +52,21 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 
-        // 웹 관리자(admin_scope=WEB)는 운영자 콘솔 전용 — 등록된 기기(X-Device-Mac)에서만 로그인 가능.
-        // 앱(Tauri)은 이 헤더를 보내지 않으므로 웹 관리자 계정의 앱 로그인은 여기서 함께 차단된다 (V28)
-        if (user.getRole() == Role.ROLE_ADMIN && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope())
-                && !adminMacAllowlist.isAllowed(deviceMac)) {
-            log.warn("로그인 거부: loginId={} (미등록 기기, mac={})", request.loginId(), deviceMac);
-            throw new CustomException(ErrorCode.AUTH_DEVICE_NOT_ALLOWED);
-        }
-
-        // 역방향: X-Device-Mac을 보낸 로그인 = 운영자 콘솔 — 웹 관리자(WEB) 외 계정은 전부 거부 (2026-08-21).
-        // 콘솔 FE는 항상 이 헤더를 보내므로 "웹사이트 로그인은 webadmin 계정만"이 성립한다. 앱은 헤더가 없어 무관
-        if (deviceMac != null && !deviceMac.isBlank()
-                && !(user.getRole() == Role.ROLE_ADMIN && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope()))) {
+        // 콘솔/앱 채널 분리 (V28 — 2026-08-21 MAC 방식 폐기, Origin 판별로 교체).
+        // 브라우저는 교차 출처 POST에 Origin을 자동으로 붙인다: 콘솔 로그인 = Origin이 콘솔 주소.
+        // 앱(Tauri)은 Origin "null"이라 콘솔로 오인될 일이 없다 — FE 수정·사용자 입력 불필요
+        boolean consoleLogin = consoleOrigins.isConsole(origin);
+        boolean webAdmin = user.getRole() == Role.ROLE_ADMIN
+                && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope());
+        if (consoleLogin && !webAdmin) {
+            // 웹사이트(콘솔) 로그인은 웹 관리자만 — semojum(APP)·verify01·기관 계정 전부 거부
             log.warn("로그인 거부: loginId={} (콘솔은 웹 관리자 전용)", request.loginId());
-            throw new CustomException(ErrorCode.AUTH_DEVICE_NOT_ALLOWED);
+            throw new CustomException(ErrorCode.AUTH_WRONG_CHANNEL);
+        }
+        if (!consoleLogin && webAdmin) {
+            // 웹 관리자는 콘솔 밖(앱 등)에서 로그인 불가
+            log.warn("로그인 거부: loginId={} (웹 관리자는 콘솔에서만, origin={})", request.loginId(), origin);
+            throw new CustomException(ErrorCode.AUTH_WRONG_CHANNEL);
         }
 
         // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표).

@@ -16,13 +16,13 @@ public class AuthController {
 
     private final AuthService authService;
 
-    // X-Device-Mac: 웹 관리자(admin_scope=WEB) 로그인 시 등록 기기 검증용 — 콘솔 FE가 보낸다 (V28)
+    // Origin: 브라우저가 자동으로 붙임 — 콘솔 주소면 웹 관리자(admin_scope=WEB) 전용 채널 (V28)
     @PostMapping("/login")
     public ApiResponse<AuthResponseDto.Login> login(
             @RequestBody @Valid AuthRequestDto.Login request,
-            @RequestHeader(value = "X-Device-Mac", required = false) String deviceMac
+            @RequestHeader(value = "Origin", required = false) String origin
     ) {
-        return ApiResponse.success(authService.login(request, deviceMac));
+        return ApiResponse.success(authService.login(request, origin));
     }
 
     @PostMapping("/logout")

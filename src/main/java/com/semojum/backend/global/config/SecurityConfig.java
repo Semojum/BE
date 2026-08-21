@@ -97,8 +97,8 @@ public class SecurityConfig {
         config.setAllowedOriginPatterns(java.util.Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(s -> !s.isBlank()).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        // X-Device-Mac: 웹 관리자 로그인 기기 검증(V28) / X-Client-Os: 앱 접속환경(V19) — 브라우저 preflight 통과용
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Device-Mac", "X-Client-Os"));
+        // X-Client-Os: 앱 접속환경(V19) — 브라우저 preflight 통과용
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Client-Os"));
         config.setMaxAge(3600L);
         var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);

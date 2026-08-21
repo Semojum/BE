@@ -18,7 +18,7 @@ public enum ErrorCode {
     AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "AUTH4001", "아이디 또는 비밀번호가 올바르지 않습니다."),
     AUTH_DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "AUTH4002", "이미 사용 중인 로그인 ID입니다."),
     AUTH_INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH4003", "액세스 토큰이 만료되었거나 유효하지 않습니다."),
-    AUTH_DEVICE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "AUTH4005", "등록되지 않은 기기에서는 로그인할 수 없습니다."),
+    AUTH_WRONG_CHANNEL(HttpStatus.FORBIDDEN, "AUTH4005", "이 환경에서는 로그인할 수 없는 계정입니다."),
 
     // ========== 유저 (USER) ==========
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER4001", "존재하지 않는 회원입니다."),
