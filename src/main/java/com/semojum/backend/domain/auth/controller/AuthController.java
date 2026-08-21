@@ -16,9 +16,13 @@ public class AuthController {
 
     private final AuthService authService;
 
+    // X-Device-Mac: 웹 관리자(admin_scope=WEB) 로그인 시 등록 기기 검증용 — 콘솔 FE가 보낸다 (V28)
     @PostMapping("/login")
-    public ApiResponse<AuthResponseDto.Login> login(@RequestBody @Valid AuthRequestDto.Login request) {
-        return ApiResponse.success(authService.login(request));
+    public ApiResponse<AuthResponseDto.Login> login(
+            @RequestBody @Valid AuthRequestDto.Login request,
+            @RequestHeader(value = "X-Device-Mac", required = false) String deviceMac
+    ) {
+        return ApiResponse.success(authService.login(request, deviceMac));
     }
 
     @PostMapping("/logout")

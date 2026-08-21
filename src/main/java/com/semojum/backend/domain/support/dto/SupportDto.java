@@ -52,7 +52,9 @@ public class SupportDto {
     ) {}
 
     // ── 문의 ──
-    public record InquiryItem(
+    // 목록 행 (2026-08-21 목록/상세 분리) — 본문 전문 대신 preview 100자 + 첨부 개수만.
+    // 본문·인라인 이미지는 상세 GET /api/admin/inquiries/{inquiryId}
+    public record InquirySummary(
             UUID id,
             String type,               // EMAIL이면 보낸 사람 자리에 senderEmail 표시
             String status,
@@ -60,18 +62,36 @@ public class SupportDto {
             String loginId,
             String senderEmail,        // 메일 문의(EMAIL) 전용
             String subject,            // 메일 제목 (그 외 null)
+            String preview,            // 본문 앞 100자
+            Instant createdAt,
+            Instant statusChangedAt,
+            int attachmentCount        // 첨부+인라인 이미지 개수
+    ) {}
+
+    // 문의 상세 — 본문 전문 + 인라인 이미지(presigned URL 15분, 바로 렌더) + 파일 첨부(메타만)
+    public record InquiryDetail(
+            UUID id,
+            String type,
+            String status,
+            String orgName,
+            String loginId,
+            String senderEmail,
+            String subject,
             String message,
             Instant createdAt,
             Instant statusChangedAt,
-            List<InquiryAttachmentItem> attachments   // 메일 첨부·인라인 이미지 메타 (V27, 없으면 빈 배열)
+            List<InlineImage> inlineImages,           // 메일 본문 인라인 이미지 — url로 즉시 표시
+            List<InquiryAttachmentItem> attachments   // 파일 첨부 — 다운로드는 첨부 API
     ) {}
+
+    public record InlineImage(UUID id, String fileName, String contentType, long sizeBytes, String url) {}
 
     // 문의 첨부 메타 — 다운로드는 GET /api/admin/inquiries/{inquiryId}/attachments/{attachmentId}
     public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes) {}
 
     // T1-9 목록 페이지 응답 (2026-08-20 페이지네이션)
     public record InquiryPage(
-            List<InquiryItem> items,
+            List<InquirySummary> items,
             int page, int size,
             long totalElements, int totalPages
     ) {}

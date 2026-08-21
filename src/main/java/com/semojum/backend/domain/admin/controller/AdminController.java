@@ -207,8 +207,17 @@ public class AdminController {
         return ApiResponse.success(adminSupportService.listInquiries(status, type, page, size));
     }
 
+    // 문의 상세 (2026-08-21 목록/상세 분리) — 본문 전문 + 인라인 이미지(presigned)·파일 첨부
+    @GetMapping("/inquiries/{inquiryId}")
+    public ApiResponse<SupportDto.InquiryDetail> getInquiry(
+            @PathVariable java.util.UUID inquiryId
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.getInquiry(inquiryId));
+    }
+
     @PatchMapping("/inquiries/{inquiryId}/status")
-    public ApiResponse<SupportDto.InquiryItem> updateInquiryStatus(
+    public ApiResponse<SupportDto.InquiryDetail> updateInquiryStatus(
             @PathVariable java.util.UUID inquiryId,
             @RequestBody @Valid SupportDto.UpdateInquiryStatus request
     ) {

@@ -43,6 +43,10 @@ import java.util.UUID;
  * <p>사본 = Job·Page·PageResult·요소·bbox·규정·품질 행 전체 + S3 객체(원본 페이지·썸네일) 복사.
  * 편집 이력은 original/current를 그대로 보존해 옮긴다. page_edit_logs(RLHF 원천)는 복사하지 않는다.
  * 대상 계정은 ROLE_ADMIN만 — 고객 계정에 사본을 밀어 넣는 실수를 막는다.
+ *
+ * <p>V28: 웹 관리자(admin_scope=WEB)가 대상 미지정으로 호출하면 앱 관리자(admin_scope=APP) 전원에게
+ * 배포한다 — 웹 관리자는 앱 로그인이 불가해 본인 마이페이지 사본이 무의미하기 때문. 사본 Job은
+ * admin_copy=true + 원가 0(원가·원자료 미복사)으로 저장돼 통계·수익성에서 제외된다.
  */
 @Slf4j
 @Service
@@ -64,7 +68,7 @@ public class AdminCopyService {
     private final S3Service s3Service;
 
     /**
-     * @param targetLoginId 사본을 받을 운영자 계정. null이면 JWT 인증 사용자(authUserId)
+     * @param targetLoginId 사본을 받을 운영자 계정. null이면 웹 관리자는 앱 관리자 전원, 그 외는 본인
      */
     @Transactional
     public Map<String, Object> copyToMypage(String jobId, String targetLoginId, String authUserId) {
@@ -75,7 +79,17 @@ public class AdminCopyService {
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
 
-        User target = resolveTarget(targetLoginId, authUserId);
+        List<User> targets = resolveTargets(targetLoginId, authUserId);
+        List<Map<String, Object>> copies = new java.util.ArrayList<>();
+        for (User target : targets) {
+            copies.add(copyTo(source, target));
+        }
+        return Map.of("copies", copies, "sourceJobId", jobId);
+    }
+
+    // 사본 1건 생성 — 대상 계정 하나에 Job 전체(페이지·결과·S3)를 복사
+    private Map<String, Object> copyTo(Job source, User target) {
+        String jobId = source.getId();
 
         // 새 Job (상태는 생성자 기본 PENDING → 행 복사 후 finishJob으로 원본 종료 상태 재현)
         String newJobId = "job_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"))
@@ -88,6 +102,7 @@ public class AdminCopyService {
                 .originalFileName(source.getOriginalFileName() + " (관리자 사본)")
                 .insertPageNumber(source.isInsertPageNumber())
                 .footerText(source.getFooterText())
+                .adminCopy(true)   // 통계(건수·쪽수·원가) 제외 표식 (V28)
                 .build();
         jobRepository.saveAndFlush(copy);
 
@@ -131,9 +146,10 @@ public class AdminCopyService {
                     .processingTimeMs(pr.getProcessingTimeMs()).pdfLayerConfidence(pr.getPdfLayerConfidence())
                     .routingTierUsed(pr.getRoutingTierUsed()).scanOnly(pr.getScanOnly())
                     .rawResponse(pr.getRawResponse())
-                    .layoutType(pr.getLayoutType()).gpuTimeMs(pr.getGpuTimeMs()).modelUsage(pr.getModelUsage())
-                    .llmCostUsd(pr.getLlmCostUsd()).gpuCostUsd(pr.getGpuCostUsd()).costKrw(pr.getCostKrw())
-                    .costUncertain(pr.isCostUncertain()).pricingConfigId(pr.getPricingConfigId())
+                    // 사본 원가는 0 — 실제 변환이 없었으므로 원가·원자료를 복사하지 않는다 (이중 계상 방지, V28)
+                    .layoutType(pr.getLayoutType()).gpuTimeMs(null).modelUsage(null)
+                    .llmCostUsd(null).gpuCostUsd(null).costKrw(null)
+                    .costUncertain(false).pricingConfigId(null)
                     .build());
 
             for (TextElement el : textElementRepository.findByPageResult(pr)) {
@@ -207,25 +223,41 @@ public class AdminCopyService {
         }
     }
 
-    // 대상은 운영자 계정만 — 고객 계정으로의 오전송 방지
-    private User resolveTarget(String targetLoginId, String authUserId) {
-        User target;
+    // 대상은 운영자 계정만 — 고객 계정으로의 오전송 방지.
+    // 대상 미지정 시: 웹 관리자(WEB)는 앱 관리자(APP) 활성 계정 전원 / 그 외 관리자는 본인 (V28)
+    private List<User> resolveTargets(String targetLoginId, String authUserId) {
         if (targetLoginId != null && !targetLoginId.isBlank()) {
-            target = userRepository.findByLoginId(targetLoginId)
+            User target = userRepository.findByLoginId(targetLoginId)
                     .filter(u -> u.getDeletedAt() == null)
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        } else if (authUserId != null) {
-            target = userRepository.findById(UUID.fromString(authUserId))
-                    .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        } else {
+            requireAdmin(target);
+            return List.of(target);
+        }
+        if (authUserId == null) {
             // JWT 전용 전환(2026-08-19) 후 도달 불가 — 방어적으로 유지
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
-        if (target.getRole() != Role.ROLE_ADMIN) {
-            log.warn("사본 대상이 운영자 계정 아님: {}", target.getLoginId());
+        User caller = userRepository.findById(UUID.fromString(authUserId))
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        requireAdmin(caller);
+        if (User.ADMIN_SCOPE_WEB.equals(caller.getAdminScope())) {
+            List<User> targets = userRepository
+                    .findByRoleAndAdminScopeAndDeletedAtIsNull(Role.ROLE_ADMIN, User.ADMIN_SCOPE_APP)
+                    .stream().filter(User::isActive).toList();
+            if (targets.isEmpty()) {
+                log.warn("배포할 앱 관리자(admin_scope=APP) 계정이 없음");
+                throw new CustomException(ErrorCode.USER_NOT_FOUND);
+            }
+            return targets;
+        }
+        return List.of(caller);
+    }
+
+    private void requireAdmin(User user) {
+        if (user.getRole() != Role.ROLE_ADMIN) {
+            log.warn("사본 대상이 운영자 계정 아님: {}", user.getLoginId());
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
-        return target;
     }
 
     private String toPgIntArray(int[] nums) {

@@ -36,16 +36,21 @@ public class InquiryAttachment {
     @Column(name = "storage_path", nullable = false, length = 400)
     private String storagePath;
 
+    // 메일 본문 인라인 이미지 여부 (V28) — 상세 응답에서 presigned URL을 즉시 실어 바로 렌더
+    @Column(name = "is_inline", nullable = false)
+    private boolean isInline;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
     @Builder
     public InquiryAttachment(UUID inquiryId, String fileName, String contentType,
-                             long sizeBytes, String storagePath) {
+                             long sizeBytes, String storagePath, boolean isInline) {
         this.inquiryId = inquiryId;
         this.fileName = fileName;
         this.contentType = contentType;
         this.sizeBytes = sizeBytes;
         this.storagePath = storagePath;
+        this.isInline = isInline;
     }
 }

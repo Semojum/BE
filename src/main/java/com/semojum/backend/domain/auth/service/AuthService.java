@@ -6,9 +6,11 @@ import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.entity.UserSession;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.jwt.JwtProvider;
+import com.semojum.backend.global.util.AdminMacAllowlist;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,9 +28,10 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
+    private final AdminMacAllowlist adminMacAllowlist;
 
     @Transactional
-    public AuthResponseDto.Login login(AuthRequestDto.Login request) {
+    public AuthResponseDto.Login login(AuthRequestDto.Login request, String deviceMac) {
         // 발급 ID로 유저 조회
         User user = userRepository.findByLoginId(request.loginId())
                 .orElseThrow(() -> {
@@ -47,6 +50,14 @@ public class AuthService {
         if (!user.isActive()) {
             log.warn("로그인 거부: loginId={} (비활성 계정)", request.loginId());
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
+        }
+
+        // 웹 관리자(admin_scope=WEB)는 운영자 콘솔 전용 — 등록된 기기(X-Device-Mac)에서만 로그인 가능.
+        // 앱(Tauri)은 이 헤더를 보내지 않으므로 웹 관리자 계정의 앱 로그인은 여기서 함께 차단된다 (V28)
+        if (user.getRole() == Role.ROLE_ADMIN && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope())
+                && !adminMacAllowlist.isAllowed(deviceMac)) {
+            log.warn("로그인 거부: loginId={} (미등록 기기, mac={})", request.loginId(), deviceMac);
+            throw new CustomException(ErrorCode.AUTH_DEVICE_NOT_ALLOWED);
         }
 
         // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표).

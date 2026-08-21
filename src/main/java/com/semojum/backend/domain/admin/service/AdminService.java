@@ -67,15 +67,31 @@ public class AdminService {
     }
 
     // 계정 일괄 발급: loginId = {기관코드}{순번 2자리, 99 초과 시 자릿수 증가} (예: kblib01 … kblib99, kblib100)
-    // 초기 비밀번호는 난수 생성 → 응답으로 1회만 노출, 사용자 변경 불가
+    // 초기 비밀번호는 난수 생성 → 응답으로 1회만 노출, 사용자 변경 불가.
+    // 00 = 기관 관리자(ROLE_ORG_ADMIN) — 없으면 발급 시 자동 생성, 요청 수량은 점역사 계정만 센다 (2026-08-21)
     @Transactional
     public AdminResponseDto.IssuedAccounts issueAccounts(AdminRequestDto.IssueAccounts request) {
         Organization org = organizationRepository.findById(UUID.fromString(request.organizationId()))
                 .filter(o -> o.getDeletedAt() == null)   // 삭제된 기관에는 계정 발급 불가
                 .orElseThrow(() -> new CustomException(ErrorCode.ORG_NOT_FOUND));
 
-        int next = nextSequence(org.getCode());
         List<AdminResponseDto.IssuedAccount> accounts = new ArrayList<>();
+        String orgAdminLoginId = org.getCode() + "00";
+        if (userRepository.findByLoginId(orgAdminLoginId).isEmpty()) {
+            String rawPassword = generatePassword();
+            User orgAdmin = User.builder()
+                    .loginId(orgAdminLoginId)
+                    .organization(org)
+                    .password(passwordEncoder.encode(rawPassword))
+                    .build();
+            orgAdmin.changeRole(Role.ROLE_ORG_ADMIN);
+            userRepository.save(orgAdmin);
+            accounts.add(new AdminResponseDto.IssuedAccount(orgAdminLoginId, rawPassword,
+                    Role.ROLE_ORG_ADMIN.name()));
+            log.info("기관 관리자 계정 자동 생성: {}", orgAdminLoginId);
+        }
+
+        int next = nextSequence(org.getCode());
         for (int i = 0; i < request.count(); i++) {
             String loginId = org.getCode() + String.format("%02d", next + i);
             String rawPassword = generatePassword();
@@ -84,7 +100,7 @@ public class AdminService {
                     .organization(org)
                     .password(passwordEncoder.encode(rawPassword))
                     .build());
-            accounts.add(new AdminResponseDto.IssuedAccount(loginId, rawPassword));
+            accounts.add(new AdminResponseDto.IssuedAccount(loginId, rawPassword, Role.ROLE_USER.name()));
         }
         return new AdminResponseDto.IssuedAccounts(accounts);
     }
@@ -142,7 +158,7 @@ public class AdminService {
         String rawPassword = generatePassword();
         user.reissuePassword(passwordEncoder.encode(rawPassword));
 
-        return new AdminResponseDto.IssuedAccount(loginId, rawPassword);
+        return new AdminResponseDto.IssuedAccount(loginId, rawPassword, user.getRole().name());
     }
 
     private String generatePassword() {
