@@ -107,8 +107,7 @@ com.semojum.backend
 ### 인증 (V3 발급형)
 - 자체 가입·소셜 없음 — 운영자가 기관별 계정(loginId/PW) 발급, 1인 1계정
 - **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
-- **ROLE_ADMIN 웹/앱 분리 (V28)**: `users.admin_scope` — **WEB**(운영자 콘솔 전용)은 로그인 시 `X-Device-Mac` 헤더가 허용목록(`ADMIN_ALLOWED_MACS`, EC2 .env, 콤마 구분·대소문자/하이픈 무관)과 일치해야 함(불일치·미전송 AUTH4005). 앱은 이 헤더를 안 보내므로 WEB 계정의 앱 로그인은 자동 차단. **APP**(에디터 앱용)은 send-to-mypage 수신 대상. null=기존 관리자(verify01) 종전 동작. ⚠️ 브라우저는 MAC을 못 읽음 — 콘솔 FE가 입력받아 헤더로 전송(2차 인증 성격, 네트워크 검증 아님). 미설정 시 WEB 로그인 전면 거부(fail-safe)
-- **역방향 가드 (2026-08-21)**: `X-Device-Mac`을 보낸 로그인 = 콘솔 — WEB 관리자+등록 기기가 아니면 전부 AUTH4005(콘솔 FE는 항상 헤더 전송 → 웹사이트 로그인은 webadmin 계정만). APP 관리자 토큰의 `/api/admin/**`는 COMMON4003(validateAdminRole — 앱 관리자는 에디터 전용). 로그인 응답에 `adminScope`(WEB/APP/null) 포함. verify01(null)은 헤더 없는 curl 직접 호출로만 운영자 API 사용 가능
+- **ROLE_ADMIN 웹/앱 분리 (V28, Origin 채널 판별 — MAC 방식은 2026-08-21 당일 폐기)**: `users.admin_scope` — **WEB**(운영자 콘솔 전용) / **APP**(에디터 앱용, send-to-mypage 수신 대상) / null(기존 관리자 verify01). 로그인 시 브라우저가 자동으로 붙이는 **Origin이 콘솔 주소(`admin.console-origins`, 기본 `http://54.116.113.4,https://admin.semo-jum.com`, env ADMIN_CONSOLE_ORIGINS — ⚠️ compose가 빈 값을 넘기면 yaml 기본값을 덮으므로 compose에도 기본값 있음)면 콘솔 로그인**: WEB 계정만 허용, 아니면 AUTH4005. WEB 계정은 콘솔 밖(앱=Origin null, curl=헤더 없음)에서 로그인 불가. FE 수정·사용자 입력 불필요. APP 관리자 토큰의 `/api/admin/**`는 COMMON4003(validateAdminRole). 로그인 응답에 `adminScope`(WEB/APP/null). verify01은 콘솔 로그인 불가 — curl 직접 호출 전용. ⚠️ adminPage(콘솔 FE)는 FE 영역 — BE가 수정 금지
 - 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
 - `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
 - JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/health`, `/api/public/`, swagger 2종 — `/api/admin/`은 JWT 필수

@@ -95,10 +95,11 @@ grpc:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
-# 웹 관리자(admin_scope=WEB) 로그인 허용 기기 MAC 목록 (V28) — 콤마 구분, 대소문자·하이픈/콜론 무관.
-# 미설정이면 웹 관리자 로그인 전면 거부(fail-safe). 운영 값은 EC2 .env의 ADMIN_ALLOWED_MACS
+# 운영자 콘솔(웹사이트) Origin 목록 (V28 — MAC 방식 폐기 후 대체, 2026-08-21).
+# 콘솔에서 온 로그인(Origin 일치)은 웹 관리자(admin_scope=WEB) 전용, 웹 관리자는 콘솔에서만 로그인 가능.
+# 콘솔 주소가 바뀌면 EC2 .env의 ADMIN_CONSOLE_ORIGINS로 교체(콤마 구분, 스킴 포함)
 admin:
-  allowed-macs: ${ADMIN_ALLOWED_MACS:}
+  console-origins: ${ADMIN_CONSOLE_ORIGINS:http://54.116.113.4,https://admin.semo-jum.com}
 
 # 문의 메일함 연동 (T1-9) — Google Workspace IMAP 읽기 전용 폴링.
 # 자격증명 미설정이면 폴러 비활성(fail-safe). PASSWORD는 Workspace "앱 비밀번호"(2단계 인증 필요)
