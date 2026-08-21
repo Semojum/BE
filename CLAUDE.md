@@ -108,6 +108,7 @@ com.semojum.backend
 - 자체 가입·소셜 없음 — 운영자가 기관별 계정(loginId/PW) 발급, 1인 1계정
 - **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
 - **ROLE_ADMIN 웹/앱 분리 (V28)**: `users.admin_scope` — **WEB**(운영자 콘솔 전용)은 로그인 시 `X-Device-Mac` 헤더가 허용목록(`ADMIN_ALLOWED_MACS`, EC2 .env, 콤마 구분·대소문자/하이픈 무관)과 일치해야 함(불일치·미전송 AUTH4005). 앱은 이 헤더를 안 보내므로 WEB 계정의 앱 로그인은 자동 차단. **APP**(에디터 앱용)은 send-to-mypage 수신 대상. null=기존 관리자(verify01) 종전 동작. ⚠️ 브라우저는 MAC을 못 읽음 — 콘솔 FE가 입력받아 헤더로 전송(2차 인증 성격, 네트워크 검증 아님). 미설정 시 WEB 로그인 전면 거부(fail-safe)
+- **역방향 가드 (2026-08-21)**: `X-Device-Mac`을 보낸 로그인 = 콘솔 — WEB 관리자+등록 기기가 아니면 전부 AUTH4005(콘솔 FE는 항상 헤더 전송 → 웹사이트 로그인은 webadmin 계정만). APP 관리자 토큰의 `/api/admin/**`는 COMMON4003(validateAdminRole — 앱 관리자는 에디터 전용). 로그인 응답에 `adminScope`(WEB/APP/null) 포함. verify01(null)은 헤더 없는 curl 직접 호출로만 운영자 API 사용 가능
 - 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
 - `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
 - JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/health`, `/api/public/`, swagger 2종 — `/api/admin/`은 JWT 필수
