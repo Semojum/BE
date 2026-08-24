@@ -89,16 +89,10 @@ public class JwtFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    // 인증 확정 + 이 요청의 모든 로그 줄에 유저를 묻힌다: ctx가 req-xxxxxxxx|loginId 로 확장 (2026-08-24)
+    // ctx의 유저 확장은 RequestLogFilter가 담당 — 이 필터는 ctx 생성(-99)보다 먼저(-100 체인) 실행된다
     private void setAuthentication(UserDetails details) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
-        if (details instanceof com.semojum.backend.domain.auth.service.AuthUser authUser) {
-            String ctx = org.slf4j.MDC.get("ctx");
-            if (ctx != null && !ctx.contains("|")) {
-                org.slf4j.MDC.put("ctx", ctx + "|" + authUser.loginId());
-            }
-        }
     }
 
     // 미인증은 일상(봇·만료 토큰) — 스택 없이 한 줄. 진짜 장애(ERROR)가 묻히지 않게 한다.
