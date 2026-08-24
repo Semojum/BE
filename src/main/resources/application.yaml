@@ -107,7 +107,8 @@ hwp2pdf:
   python: ${HWP2PDF_PYTHON:python3}
   script: ${HWP2PDF_SCRIPT:/app/hwp2odt.py}
   soffice: ${HWP2PDF_SOFFICE:soffice}
-  timeout-seconds: 120
+  # 단계별(pyhwp·soffice) 실행 상한 — 동시 변환 경합(vCPU 2)까지 감안한 여유값 (2026-08-24 120→300)
+  timeout-seconds: ${HWP2PDF_TIMEOUT_SECONDS:300}
 
 # 문의 메일함 연동 (T1-9) — Google Workspace IMAP 읽기 전용 폴링.
 # 자격증명 미설정이면 폴러 비활성(fail-safe). PASSWORD는 Workspace "앱 비밀번호"(2단계 인증 필요)
