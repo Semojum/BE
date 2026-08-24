@@ -101,6 +101,14 @@ cors:
 admin:
   console-origins: ${ADMIN_CONSOLE_ORIGINS:http://54.116.113.4,https://admin.semo-jum.com}
 
+# HWP → PDF 변환 (mode a HWP 지원, 2026-08-24) — 도구는 Dockerfile에 내장(pyhwp+LibreOffice+한글 폰트).
+# 로컬 개발 등 경로가 다른 환경은 env로 교체
+hwp2pdf:
+  python: ${HWP2PDF_PYTHON:python3}
+  script: ${HWP2PDF_SCRIPT:/app/hwp2odt.py}
+  soffice: ${HWP2PDF_SOFFICE:soffice}
+  timeout-seconds: 120
+
 # 문의 메일함 연동 (T1-9) — Google Workspace IMAP 읽기 전용 폴링.
 # 자격증명 미설정이면 폴러 비활성(fail-safe). PASSWORD는 Workspace "앱 비밀번호"(2단계 인증 필요)
 mail:
