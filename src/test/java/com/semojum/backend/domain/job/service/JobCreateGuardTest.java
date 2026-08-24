@@ -8,7 +8,7 @@ import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.job.scheduler.JobDispatcher;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.hwp.HwpPageExtractor;
+import com.semojum.backend.global.hwp.HwpToPdfConverter;
 import com.semojum.backend.global.s3.S3Service;
 import com.semojum.backend.global.thumbnail.ThumbnailService;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ class JobCreateGuardTest {
                 Mockito.mock(JobRepository.class), Mockito.mock(PageRepository.class),
                 userRepository, Mockito.mock(S3Service.class),
                 Mockito.mock(RedisTemplate.class), Mockito.mock(JobDispatcher.class),
-                Mockito.mock(ThumbnailService.class), Mockito.mock(HwpPageExtractor.class));
+                Mockito.mock(ThumbnailService.class), Mockito.mock(HwpToPdfConverter.class));
 
         User orgAdmin = User.builder().loginId("kblib01").password("pw").build();
         orgAdmin.changeRole(Role.ROLE_ORG_ADMIN);

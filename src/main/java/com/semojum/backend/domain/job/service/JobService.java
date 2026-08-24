@@ -44,7 +44,7 @@ public class JobService {
     private final RedisTemplate<String, String> redisTemplate;
     private final com.semojum.backend.domain.job.scheduler.JobDispatcher jobDispatcher;
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
-    private final com.semojum.backend.global.hwp.HwpPageExtractor hwpPageExtractor;
+    private final com.semojum.backend.global.hwp.HwpToPdfConverter hwpToPdfConverter;
 
     private static final int LINES_PER_PAGE = 30;
 
@@ -83,12 +83,18 @@ public class JobService {
         String ext = originalFilename != null && originalFilename.contains(".")
                 ? originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase()
                 : "";
-        if (List.of("a", "c").contains(mode)) {
+        // mode a는 HWP도 허용(2026-08-24) — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다.
+        // mode b는 TXT 전용으로 축소(HWP는 a로 이관 — 텍스트 추출 대신 렌더링 보존 방식)
+        if (mode.equals("a")) {
+            if (!List.of("pdf", "hwp").contains(ext)) {
+                throw new CustomException(ErrorCode.JOB_INVALID_FILE);
+            }
+        } else if (mode.equals("c")) {
             if (!ext.equals("pdf")) {
                 throw new CustomException(ErrorCode.JOB_INVALID_FILE);
             }
         } else if (mode.equals("b")) {
-            if (!List.of("txt", "hwp").contains(ext)) {
+            if (!ext.equals("txt")) {
                 throw new CustomException(ErrorCode.JOB_INVALID_FILE);
             }
         }
@@ -101,22 +107,16 @@ public class JobService {
         List<String> tasks = new ArrayList<>();
 
         if (mode.equals("b")) {
-            // 5-b. txt/hwp → 페이지 단위로 분리하여 S3 업로드
-            //  - hwp: 한글 레이아웃 정보 기반으로 "실제 페이지"대로 분리 (표 내용 포함)
-            //  - txt: 페이지 개념이 없으므로 기존대로 30줄 단위 청크
-            List<String> chunks;
-            if (ext.equals("hwp")) {
-                chunks = hwpPageExtractor.extractPages(file.getInputStream());
-            } else {
-                String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
-                String[] lines = fullText.split("\n");
-                chunks = new ArrayList<>();
-                for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
-                    int end = Math.min(i + LINES_PER_PAGE, lines.length);
-                    chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
-                }
-                if (chunks.isEmpty()) chunks.add(fullText);
+            // 5-b. txt → 30줄 단위 청크로 분리하여 S3 업로드
+            // (HWP는 2026-08-24부터 mode a에서 PDF 변환으로 처리 — 텍스트 추출 경로 폐기)
+            String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
+            String[] lines = fullText.split("\n");
+            List<String> chunks = new ArrayList<>();
+            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
+                int end = Math.min(i + LINES_PER_PAGE, lines.length);
+                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
             }
+            if (chunks.isEmpty()) chunks.add(fullText);
 
             int totalPages = chunks.size();
 
@@ -184,8 +184,18 @@ public class JobService {
             return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
 
         } else {
-            // 5. PDF 페이지별 분리 및 GCS 업로드
-            byte[] pdfBytes = file.getBytes();
+            // 5. PDF 페이지별 분리 및 GCS 업로드.
+            // mode a의 HWP는 업로드 시점에 PDF로 변환(2026-08-24) — 이후는 PDF와 완전히 동일하게 처리
+            byte[] pdfBytes;
+            if (ext.equals("hwp")) {
+                long convertStart = System.currentTimeMillis();
+                pdfBytes = hwpToPdfConverter.convert(file.getBytes());
+                log.info("HWP→PDF 변환 완료: {}KB → {}KB ({}ms)",
+                        file.getSize() / 1024, pdfBytes.length / 1024,
+                        System.currentTimeMillis() - convertStart);
+            } else {
+                pdfBytes = file.getBytes();
+            }
 
             try (PdfReader reader = new PdfReader(new java.io.ByteArrayInputStream(pdfBytes));
                  PdfDocument pdfDoc = new PdfDocument(reader)) {
