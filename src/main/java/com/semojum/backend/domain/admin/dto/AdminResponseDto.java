@@ -11,10 +11,12 @@ public class AdminResponseDto {
             String contractType
     ) {}
 
-    // 발급/재발급 응답 — 비밀번호는 이 응답에서 1회만 노출 (서버는 BCrypt 해시만 보관)
+    // 발급/재발급 응답 — 비밀번호는 이 응답에서 1회만 노출 (서버는 BCrypt 해시만 보관).
+    // role: 00 기관 관리자 자동 생성(2026-08-21) 이후 발급분에 관리자/점역사 구분 표시용
     public record IssuedAccount(
             String loginId,
-            String password
+            String password,
+            String role
     ) {}
 
     public record IssuedAccounts(

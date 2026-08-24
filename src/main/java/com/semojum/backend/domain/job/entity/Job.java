@@ -104,9 +104,13 @@ public class Job {
     @Column(name = "is_favorite", nullable = false)
     private boolean isFavorite;
 
+    // 관리자 사본(send-to-mypage) 표식 (V28) — 실제 변환이 아니므로 통계(건수·쪽수·원가)에서 제외
+    @Column(name = "admin_copy", nullable = false)
+    private boolean adminCopy;
+
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName,
-               String thumbnailUrl, boolean insertPageNumber, String footerText) {
+               String thumbnailUrl, boolean insertPageNumber, String footerText, boolean adminCopy) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -115,6 +119,7 @@ public class Job {
         this.thumbnailUrl = thumbnailUrl;
         this.insertPageNumber = insertPageNumber;
         this.footerText = footerText;
+        this.adminCopy = adminCopy;
         this.isFavorite = false;
         this.status = "PENDING";
         this.failedPages = new int[]{};

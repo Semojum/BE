@@ -93,6 +93,9 @@ public class AdminSupportService {
     }
 
     // ── 문의 ──
+    private static final int PREVIEW_CHARS = 100;
+
+    // 목록 (2026-08-21 목록/상세 분리) — 본문 전문 대신 preview 100자 + 첨부 개수.
     // 페이지네이션 (2026-08-20) — page 0부터, size 기본 20·최대 100
     @Transactional(readOnly = true)
     public SupportDto.InquiryPage listInquiries(String status, String type, Integer page, Integer size) {
@@ -113,22 +116,30 @@ public class AdminSupportService {
                 .filter(java.util.Optional::isPresent).map(java.util.Optional::get)
                 .collect(Collectors.toMap(u -> u.getId(), u -> u.getLoginId()));
 
-        Map<UUID, List<SupportDto.InquiryAttachmentItem>> attachments = attachmentsFor(
+        Map<UUID, List<InquiryAttachment>> attachments = attachmentRowsFor(
                 inquiries.stream().map(Inquiry::getId).toList());
 
-        List<SupportDto.InquiryItem> items = inquiries.stream().map(i -> new SupportDto.InquiryItem(
+        List<SupportDto.InquirySummary> items = inquiries.stream().map(i -> new SupportDto.InquirySummary(
                 i.getId(), i.getType(), i.getStatus(),
                 i.getOrganizationId() == null ? null : orgNames.get(i.getOrganizationId()),
                 i.getUserId() == null ? null : loginIds.get(i.getUserId()),
                 i.getSenderEmail(), i.getSubject(),
-                i.getMessage(), i.getCreatedAt(), i.getStatusChangedAt(),
-                attachments.getOrDefault(i.getId(), List.of()))).toList();
+                preview(i.getMessage()), i.getCreatedAt(), i.getStatusChangedAt(),
+                attachments.getOrDefault(i.getId(), List.of()).size())).toList();
         return new SupportDto.InquiryPage(items, result.getNumber(), result.getSize(),
                 result.getTotalElements(), result.getTotalPages());
     }
 
+    // 상세 — 본문 전문 + 인라인 이미지(presigned 15분, 바로 렌더) + 파일 첨부(메타만)
+    @Transactional(readOnly = true)
+    public SupportDto.InquiryDetail getInquiry(UUID inquiryId) {
+        Inquiry inquiry = inquiryRepository.findById(inquiryId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
+        return toDetail(inquiry);
+    }
+
     @Transactional
-    public SupportDto.InquiryItem updateInquiryStatus(UUID inquiryId, String status) {
+    public SupportDto.InquiryDetail updateInquiryStatus(UUID inquiryId, String status) {
         if (!INQUIRY_STATUSES.contains(status)) {
             log.warn("문의 상태값 오류: {}", status);
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
@@ -137,34 +148,48 @@ public class AdminSupportService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
         inquiry.changeStatus(status);
         log.info("문의 상태 변경: id={}, status={}", inquiryId, status);
+        return toDetail(inquiry);
+    }
+
+    private SupportDto.InquiryDetail toDetail(Inquiry inquiry) {
         String orgName = inquiry.getOrganizationId() == null ? null
                 : organizationRepository.findById(inquiry.getOrganizationId()).map(Organization::getName).orElse(null);
         String loginId = inquiry.getUserId() == null ? null
                 : userRepository.findById(inquiry.getUserId()).map(u -> u.getLoginId()).orElse(null);
-        return new SupportDto.InquiryItem(inquiry.getId(), inquiry.getType(), inquiry.getStatus(),
+
+        List<InquiryAttachment> rows = attachmentRowsFor(List.of(inquiry.getId()))
+                .getOrDefault(inquiry.getId(), List.of());
+        List<SupportDto.InlineImage> inlineImages = rows.stream()
+                .filter(InquiryAttachment::isInline)
+                .map(a -> new SupportDto.InlineImage(a.getId(), a.getFileName(), a.getContentType(),
+                        a.getSizeBytes(),
+                        s3Service.getPresignedUrl(a.getStoragePath(), java.time.Duration.ofMinutes(15))))
+                .toList();
+        List<SupportDto.InquiryAttachmentItem> files = rows.stream()
+                .filter(a -> !a.isInline())
+                .map(a -> new SupportDto.InquiryAttachmentItem(
+                        a.getId(), a.getFileName(), a.getContentType(), a.getSizeBytes(),
+                        s3Service.getPresignedUrl(a.getStoragePath(), java.time.Duration.ofMinutes(15))))
+                .toList();
+
+        return new SupportDto.InquiryDetail(inquiry.getId(), inquiry.getType(), inquiry.getStatus(),
                 orgName, loginId, inquiry.getSenderEmail(), inquiry.getSubject(),
                 inquiry.getMessage(), inquiry.getCreatedAt(), inquiry.getStatusChangedAt(),
-                attachmentsFor(List.of(inquiry.getId())).getOrDefault(inquiry.getId(), List.of()));
+                inlineImages, files);
     }
 
-    private Map<UUID, List<SupportDto.InquiryAttachmentItem>> attachmentsFor(List<UUID> inquiryIds) {
+    private Map<UUID, List<InquiryAttachment>> attachmentRowsFor(List<UUID> inquiryIds) {
         if (inquiryIds.isEmpty()) return Map.of();
         return inquiryAttachmentRepository.findByInquiryIdInOrderByCreatedAtAsc(inquiryIds).stream()
-                .collect(Collectors.groupingBy(InquiryAttachment::getInquiryId,
-                        Collectors.mapping(a -> new SupportDto.InquiryAttachmentItem(
-                                a.getId(), a.getFileName(), a.getContentType(), a.getSizeBytes()),
-                                Collectors.toList())));
+                .collect(Collectors.groupingBy(InquiryAttachment::getInquiryId));
     }
 
-    // 문의 첨부 내려받기 — presigned 15분. 이미지면 FE가 미리보기로 렌더 가능 (V27)
-    @Transactional(readOnly = true)
-    public SupportDto.ReceiptDownload getInquiryAttachment(UUID inquiryId, UUID attachmentId) {
-        InquiryAttachment att = inquiryAttachmentRepository.findById(attachmentId)
-                .filter(a -> a.getInquiryId().equals(inquiryId))
-                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
-        return new SupportDto.ReceiptDownload(att.getFileName(),
-                s3Service.getPresignedUrl(att.getStoragePath(), java.time.Duration.ofMinutes(15)));
+    private static String preview(String message) {
+        if (message == null) return null;
+        return message.length() > PREVIEW_CHARS ? message.substring(0, PREVIEW_CHARS) : message;
     }
+
+    // (구 문의 첨부 내려받기 API는 2026-08-24 상세 응답에 통합·폐기 — attachments[].url로 즉시 저장)
 
     // ── 주문·수납 ──
     @Transactional

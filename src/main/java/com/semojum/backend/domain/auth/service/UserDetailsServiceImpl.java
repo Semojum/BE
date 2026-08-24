@@ -17,13 +17,9 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String userId) throws UsernameNotFoundException {
+        // 계정 role을 그대로 권한으로. loginId는 액세스 로그의 user= 표기용 (2026-08-24)
         return userRepository.findById(UUID.fromString(userId))
-                .map(user -> org.springframework.security.core.userdetails.User.builder()
-                        .username(user.getId().toString())
-                        .password(user.getPassword() != null ? user.getPassword() : "")
-                        // 계정 role을 그대로 권한으로 (ROLE_ 접두사 포함이므로 authorities 사용)
-                        .authorities(user.getRole().name())
-                        .build())
+                .map(user -> new AuthUser(user.getId().toString(), user.getLoginId(), user.getRole().name()))
                 .orElseThrow(() -> new UsernameNotFoundException("유저를 찾을 수 없습니다: " + userId));
     }
 }

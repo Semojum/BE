@@ -88,6 +88,7 @@ com.semojum.backend
 | AUTH4002 | 409 | 이미 사용 중인 로그인 ID |
 | AUTH4003 | 401 | 액세스 토큰 만료/무효 |
 | AUTH4004 | 403 | 비활성화된 계정 |
+| AUTH4005 | 403 | 등록되지 않은 기기 (웹 관리자 MAC 인증) |
 | USER4001 | 404 | 존재하지 않는 회원 |
 | ORG4001 | 404 | 존재하지 않는 기관 |
 | JOB4001 | 404 | 존재하지 않는 작업 |
@@ -106,6 +107,7 @@ com.semojum.backend
 ### 인증 (V3 발급형)
 - 자체 가입·소셜 없음 — 운영자가 기관별 계정(loginId/PW) 발급, 1인 1계정
 - **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
+- **ROLE_ADMIN 웹/앱 분리 (V28, Origin 채널 판별 — MAC 방식은 2026-08-21 당일 폐기)**: `users.admin_scope` — **WEB**(운영자 콘솔 전용) / **APP**(에디터 앱용, send-to-mypage 수신 대상) / null(기존 관리자 verify01). 로그인 시 브라우저가 자동으로 붙이는 **Origin이 콘솔 주소(`admin.console-origins`, 기본 `http://54.116.113.4,https://admin.semo-jum.com`, env ADMIN_CONSOLE_ORIGINS — ⚠️ compose가 빈 값을 넘기면 yaml 기본값을 덮으므로 compose에도 기본값 있음)면 콘솔 로그인**: WEB 계정만 허용, 아니면 AUTH4005. WEB 계정은 콘솔 밖(앱=Origin null, curl=헤더 없음)에서 로그인 불가. FE 수정·사용자 입력 불필요. APP 관리자 토큰의 `/api/admin/**`는 COMMON4003(validateAdminRole). 로그인 응답에 `adminScope`(WEB/APP/null). verify01은 콘솔 로그인 불가 — curl 직접 호출 전용. ⚠️ adminPage(콘솔 FE)는 FE 영역 — BE가 수정 금지
 - 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
 - `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
 - JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/health`, `/api/public/`, swagger 2종 — `/api/admin/`은 JWT 필수
@@ -114,7 +116,7 @@ com.semojum.backend
 - 인증 = 운영자 콘솔(admin.semo-jum.com) 로그인 → Bearer 토큰. SecurityConfig `hasRole(ADMIN)` + AdminController `validateAdminRole()` 이중 방어, 비ADMIN 토큰 403·무토큰 401(JSON)
 - **CORS는 기본 전면 허용(allowedOriginPatterns \*)** — 쿠키 미사용(Bearer)이라 origin 제한이 무의미하고, **허용 목록으로 좁히면 데스크톱 앱(Origin: null)이 "Invalid CORS request" 403으로 깨진다**(2026-08-20 회귀 실측). 좁히려면 앱 origin 포함 필수
 - **기관·계정 관리(T1-6·7)**: 통합 표(`GET /api/admin/orgs?month=` — 기관별 계정+소계) / 기관 상세·수정(`GET·PATCH /api/admin/orgs/{orgId}` — 이름·**계약 유형(V24: 유료 BASIC·STANDARD·PREMIUM / 무료 FREE(체험)·COUPON(쿠폰 제공) — 신규 기본 FREE)**·기간·**할당 크레딧 설정**) / **삭제는 소프트**(`DELETE /api/admin/orgs/{orgId}`=소속 계정 전부 잠금+deleted_at, `DELETE /api/admin/accounts/{loginId}` — 실삭제는 보관 기간 정책 확정 후, V21). 삭제된 기관엔 계정 발급 불가, 삭제 계정은 T2 목록·제어에서 제외
-- 기관 생성(`POST /api/admin/orgs` — **계약 유형 지정 가능(2026-08-20), 미지정 시 FREE**) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, **초기 PW = 영어 대·소문자+숫자 난수 6자리(2026-08-20, 12자에서 축소)** — 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries?status=&type=&page=&size=` — **페이지네이션(2026-08-20): page 0부터·size 기본 20/최대 100, 응답 {items, page, size, totalElements, totalPages}**, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유, `GET .../pages/{pageNo}` — T1-5 미리보기(소유자 검증 없는 페이지 결과+presigned 원본, UserService.getJobPageAsAdmin), `POST .../send-to-mypage` — 사본을 운영자 계정 마이페이지로(AdminCopyService: Job~품질 행 전체+S3 서버사이드 복사, 편집 original/current 보존, page_edit_logs 미복사, 대상은 ROLE_ADMIN만·진행 중 작업 거부). 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열(**각 버킷에 쪽수+건수 동시, 2026-08-20**)+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택+**버킷별 처리 쪽수(pages, 2026-08-20)**, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비, `/stats/profitability?month=` **기관별 수익성 — 차액=환산 매출(계약분 차감×유형별 단가)−원가. 단가는 pricing_configs.creditPricesByContract(관리 변수, biz 확정 2026-08-18: BASIC 200/STANDARD 150/PREMIUM 120/FREE·COUPON 0), 매출은 조회 시점 환산(확정 회계는 orders 담당)** — 네이티브 date_trunc 집계(AdminStatsRepository))**
+- 기관 생성(`POST /api/admin/orgs` — **계약 유형 지정 가능(2026-08-20), 미지정 시 FREE**) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, **`{code}00`=기관 관리자(ROLE_ORG_ADMIN) — 없으면 발급 시 자동 생성, 요청 수량은 점역사(01~)만 계산(2026-08-21). 응답에 role 필드**, **초기 PW = 영어 대·소문자+숫자 난수 6자리(2026-08-20, 12자에서 축소)** — 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries?status=&type=&page=&size=` — **페이지네이션(2026-08-20): page 0부터·size 기본 20/최대 100, 응답 {items, page, size, totalElements, totalPages}. 목록/상세 분리(2026-08-21): 목록은 본문 대신 preview 100자+attachmentCount, 본문 전문·이미지는 `GET .../{id}` 상세 — 인라인 이미지(is_inline)는 presigned URL(15분) 즉시 포함해 바로 렌더, 파일 첨부도 url 포함(2026-08-24 — 구 첨부 다운로드 API는 상세에 통합·폐기, 만료 시 상세 재조회)**, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED, 응답은 상세와 동일) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유, `GET .../pages/{pageNo}` — T1-5 미리보기(소유자 검증 없는 페이지 결과+presigned 원본, UserService.getJobPageAsAdmin), `POST .../send-to-mypage` — 사본을 운영자 계정 마이페이지로(AdminCopyService: Job~품질 행 전체+S3 서버사이드 복사, 편집 original/current 보존, page_edit_logs 미복사, 대상은 ROLE_ADMIN만·진행 중 작업 거부. **V28: 웹 관리자(WEB)가 대상 미지정 호출 시 앱 관리자(APP) 활성 계정 전원에 배포, 응답 {copies:[{jobId,targetLoginId,…}], sourceJobId}. 사본은 admin_copy=true+원가 0(원가·원자료 미복사) — 통계·수익성·layout-cost 전 쿼리에서 제외**). 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열(**각 버킷에 쪽수+건수 동시, 2026-08-20**)+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택+**버킷별 처리 쪽수(pages, 2026-08-20)**, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비, `/stats/profitability?month=` **기관별 수익성 — 차액=환산 매출(계약분 차감×유형별 단가)−원가. 단가는 pricing_configs.creditPricesByContract(관리 변수, biz 확정 2026-08-18: BASIC 200/STANDARD 150/PREMIUM 120/FREE·COUPON 0), 매출은 조회 시점 환산(확정 회계는 orders 담당)** — 네이티브 date_trunc 집계(AdminStatsRepository))**
 - 구 X-Admin-Key·`ADMIN_API_KEY`(.env)·어드민 키 파일은 폐기 — 운영 스크립트도 로그인 토큰 사용
 
 ### Job 생성 (`POST /api/jobs`)
@@ -211,8 +213,8 @@ com.semojum.backend
 - 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
 
 ### 로깅
-- 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter) / 워커 `jobId|pN`. `grep <jobId>`로 전 로그 묶임
-- 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=…` 한 줄. 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면
+- 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter, **인증 확인 후 `req-xxxxxxxx|loginId`로 확장** — 2026-08-24) / 워커 `jobId|pN`. `grep <jobId>`·`grep <loginId>`로 전 로그 묶임
+- 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=loginId` 한 줄(2026-08-24 — UUID 8자에서 교체, AuthUser). 토큰 없는 로그인·refresh·logout도 서비스가 유저 확인 시점에 MDC로 채움(`markRequestUser`). 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면. **`/api/` 밖 401(봇 스캔)은 INFO 격하**(실측 72h 401의 대부분 — WARN에 남기면 장애 화면이 봇으로 도배됨)
 - **`show-sql: false` 고정**(stdout 직행 노이즈), SQL 디버깅은 `org.hibernate.SQL=DEBUG`. **`/error`는 permitAll 유지**(빼면 예외 1건이 인가 거부 스택 수백 줄로 증폭)
 - SSE page_done 전문은 `sse.payload` 로거. compose 로그 rotation 10MB×5. 저장 로그에 색·이모지 금지(색칠은 semlog)
 

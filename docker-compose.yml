@@ -26,6 +26,9 @@ x-backend-common: &backend-common
     # 문의 메일함 연동 (Google Workspace IMAP — 미설정 시 폴러 비활성, fail-safe)
     - MAIL_INBOX_USERNAME=${MAIL_INBOX_USERNAME:-}
     - MAIL_INBOX_PASSWORD=${MAIL_INBOX_PASSWORD:-}
+    # 운영자 콘솔 Origin 목록 (V28 — 콘솔 로그인은 웹 관리자 전용).
+    # ⚠️ 빈 값으로 넘기면 yaml 기본값을 덮어버리므로(빈 문자열도 "설정됨") 여기에도 기본값을 둔다
+    - ADMIN_CONSOLE_ORIGINS=${ADMIN_CONSOLE_ORIGINS:-http://54.116.113.4,https://admin.semo-jum.com}
     - S3_BUCKET=${S3_BUCKET}
     - AWS_REGION=${AWS_REGION}
     # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.

@@ -6,9 +6,11 @@ import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.entity.UserSession;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.auth.repository.UserSessionRepository;
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import com.semojum.backend.global.jwt.JwtProvider;
+import com.semojum.backend.global.util.ConsoleOrigins;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,9 +28,10 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
+    private final ConsoleOrigins consoleOrigins;
 
     @Transactional
-    public AuthResponseDto.Login login(AuthRequestDto.Login request) {
+    public AuthResponseDto.Login login(AuthRequestDto.Login request, String origin) {
         // 발급 ID로 유저 조회
         User user = userRepository.findByLoginId(request.loginId())
                 .orElseThrow(() -> {
@@ -49,6 +52,25 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_INACTIVE_ACCOUNT);
         }
 
+        // 콘솔/앱 채널 분리 (V28 — 2026-08-21 MAC 방식 폐기, Origin 판별로 교체).
+        // 브라우저는 교차 출처 POST에 Origin을 자동으로 붙인다: 콘솔 로그인 = Origin이 콘솔 주소.
+        // 앱(Tauri)은 Origin "null"이라 콘솔로 오인될 일이 없다 — FE 수정·사용자 입력 불필요
+        boolean consoleLogin = consoleOrigins.isConsole(origin);
+        boolean webAdmin = user.getRole() == Role.ROLE_ADMIN
+                && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope());
+        if (consoleLogin && !webAdmin) {
+            // 웹사이트(콘솔) 로그인은 웹 관리자만 — semojum(APP)·verify01·기관 계정 전부 거부
+            log.warn("로그인 거부: loginId={} (콘솔은 웹 관리자 전용)", request.loginId());
+            throw new CustomException(ErrorCode.AUTH_WRONG_CHANNEL);
+        }
+        if (!consoleLogin && webAdmin) {
+            // 웹 관리자는 콘솔 밖(앱 등)에서 로그인 불가
+            log.warn("로그인 거부: loginId={} (웹 관리자는 콘솔에서만, origin={})", request.loginId(), origin);
+            throw new CustomException(ErrorCode.AUTH_WRONG_CHANNEL);
+        }
+
+        markRequestUser(user.getLoginId());
+
         // 마지막 로그인 시각 기록 (T1-6·T2 소속 계정 표).
         // 반드시 revoke "앞"에서 — revokeAllActiveByUser의 clearAutomatically가 영속성 컨텍스트를
         // 비워 user가 detach되므로, 뒤에서 바꾸면 커밋에 안 실린다(flushAutomatically가 이 변경을 먼저 flush).
@@ -65,7 +87,8 @@ public class AuthService {
         saveSession(user, refreshToken);
 
         log.info("로그인 성공: loginId={}", request.loginId());
-        return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name());
+        return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name(),
+                user.getRole() == Role.ROLE_ADMIN ? user.getAdminScope() : null);
     }
 
     @Transactional
@@ -81,6 +104,7 @@ public class AuthService {
         String userId = jwtProvider.getUserId(refreshToken);
         User user = userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        markRequestUser(user.getLoginId());
 
         // 세션 조회 후 revoke
         String hash = jwtProvider.hashToken(refreshToken);
@@ -104,6 +128,7 @@ public class AuthService {
         String userId = jwtProvider.getUserId(refreshToken);
         User user = userRepository.findById(java.util.UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        markRequestUser(user.getLoginId());
 
         // 세션 유효성 확인 (다른 곳에서 로그인해 revoke됐다면 여기서 차단됨)
         String hash = jwtProvider.hashToken(refreshToken);
@@ -125,6 +150,16 @@ public class AuthService {
         String newAccessToken = jwtProvider.generateAccessToken(userId);
 
         return new AuthResponseDto.Refresh(newAccessToken);
+    }
+
+    // 토큰 없는 경로(로그인·refresh·logout)에서 유저가 확인된 순간 로그에 아이디를 묻힌다 (2026-08-24):
+    // 액세스 로그의 user= + 이 요청의 나머지 줄(ctx가 req-xxxxxxxx|loginId 로 확장)
+    private static void markRequestUser(String loginId) {
+        org.slf4j.MDC.put("user", loginId);
+        String ctx = org.slf4j.MDC.get("ctx");
+        if (ctx != null && !ctx.contains("|")) {
+            org.slf4j.MDC.put("ctx", ctx + "|" + loginId);
+        }
     }
 
     // 리프레시 토큰 세션 저장

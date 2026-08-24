@@ -84,15 +84,21 @@ class AdminAccountIssueTest {
     }
 
     @Test
-    void 수량만큼_기관코드_순번으로_발급되고_추가_발급은_이어서_번호가_붙는다() {
+    void 수량만큼_기관코드_순번으로_발급되고_00_기관_관리자가_자동_생성된다() {
         String orgId = createOrg("한국점자도서관", "kblib");
 
+        // 첫 발급: 00(기관 관리자) 자동 생성 + 요청 수량(3)만큼 점역사 01~03 (2026-08-21)
         List<AdminResponseDto.IssuedAccount> first = adminService.issueAccounts(
                 new AdminRequestDto.IssueAccounts(orgId, 3)).accounts();
-        assertEquals(List.of("kblib01", "kblib02", "kblib03"),
+        assertEquals(List.of("kblib00", "kblib01", "kblib02", "kblib03"),
                 first.stream().map(AdminResponseDto.IssuedAccount::loginId).toList());
-        assertTrue(first.stream().allMatch(a -> a.password().matches("[A-Za-z0-9]{6}")));   // 소문자+숫자 6자리 (2026-08-20)
+        assertEquals("ROLE_ORG_ADMIN", first.get(0).role());
+        assertTrue(first.stream().skip(1).allMatch(a -> "ROLE_USER".equals(a.role())));
+        assertEquals(Role.ROLE_ORG_ADMIN,
+                userRepository.findByLoginId("kblib00").orElseThrow().getRole());
+        assertTrue(first.stream().allMatch(a -> a.password().matches("[A-Za-z0-9]{6}")));   // 대·소문자+숫자 6자리 (2026-08-20)
 
+        // 추가 발급: 00이 이미 있으므로 점역사만 이어서 번호가 붙는다
         List<AdminResponseDto.IssuedAccount> second = adminService.issueAccounts(
                 new AdminRequestDto.IssueAccounts(orgId, 2)).accounts();
         assertEquals(List.of("kblib04", "kblib05"),
@@ -104,12 +110,13 @@ class AdminAccountIssueTest {
         String kb = createOrg("KB기관", "kb");
         String kblib = createOrg("한국점자도서관", "kblib");
 
-        adminService.issueAccounts(new AdminRequestDto.IssueAccounts(kblib, 2)); // kblib01, kblib02
+        adminService.issueAccounts(new AdminRequestDto.IssueAccounts(kblib, 2)); // kblib00~02
         List<AdminResponseDto.IssuedAccount> kbAccounts = adminService.issueAccounts(
                 new AdminRequestDto.IssueAccounts(kb, 1)).accounts();
 
-        // kblib01은 "kb"로 시작하지만 숫자 접미사가 아니므로 kb의 순번에 영향 없음
-        assertEquals("kb01", kbAccounts.get(0).loginId());
+        // kblib00~02는 "kb"로 시작하지만 숫자 접미사가 아니므로 kb의 순번에 영향 없음
+        assertEquals(List.of("kb00", "kb01"),
+                kbAccounts.stream().map(AdminResponseDto.IssuedAccount::loginId).toList());
     }
 
     @Test
