@@ -47,7 +47,15 @@ public class RequestLogFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         long start = System.currentTimeMillis();
-        MDC.put("ctx", "req-" + Integer.toHexString(ThreadLocalRandom.current().nextInt()));
+        // 시큐리티 체인(-100)이 먼저라 토큰 인증은 이미 끝난 시점 — ctx에 유저를 바로 실어
+        // 이 요청의 모든 로그 줄이 req-xxxxxxxx|loginId 로 찍히게 한다 (2026-08-24)
+        String ctx = "req-" + Integer.toHexString(ThreadLocalRandom.current().nextInt());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal()
+                instanceof com.semojum.backend.domain.auth.service.AuthUser authUser) {
+            ctx += "|" + authUser.loginId();
+        }
+        MDC.put("ctx", ctx);
         try {
             filterChain.doFilter(request, response);
         } finally {
