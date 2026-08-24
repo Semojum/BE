@@ -63,16 +63,24 @@ public class RequestLogFilter extends OncePerRequestFilter {
                 log.info(line);
             }
             MDC.remove("ctx");
+            MDC.remove("user");
         }
     }
 
-    /** 인증된 요청의 사용자 식별자(UUID 앞 8자). 미인증·permitAll 경로는 "-" */
+    /**
+     * 인증된 요청의 사용자 아이디(loginId — UUID 8자는 사람이 못 읽어 교체, 2026-08-24).
+     * 토큰 없는 로그인·refresh·logout은 서비스가 유저를 알아낸 시점에 MDC user로 채운다. 그 외 "-"
+     */
     private String currentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
-            return "-";
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            if (auth.getPrincipal() instanceof com.semojum.backend.domain.auth.service.AuthUser authUser) {
+                return authUser.loginId();
+            }
+            String name = auth.getName();
+            return name.length() > 8 ? name.substring(0, 8) : name;
         }
-        String name = auth.getName();
-        return name.length() > 8 ? name.substring(0, 8) : name;
+        String mdcUser = MDC.get("user");
+        return mdcUser != null ? mdcUser : "-";
     }
 }

@@ -59,8 +59,7 @@ public class JwtFilter extends OncePerRequestFilter {
             if (optionalToken != null && jwtProvider.isValid(optionalToken)) {
                 try {
                     UserDetails details = userDetailsService.loadUserByUsername(jwtProvider.getUserId(optionalToken));
-                    SecurityContextHolder.getContext().setAuthentication(
-                            new UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
+                    setAuthentication(details);
                 } catch (Exception e) {
                     log.debug("permitted 경로 best-effort 인증 실패(무인증 통과): {}", e.getMessage());
                 }
@@ -85,17 +84,35 @@ public class JwtFilter extends OncePerRequestFilter {
 
         String userId = jwtProvider.getUserId(token);
         UserDetails userDetails = userDetailsService.loadUserByUsername(userId);
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        setAuthentication(userDetails);
 
         filterChain.doFilter(request, response);
     }
 
-    // 미인증은 일상(봇·만료 토큰) — 스택 없이 WARN 한 줄. 진짜 장애(ERROR)가 묻히지 않게 한다
+    // 인증 확정 + 이 요청의 모든 로그 줄에 유저를 묻힌다: ctx가 req-xxxxxxxx|loginId 로 확장 (2026-08-24)
+    private void setAuthentication(UserDetails details) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
+        if (details instanceof com.semojum.backend.domain.auth.service.AuthUser authUser) {
+            String ctx = org.slf4j.MDC.get("ctx");
+            if (ctx != null && !ctx.contains("|")) {
+                org.slf4j.MDC.put("ctx", ctx + "|" + authUser.loginId());
+            }
+        }
+    }
+
+    // 미인증은 일상(봇·만료 토큰) — 스택 없이 한 줄. 진짜 장애(ERROR)가 묻히지 않게 한다.
+    // 우리 API(/api/**)의 401만 WARN — 그 밖(/, /info.php, /debug/** …)은 인터넷 봇 스캔이라 INFO로 격하해
+    // "grep WARN|ERROR = 장애 화면" 원칙을 지킨다 (2026-08-24 — 실측 72h 401의 대부분이 봇 스캔)
     private void sendUnauthorized(HttpServletRequest request, HttpServletResponse response, String reason)
             throws IOException {
-        log.warn("REQ {} {} → 401 ({})", request.getMethod(), request.getRequestURI(), reason);
+        String line = String.format("REQ %s %s → 401 (%s)",
+                request.getMethod(), request.getRequestURI(), reason);
+        if (request.getRequestURI().startsWith("/api/")) {
+            log.warn(line);
+        } else {
+            log.info(line);
+        }
         response.setStatus(401);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");

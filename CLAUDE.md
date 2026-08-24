@@ -213,8 +213,8 @@ com.semojum.backend
 - 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
 
 ### 로깅
-- 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter) / 워커 `jobId|pN`. `grep <jobId>`로 전 로그 묶임
-- 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=…` 한 줄. 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면
+- 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter, **인증 확인 후 `req-xxxxxxxx|loginId`로 확장** — 2026-08-24) / 워커 `jobId|pN`. `grep <jobId>`·`grep <loginId>`로 전 로그 묶임
+- 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=loginId` 한 줄(2026-08-24 — UUID 8자에서 교체, AuthUser). 토큰 없는 로그인·refresh·logout도 서비스가 유저 확인 시점에 MDC로 채움(`markRequestUser`). 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면. **`/api/` 밖 401(봇 스캔)은 INFO 격하**(실측 72h 401의 대부분 — WARN에 남기면 장애 화면이 봇으로 도배됨)
 - **`show-sql: false` 고정**(stdout 직행 노이즈), SQL 디버깅은 `org.hibernate.SQL=DEBUG`. **`/error`는 permitAll 유지**(빼면 예외 1건이 인가 거부 스택 수백 줄로 증폭)
 - SSE page_done 전문은 `sse.payload` 로거. compose 로그 rotation 10MB×5. 저장 로그에 색·이모지 금지(색칠은 semlog)
 
