@@ -257,21 +257,37 @@ class SupportServiceTest {
         assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
     }
 
-    // ── 문의 첨부 (V27) ──
+    // ── 문의 상세 첨부 (V27·V28, 2026-08-24 다운로드 API 통합) ──
     @Test
-    void 첨부_내려받기_presigned_불일치는_404() throws Exception {
-        var att = com.semojum.backend.domain.support.entity.InquiryAttachment.builder()
-                .inquiryId(UUID.randomUUID()).fileName("스크린샷.png")
-                .contentType("image/png").sizeBytes(1234).storagePath("inquiries/x/a_스크린샷.png").build();
-        setId(att, UUID.randomUUID());
-        Mockito.when(inquiryAttachmentRepository.findById(att.getId())).thenReturn(java.util.Optional.of(att));
+    void 상세는_인라인과_파일_첨부를_나누고_둘_다_presigned_url을_싣는다() throws Exception {
+        UUID inquiryId = UUID.randomUUID();
+        Inquiry inquiry = Inquiry.builder().type(Inquiry.TYPE_EMAIL)
+                .senderEmail("a@b.c").subject("제목").message("본문").mailUid("1:1").build();
+        setId(inquiry, inquiryId);
+        Mockito.when(inquiryRepository.findById(inquiryId)).thenReturn(java.util.Optional.of(inquiry));
+        Mockito.when(organizationRepository.findAll()).thenReturn(java.util.List.of());
+
+        var inline = com.semojum.backend.domain.support.entity.InquiryAttachment.builder()
+                .inquiryId(inquiryId).fileName("스크린샷.png").contentType("image/png")
+                .sizeBytes(1234).storagePath("inquiries/x/a.png").isInline(true).build();
+        setId(inline, UUID.randomUUID());
+        var file = com.semojum.backend.domain.support.entity.InquiryAttachment.builder()
+                .inquiryId(inquiryId).fileName("원본.hwp").contentType("application/octet-stream")
+                .sizeBytes(5678).storagePath("inquiries/x/b.hwp").isInline(false).build();
+        setId(file, UUID.randomUUID());
+        Mockito.when(inquiryAttachmentRepository.findByInquiryIdInOrderByCreatedAtAsc(Mockito.anyList()))
+                .thenReturn(java.util.List.of(inline, file));
         Mockito.when(s3Service.getPresignedUrl(Mockito.anyString(), Mockito.any())).thenReturn("https://p/x");
 
-        var dl = adminService.getInquiryAttachment(att.getInquiryId(), att.getId());
-        assertEquals("스크린샷.png", dl.fileName());
+        var detail = adminService.getInquiry(inquiryId);
+        assertEquals(1, detail.inlineImages().size());
+        assertEquals("https://p/x", detail.inlineImages().get(0).url());
+        assertEquals(1, detail.attachments().size());
+        assertEquals("원본.hwp", detail.attachments().get(0).fileName());
+        assertEquals("https://p/x", detail.attachments().get(0).url());   // 다운로드 API 없이 즉시 저장
 
         CustomException e = assertThrows(CustomException.class,
-                () -> adminService.getInquiryAttachment(UUID.randomUUID(), att.getId()));
+                () -> adminService.getInquiry(UUID.randomUUID()));
         assertEquals(ErrorCode.COMMON_NOT_FOUND, e.getErrorCode());
     }
 }

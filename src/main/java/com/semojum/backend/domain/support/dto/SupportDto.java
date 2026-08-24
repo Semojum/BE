@@ -68,7 +68,7 @@ public class SupportDto {
             int attachmentCount        // 첨부+인라인 이미지 개수
     ) {}
 
-    // 문의 상세 — 본문 전문 + 인라인 이미지(presigned URL 15분, 바로 렌더) + 파일 첨부(메타만)
+    // 문의 상세 — 본문 전문 + 인라인 이미지(presigned URL 15분, 바로 렌더) + 파일 첨부(url 포함 — 별도 다운로드 API 없이 즉시 저장 가능, 2026-08-24 통합)
     public record InquiryDetail(
             UUID id,
             String type,
@@ -86,8 +86,8 @@ public class SupportDto {
 
     public record InlineImage(UUID id, String fileName, String contentType, long sizeBytes, String url) {}
 
-    // 문의 첨부 메타 — 다운로드는 GET /api/admin/inquiries/{inquiryId}/attachments/{attachmentId}
-    public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes) {}
+    // 파일 첨부 — url은 presigned 15분(만료 시 상세 재조회로 재발급). 목록에는 안 실림(상세 전용)
+    public record InquiryAttachmentItem(UUID id, String fileName, String contentType, long sizeBytes, String url) {}
 
     // T1-9 목록 페이지 응답 (2026-08-20 페이지네이션)
     public record InquiryPage(

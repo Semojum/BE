@@ -168,7 +168,8 @@ public class AdminSupportService {
         List<SupportDto.InquiryAttachmentItem> files = rows.stream()
                 .filter(a -> !a.isInline())
                 .map(a -> new SupportDto.InquiryAttachmentItem(
-                        a.getId(), a.getFileName(), a.getContentType(), a.getSizeBytes()))
+                        a.getId(), a.getFileName(), a.getContentType(), a.getSizeBytes(),
+                        s3Service.getPresignedUrl(a.getStoragePath(), java.time.Duration.ofMinutes(15))))
                 .toList();
 
         return new SupportDto.InquiryDetail(inquiry.getId(), inquiry.getType(), inquiry.getStatus(),
@@ -188,15 +189,7 @@ public class AdminSupportService {
         return message.length() > PREVIEW_CHARS ? message.substring(0, PREVIEW_CHARS) : message;
     }
 
-    // 문의 첨부 내려받기 — presigned 15분. 이미지면 FE가 미리보기로 렌더 가능 (V27)
-    @Transactional(readOnly = true)
-    public SupportDto.ReceiptDownload getInquiryAttachment(UUID inquiryId, UUID attachmentId) {
-        InquiryAttachment att = inquiryAttachmentRepository.findById(attachmentId)
-                .filter(a -> a.getInquiryId().equals(inquiryId))
-                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_NOT_FOUND));
-        return new SupportDto.ReceiptDownload(att.getFileName(),
-                s3Service.getPresignedUrl(att.getStoragePath(), java.time.Duration.ofMinutes(15)));
-    }
+    // (구 문의 첨부 내려받기 API는 2026-08-24 상세 응답에 통합·폐기 — attachments[].url로 즉시 저장)
 
     // ── 주문·수납 ──
     @Transactional
