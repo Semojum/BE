@@ -111,6 +111,14 @@ static_resources:
       dns_refresh_rate: 5s
       respect_dns_ttl: false
       lb_policy: ROUND_ROBIN
+      # 패닉 라우팅 비활성 (2026-08-26). STRICT_DNS는 DNS 조회 실패 시 마지막 IP를 계속 보유하므로
+      # 배포 후 죽은 색이 unhealthy 엔드포인트로 남는데, 기본 패닉 임계(50%)에서는 "2대 중 1대만
+      # 건강"이 패닉으로 간주돼 죽은 색에도 트래픽을 보냈다 — 요청마다 connect_timeout(0.25s)을
+      # 다 채우고 재시도로 살아나는 +250ms 페널티가 매 배포 후 Envoy 재시작 전까지 지속됐다.
+      # 0이면 항상 healthy 호스트로만 라우팅(전부 unhealthy면 503 — 그게 옳은 동작)
+      common_lb_config:
+        healthy_panic_threshold:
+          value: 0
       health_checks:
         - timeout: 2s
           interval: 3s
