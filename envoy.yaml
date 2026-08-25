@@ -111,14 +111,6 @@ static_resources:
       dns_refresh_rate: 5s
       respect_dns_ttl: false
       lb_policy: ROUND_ROBIN
-      # 패닉 라우팅 비활성 (2026-08-26). STRICT_DNS는 DNS 조회 실패 시 마지막 IP를 계속 보유하므로
-      # 배포 후 죽은 색이 unhealthy 엔드포인트로 남는데, 기본 패닉 임계(50%)에서는 "2대 중 1대만
-      # 건강"이 패닉으로 간주돼 죽은 색에도 트래픽을 보냈다 — 요청마다 connect_timeout(0.25s)을
-      # 다 채우고 재시도로 살아나는 +250ms 페널티가 매 배포 후 Envoy 재시작 전까지 지속됐다.
-      # 0이면 항상 healthy 호스트로만 라우팅(전부 unhealthy면 503 — 그게 옳은 동작)
-      common_lb_config:
-        healthy_panic_threshold:
-          value: 0
       health_checks:
         - timeout: 2s
           interval: 3s
@@ -126,6 +118,12 @@ static_resources:
           unhealthy_threshold: 2
           http_health_check:
             path: /api/health
+            # host 미지정 시 Envoy가 클러스터명(spring_boot)을 Host 헤더로 보내는데, Tomcat은
+            # Host의 밑줄(_)을 RFC 위반으로 400 거부 → HC가 도입(08-16) 이래 영구 실패였고
+            # 패닉 라우팅(전원 unhealthy면 건강 무시 배분)이 몰래 서비스를 지탱해왔다(2026-08-26 발견).
+            # 그 부작용이 배포 후 죽은 색 잔존 엔드포인트로의 라우팅 = 요청당 +250ms.
+            # 밑줄 없는 host를 명시해 HC를 실제로 통과시킨다 — 이제 죽은 색은 정상 배제된다
+            host: backend
       # 두 색이 잠깐 같이 healthy면 트래픽이 반씩 나뉜다 — 전환 중 몇 초뿐이라 무해
       # (deploy.sh가 헬스 통과 후 구 색을 바로 내림)
       load_assignment:
