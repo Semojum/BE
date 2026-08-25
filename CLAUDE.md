@@ -26,14 +26,14 @@
 | RDS | `semojum-postgres` (PostgreSQL 18), 엔드포인트 `semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com`. 백업 7일. **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 함 |
 | S3 | 공개 읽기는 `*/thumbnail.png`만. 원본 페이지는 **presigned URL(15분)**. CORS `GET/HEAD`·origin `*` — 제거 시 에디터 원본 렌더링이 깨짐 |
 | AI 서버 | `semojum-ai`(g5.2xlarge), **같은 VPC — 반드시 사설 IP `172.31.47.101:50051`로 접속**. 공인 IP로 가면 AI 보안그룹의 "BE SG 허용" 규칙에 안 걸려 차단됨 |
-| 도메인 | `api.semojum.app` (Cloudflare Flexible SSL) |
+| 도메인 | `api.semojum.app` — **Cloudflare DNS only + EC2 직접 TLS**(2026-08-26 전환). 프록시 경유 시 무료 플랜이 미국 엣지로 라우팅해 요청당 +0.5~0.7s 지연(실측) → 프록시 해제. 인증서는 Let's Encrypt(certbot 타이머 자동 갱신, deploy hook이 `~/semojum/tls/` 갱신 + Envoy 재시작 — **인증서 파일은 uid 101 소유 필수**, envoy 컨테이너가 envoy 유저로 강등 실행). 갱신 챌린지는 80 포트 `/.well-known/acme-challenge/` → 호스트 certbot(8888) 라우트. **프록시(주황 구름) 재활성화 금지** — 다시 켜면 지연 회귀. DNS 계정: che274582@gmail.com |
 | Docker Hub | `zxhwan/semojum-backend:latest` |
 | 예산 알람 | 월 $50의 80%·100% → `contact@semo-jum.com` |
 
 - 보안그룹: EC2는 80/443 공개·**22는 관리자 IP만** / RDS 5432는 EC2 SG+관리자 IP만
 - **22번을 0.0.0.0/0으로 열지 말 것** — CI가 배포 동안만 러너 IP를 추가·회수한다(`if: always()`). 전용 IAM `semojum-github-actions`는 SG 토글 권한만 보유
 - 관리자 IP가 바뀌면 `semojum-ec2-sg`(22)·`semojum-rds-sg`(5432) 두 곳 갱신
-- 로컬 시크릿: `~/Desktop/semojum-aws-secrets.txt`, SSH 키 `~/.ssh/semojum-key.pem`, 어드민 키 `~/Desktop/semojum-admin-key.txt`
+- 로컬 시크릿: `~/semojum/semojum-aws-secrets.txt`(RDS 비번·인스턴스 ID), SSH 키 `~/.ssh/semojum-key.pem`
 
 ## 배포 — 블루그린 무중단 (2026-08-16 전환)
 
