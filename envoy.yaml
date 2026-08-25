@@ -4,8 +4,53 @@
 # - 재시도는 connect-failure·refused-stream만: 요청이 백엔드에 "도달하기 전" 실패라 재시도해도
 #   중복 실행이 없다 (5xx 재시도는 POST 중복 실행 위험이 있어 넣지 않는다)
 # - SSE: timeout 0s(무제한) + idle_timeout 10800s(=EMITTER_TIMEOUT 3시간) 유지 — 변경 금지
+# - 443 TLS 직접 종료 (2026-08-26): Cloudflare 프록시 경유(미국 엣지, 요청당 +0.7s)를 걷어내고
+#   Let's Encrypt 인증서(certbot, 자동 갱신 + deploy hook이 tls/ 갱신·Envoy 재시작)로 직접 서빙.
+#   80은 ACME 챌린지 통로 + 구형 클라이언트용으로 유지
 static_resources:
   listeners:
+    - name: listener_https
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 443
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                alpn_protocols: ["h2", "http/1.1"]
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/tls/fullchain.pem
+                    private_key:
+                      filename: /etc/envoy/tls/privkey.pem
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_https
+                route_config:
+                  name: local_route_https
+                  virtual_hosts:
+                    - name: local_service_https
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: spring_boot
+                            timeout: 0s
+                            idle_timeout: 10800s
+                            retry_policy:
+                              retry_on: "connect-failure,refused-stream"
+                              num_retries: 2
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
     - name: listener_0
       address:
         socket_address:
@@ -23,6 +68,12 @@ static_resources:
                     - name: local_service
                       domains: ["*"]
                       routes:
+                        # Let's Encrypt HTTP-01 갱신 챌린지 — 호스트의 certbot(--http-01-port 8888)으로 전달.
+                        # certbot이 안 떠 있을 땐 503이지만 챌린지 시각에만 쓰이는 경로라 무해
+                        - match:
+                            prefix: "/.well-known/acme-challenge/"
+                          route:
+                            cluster: acme_certbot
                         - match:
                             prefix: "/"
                           route:
@@ -38,6 +89,21 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
+    # 호스트에서 실행되는 certbot standalone(포트 8888) — compose 네트워크 게이트웨이로 접근
+    - name: acme_certbot
+      connect_timeout: 1s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: acme_certbot
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 172.18.0.1
+                      port_value: 8888
+
     - name: spring_boot
       connect_timeout: 0.25s
       type: STRICT_DNS
