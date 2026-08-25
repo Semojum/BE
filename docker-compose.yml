@@ -56,8 +56,11 @@ services:
         max-file: "5"
     ports:
       - "80:80"
+      # 직접 TLS 종료 (2026-08-26) — Let's Encrypt 인증서는 ./tls (certbot deploy hook이 갱신)
+      - "443:443"
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./tls:/etc/envoy/tls:ro
     # 색 서비스는 profiles라 depends_on을 걸 수 없다 — Envoy는 DNS 재조회(5s)로 알아서 찾는다
 
   backend-blue:
