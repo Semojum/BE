@@ -1,8 +1,10 @@
 package com.semojum.backend.global.thumbnail;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -11,9 +13,14 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 public class ThumbnailService {
 
@@ -25,6 +32,20 @@ public class ThumbnailService {
 
     private Font koreanFont;
 
+    // 첫 장 렌더러: poppler pdftoppm(별도 프로세스) 우선, 없거나 실패하면 PDFBox 폴백.
+    // PDFBox(JVM 내 렌더)는 JPEG 2000(JPXDecode) 이미지를 못 그려 스캔본 썸네일이 백지가 되고,
+    // 순수 Java JPX 디코더(jai-imageio-jpeg2000)는 일부 파일에서 768MB 힙에서도 OOM(2026-08-27 실측)이라
+    // JVM 안에서 풀 수 없다. pdftoppm은 OpenJPEG 내장 + 메모리가 프로세스로 격리돼 안전하다.
+    // 도구는 Dockerfile(poppler-utils)에 내장, 로컬은 미설치 시 자동 폴백
+    private final String pdftoppm;
+    private final int timeoutSeconds;
+
+    public ThumbnailService(@Value("${thumbnail.pdftoppm:pdftoppm}") String pdftoppm,
+                            @Value("${thumbnail.timeout-seconds:30}") int timeoutSeconds) {
+        this.pdftoppm = pdftoppm;
+        this.timeoutSeconds = timeoutSeconds;
+    }
+
     @PostConstruct
     public void init() {
         try (InputStream is = getClass().getResourceAsStream("/fonts/NanumGothic.ttf")) {
@@ -35,8 +56,47 @@ public class ThumbnailService {
         }
     }
 
-    // PDF 첫 페이지를 PNG로 렌더링
+    // PDF 첫 페이지를 PNG로 렌더링 — pdftoppm 우선, 실패 시 PDFBox 폴백
     public byte[] generatePdfThumbnail(byte[] pdfBytes) throws IOException {
+        try {
+            return renderFirstPageWithPdftoppm(pdfBytes);
+        } catch (IOException | InterruptedException e) {
+            log.info("pdftoppm 썸네일 실패, PDFBox 폴백: {}", e.getMessage());
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+        }
+        return renderFirstPageWithPdfBox(pdfBytes);
+    }
+
+    // pdftoppm -f 1 -l 1 -r 100 -png -singlefile <pdf> <prefix> → <prefix>.png. 임시 디렉터리는 항상 정리
+    private byte[] renderFirstPageWithPdftoppm(byte[] pdfBytes) throws IOException, InterruptedException {
+        Path dir = Files.createTempDirectory("thumb-");
+        try {
+            Path in = dir.resolve("in.pdf");
+            Files.write(in, pdfBytes);
+            Process process = new ProcessBuilder(pdftoppm, "-f", "1", "-l", "1", "-r", "100", "-png", "-singlefile",
+                    in.toString(), dir.resolve("out").toString())
+                    .directory(dir.toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IOException("pdftoppm 타임아웃(" + timeoutSeconds + "s)");
+            }
+            Path png = dir.resolve("out.png");
+            if (process.exitValue() != 0 || !Files.exists(png)) {
+                throw new IOException("pdftoppm exit=" + process.exitValue() + " "
+                        + output.substring(0, Math.min(output.length(), 300)));
+            }
+            return Files.readAllBytes(png);
+        } finally {
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+            } catch (IOException ignored) { }
+        }
+    }
+
+    private byte[] renderFirstPageWithPdfBox(byte[] pdfBytes) throws IOException {
         try (PDDocument document = PDDocument.load(pdfBytes)) {
             PDFRenderer renderer = new PDFRenderer(document);
             BufferedImage image = renderer.renderImageWithDPI(0, 100);
