@@ -110,6 +110,12 @@ hwp2pdf:
   # 단계별(pyhwp·soffice) 실행 상한 — 동시 변환 경합(vCPU 2)까지 감안한 여유값 (2026-08-24 120→300)
   timeout-seconds: ${HWP2PDF_TIMEOUT_SECONDS:300}
 
+# PDF 썸네일 첫 장 렌더 — poppler pdftoppm(Dockerfile 내장). JPEG 2000 스캔본은 PDFBox가 백지로 그려
+# 별도 프로세스로 렌더한다(메모리 격리). 미설치·실패 시 PDFBox 폴백 (2026-08-27)
+thumbnail:
+  pdftoppm: ${THUMBNAIL_PDFTOPPM:pdftoppm}
+  timeout-seconds: ${THUMBNAIL_TIMEOUT_SECONDS:30}
+
 # 문의 메일함 연동 (T1-9) — Google Workspace IMAP 읽기 전용 폴링.
 # 자격증명 미설정이면 폴러 비활성(fail-safe). PASSWORD는 Workspace "앱 비밀번호"(2단계 인증 필요)
 mail:
