@@ -126,7 +126,7 @@ com.semojum.backend
 - **mode a HWP 지원 (2026-08-24, HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
 - **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존. **앱은 Tauri — UA(`tauri-plugin-http/x`)에 OS가 없어 브라우저="세모점 앱 (Tauri x)"·OS는 FE의 `X-Client-Os` 헤더가 있으면 그 값**). **위치는 저장 안 함** — T1-4 조회 시점에 `GeoIpResolver`(ip-api.com+Redis 캐시 24h, 실패·사설 IP null, `geoip.enabled`로 차단 가능 — ⚠️ 무료는 비상업 조건·분당 45회, 정식 확장 시 유료/교체)로 `clientLocation` 응답. T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
-- 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행. **PDF 첫 장은 poppler `pdftoppm`(별도 프로세스, Dockerfile 내장) 우선, 미설치·실패 시 PDFBox 폴백(2026-08-27)** — PDFBox는 JPEG 2000(JPXDecode) 스캔본을 백지로 그리고, 순수 Java JPX 디코더(jai-imageio)는 768MB 힙에서도 OOM이라 **JVM 안에서 풀지 말 것**. 설정 `thumbnail.pdftoppm`·`timeout-seconds`(30s)
+- 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행. **PDF 첫 장은 poppler `pdftoppm`(별도 프로세스, Dockerfile 내장) 우선, 미설치·실패 시 PDFBox 폴백(2026-08-27)** — PDFBox는 JPEG 2000(JPXDecode) 스캔본을 백지로 그리고, 순수 Java JPX 디코더(jai-imageio)는 768MB 힙에서도 OOM이라 **JVM 안에서 풀지 말 것**. 설정 `pdf-render.pdftoppm`·`timeout-seconds`(공용, 2026-08-31 키 이동)
 
 ### 스케줄링 (JobDispatcher — 공정 큐)
 - 구 단일 `task_queue` 폐기. 작업별 큐(`queue:job:{jobId}`) + **2계층 라운드로빈**: 유저 링 회전 → 그 유저의 작업 링 회전 → 페이지 1장 pop — 유저 간·작업 간 공평
@@ -168,6 +168,7 @@ com.semojum.backend
 - `jobs.last_modified_at` = **내용이 바뀐 시각**(카드 날짜·정렬·커서·복구 기준) — 페이지 편집(`markContentEdited`)에서만 갱신. 이름변경·이동·복원·즐겨찾기는 갱신 안 함. 변환 진행은 `updated_at`(StaleJobScheduler 전용) — **두 컬럼 섞지 말 것**
 - `folders.last_modified_at`(폴더 정렬 기준) = 직속 항목의 추가·삭제·이름변경만 갱신(윈도우 탐색기 규칙), 내용 편집·즐겨찾기는 제외, 상위 전파 없음. 갱신은 `FolderTouch`에 집약 — 폴더 안 항목을 바꾸는 코드 추가 시 호출할 것. ⚠️ V12 SQL 주석("내용 편집도 포함")은 현재 동작과 다름 — 기준은 이 문서와 `Folder.touchModified()` 주석
 - 페이지 조회(`GET /api/users/jobs/{jobId}/pages/{pageNo}`): 응답 바깥에 `original` — a/c는 presigned URL(15분, **URL 장기 캐시 금지**), b는 텍스트 줄 배열. 타인 Job 403
+- **원본 미리보기 이미지 (V29, 2026-08-31)**: a/c는 `original.imageUrl`(서버가 미리 렌더한 JPEG presigned URL)을 함께 내려준다. **FE는 imageUrl이 있으면 `<img>`로 그리고, null이면 기존대로 `url`(PDF)을 pdf.js로 그린다** — `url`은 하위 호환으로 유지. 렌더는 `PageWorker`가 AI 요청 직전에 수행(`PageImageService`, pdftoppm 150 DPI JPEG q85 → `{jobId}/pages/page-{n}.jpg`, `pages.image_path`)해 page_done 시점엔 준비 완료. 실패·비활성 시 imageUrl은 null(=PDF 폴백)이라 화면은 항상 나온다. **이유(실측)**: 같은 화면을 pdf.js로 그리면 스캔본 1,807~2,853ms(JPEG 2000은 브라우저 네이티브 디코더가 없어 WASM 소프트웨어 디코딩) vs `<img>` 6~9ms, 텍스트 쪽도 33ms→3.7ms. 스위치 `page-image.enabled`(env PAGE_IMAGE_ENABLED=false로 즉시 회귀)·`page-image.dpi`
 
 ### 편집 — 페이지 일괄 저장 (`PUT /api/jobs/{jobId}/pages/{pageNo}/elements`)
 - **유일한 편집 경로** (구 요소 단위 API 4종·edit_logs는 V13에서 제거). body = 페이지 최종 상태 전체 순서대로 `[{id|null, contents}]`
@@ -230,6 +231,7 @@ com.semojum.backend
 
 users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions** / **coupons** / **notices** / **inquiries** / **inquiry_attachments** / **orders** / **app_versions**
 
+- `pages.image_path` = 원본 미리보기 JPEG 경로(V29, null이면 PDF 폴백)
 - 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)
@@ -255,5 +257,6 @@ users / organizations / user_sessions / jobs / pages / page_results / text_eleme
 - `spring.jpa.open-in-view=false` — SSE 장기 연결의 커넥션 고갈 방지. 읽기 서비스는 `@Transactional(readOnly=true)`
 - gRPC deadline(400s) > AI 하드 타임아웃 구조 유지
 - S3 CORS·presigned·공개정책(`*/thumbnail.png`만)은 3종 세트 — 하나라도 건드리면 FE 렌더링·보안에 영향
+- **요소 단위 반복 조회 금지(N+1)** — `PageResultSerializer`가 요소마다 rule_trail을 조회해 요소 95개 페이지 응답이 266ms(콜드 1.4s)였다(2026-08-31). 페이지 단위 배치 조회(`findByElementIdIn`)로 교체했고, 요소별 부가 데이터를 새로 붙일 때도 같은 패턴을 지킬 것
 - `task.md`는 `.gitignore` 등록(커밋 제외)
 - UserService·SseService의 result 직렬화 헬퍼 중복 → 추후 공통화 예정

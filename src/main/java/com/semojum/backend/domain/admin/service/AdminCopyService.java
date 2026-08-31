@@ -124,6 +124,15 @@ public class AdminCopyService {
             String newPath = s3Service.copyObject(oldPath, destKey);
             Page newPage = Page.builder().job(copy).pageNo(page.getPageNo()).pdfPath(newPath).build();
             newPage.updateStatus(page.getStatus());
+            // 미리보기 이미지도 함께 (없거나 실패하면 사본은 PDF 폴백으로 동작)
+            if (page.getImagePath() != null) {
+                try {
+                    newPage.updateImagePath(s3Service.copyObject(
+                            page.getImagePath(), newJobId + "/pages/page-" + page.getPageNo() + ".jpg"));
+                } catch (Exception e) {
+                    log.warn("사본 페이지 이미지 복사 실패(계속): jobId={}, pageNo={}", jobId, page.getPageNo());
+                }
+            }
             newPages.put(page.getPageNo(), pageRepository.save(newPage));
         }
 
