@@ -211,6 +211,7 @@ public class UserService {
                 job.getFinishedAt(),
                 pageNo,
                 job.isInsertPageNumber(),
+                job.resolveLayoutOptions(),
                 pageResultSerializer.buildResult(pageResult),
                 original
         );
@@ -229,7 +230,8 @@ public class UserService {
         return new JobResponseDto.JobDetail(
                 jobId, job.getMode(), job.getStatus(), job.getTotalPages(), job.getFailedPages(),
                 job.getOriginalFileName(), job.getStartedAt(), job.getFinishedAt(), pageNo,
-                job.isInsertPageNumber(), pageResultSerializer.buildResult(pageResult),
+                job.isInsertPageNumber(), job.resolveLayoutOptions(),
+                pageResultSerializer.buildResult(pageResult),
                 buildOriginal(job.getMode(), page));
     }
 

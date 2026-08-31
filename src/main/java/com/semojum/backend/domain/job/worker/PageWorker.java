@@ -122,11 +122,15 @@ public class PageWorker {
                 }
 
                 // gRPC 요청 빌드
+                // 고급 점역 여부는 업로드 옵션에서 정해져 태스크에 실려 온다 (구 태스크엔 없어 기본 false)
+                boolean advancedAi = Boolean.TRUE.equals(taskMap.get("advancedAi"));
+
                 BrailleRequest.Builder requestBuilder = BrailleRequest.newBuilder()
                         .setJobId(jobId)
                         .setPageNo(pageNo)
                         .setTotalPages(totalPages)
-                        .setMode(mode);
+                        .setMode(mode)
+                        .setAdvancedAi(advancedAi);
 
                 if (mode.equals("b")) {
                     // mode b: 텍스트로 전송

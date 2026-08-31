@@ -14,7 +14,9 @@ public class JobResponseDto {
             int totalPages,
             String status,
             boolean insertPageNumber,
-            String footerText
+            String footerText,
+            // 이 작업에 적용된 조판 옵션 — 안 보낸 항목이 기본값으로 채워진 최종 형태 (V30)
+            LayoutOptions layoutOptions
     ) {}
 
     public record Status(
@@ -98,6 +100,8 @@ public class JobResponseDto {
             LocalDateTime finishedAt,
             int pageNo,
             boolean insertPageNumber,
+            // 업로드 때 고른 조판 옵션 — 에디터가 다음에 열 때도 같은 설정으로 열도록 (V30)
+            LayoutOptions layoutOptions,
             Map<String, Object> result,
             OriginalContent original
     ) {}

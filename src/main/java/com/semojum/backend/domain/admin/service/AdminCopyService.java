@@ -102,6 +102,8 @@ public class AdminCopyService {
                 .originalFileName(source.getOriginalFileName() + " (관리자 사본)")
                 .insertPageNumber(source.isInsertPageNumber())
                 .footerText(source.getFooterText())
+                // 조판 옵션도 그대로 승계 — 사본을 열었을 때 원본과 같은 판면으로 보여야 한다 (V30)
+                .layoutOptions(source.getLayoutOptions())
                 .adminCopy(true)   // 통계(건수·쪽수·원가) 제외 표식 (V28)
                 .build();
         jobRepository.saveAndFlush(copy);
