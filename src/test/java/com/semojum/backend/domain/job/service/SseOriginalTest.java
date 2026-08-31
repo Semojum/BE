@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.job.service;
 
+import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.global.s3.S3Service;
@@ -15,15 +16,16 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
- * SSE page_done의 원본 이미지 URL — 있으면 싣고, 없거나 실패하면 키 자체를 넣지 않는다.
- * (변환 중 화면은 FE가 로컬 파일로 그리므로 없어도 렌더는 된다 — PDF URL은 싣지 않는다)
+ * SSE page_done의 original — 페이지 조회 API와 같은 모양({type, url})으로 싣는다.
+ * 이미지가 없거나 실패하면 키 자체를 넣지 않는다(변환 중 화면은 FE가 로컬 파일로 그린다).
  */
-class SseImageUrlTest {
+class SseOriginalTest {
 
     PageRepository pageRepository;
     S3Service s3Service;
@@ -45,15 +47,18 @@ class SseImageUrlTest {
     }
 
     @Test
-    void 이미지가_있으면_presigned_URL을_싣는다() {
+    void 이미지가_있으면_페이지조회와_같은_original_모양으로_싣는다() {
         when(pageRepository.findByJob_IdAndPageNo("job-1", 1))
                 .thenReturn(Optional.of(pageWithImage("s3://b/job-1/pages/page-1.jpg")));
         when(s3Service.getPresignedUrl(eq("s3://b/job-1/pages/page-1.jpg"), any(Duration.class)))
                 .thenReturn("https://signed/page-1.jpg");
 
-        sseService.addImageUrl(event, "job-1", 1);
+        sseService.addOriginal(event, "job-1", 1);
 
-        assertEquals("https://signed/page-1.jpg", event.get("imageUrl"));
+        JobResponseDto.OriginalContent original = (JobResponseDto.OriginalContent) event.get("original");
+        assertEquals("image", original.type());
+        assertEquals("https://signed/page-1.jpg", original.url());
+        assertNull(original.lines());
     }
 
     /** mode b·렌더 전·렌더 실패 — 키를 아예 넣지 않아 FE가 기존 로컬 렌더로 진행한다 */
@@ -62,9 +67,9 @@ class SseImageUrlTest {
         when(pageRepository.findByJob_IdAndPageNo("job-1", 1))
                 .thenReturn(Optional.of(pageWithImage(null)));
 
-        sseService.addImageUrl(event, "job-1", 1);
+        sseService.addOriginal(event, "job-1", 1);
 
-        assertFalse(event.containsKey("imageUrl"));
+        assertFalse(event.containsKey("original"));
     }
 
     /** URL 생성이 실패해도 예외가 밖으로 나가면 page_done 자체가 전송되지 않는다 */
@@ -75,8 +80,8 @@ class SseImageUrlTest {
         when(s3Service.getPresignedUrl(any(), any(Duration.class)))
                 .thenThrow(new RuntimeException("S3 오류"));
 
-        sseService.addImageUrl(event, "job-1", 1);
+        sseService.addOriginal(event, "job-1", 1);
 
-        assertFalse(event.containsKey("imageUrl"));
+        assertFalse(event.containsKey("original"));
     }
 }
