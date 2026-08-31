@@ -145,7 +145,7 @@ com.semojum.backend
 - StaleJobScheduler(5분): IN_PROGRESS 무진행 1h / 고아 PENDING 12h → FAILED (`job.stale.*`로 조정, Instant 기반)
 
 ### SSE (`GET /api/jobs/{jobId}/events`)
-- `queue_position` → `page_done`(모드별 직렬화) → `job_done`. **page_done은 반드시 페이지 순서(1,2,3…)대로 방출** — 뒤 페이지가 먼저 끝나도 보류(커서 방식, 재연결 시 완료분 순서 재전송)
+- `queue_position` → `page_done`(모드별 직렬화 + **`imageUrl`**: 미리 렌더한 원본 이미지 presigned URL, a·c만·없으면 키 자체 없음 — 2026-08-31) → `job_done`. **SSE에는 PDF url을 싣지 않는다** — 변환 중 화면은 FE가 업로드한 로컬 파일로 그리므로 그게 폴백이다 **page_done은 반드시 페이지 순서(1,2,3…)대로 방출** — 뒤 페이지가 먼저 끝나도 보류(커서 방식, 재연결 시 완료분 순서 재전송)
 - 폴링 대체: `GET /api/jobs/{jobId}/status` (Redis Hash)
 
 ### 다운로드 (`POST /api/jobs/{jobId}/download`)
