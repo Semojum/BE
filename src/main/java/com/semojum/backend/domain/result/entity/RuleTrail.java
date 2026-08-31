@@ -47,11 +47,23 @@ public class RuleTrail {
     private Integer colEnd;
     private String tag;
 
+    // 규정 출처 상세 (proto 0901) — 어느 기관의 몇 년 판인지
+    @Column(length = 100)
+    private String publisher;
+
+    private Integer version;
+
+    // 조문 경로(부·장·절·항·호·목). 단계 수가 규정마다 달라 jsonb 한 칸으로 담는다
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "section_path", columnDefinition = "jsonb")
+    private java.util.Map<String, String> sectionPath;
+
     @Builder
     public RuleTrail(UUID elementId, String elementType, String ruleId,
                      String source, String priority,
                      String section, String title, String excerpt,
-                     Integer lineNo, Integer colStart, Integer colEnd, String tag) {
+                     Integer lineNo, Integer colStart, Integer colEnd, String tag,
+                     String publisher, Integer version, java.util.Map<String, String> sectionPath) {
         this.elementId = elementId;
         this.elementType = elementType;
         this.ruleId = ruleId;
@@ -64,5 +76,8 @@ public class RuleTrail {
         this.colStart = colStart;
         this.colEnd = colEnd;
         this.tag = tag;
+        this.publisher = publisher;
+        this.version = version;
+        this.sectionPath = sectionPath;
     }
 }

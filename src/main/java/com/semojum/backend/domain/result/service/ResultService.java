@@ -298,13 +298,36 @@ public class ResultService {
                 .source(protoRule.getSource().isEmpty() ? null : protoRule.getSource())
                 .priority(protoRule.getPriority().isEmpty() ? null : protoRule.getPriority())
                 .section(protoRule.getSection())
-                .title(protoRule.getTitle())
-                .excerpt(protoRule.getExcerpt())
+                // proto가 title→rule_name, excerpt→contents로 개명했다(필드 번호는 그대로라 값은 동일).
+                // DB·응답 이름은 그대로 두고 여기서만 맞춘다 — 이미 나가는 API 필드명을 흔들지 않기 위해서다.
+                .title(protoRule.getRuleName())
+                .excerpt(protoRule.getContents())
                 .lineNo(protoRule.getLineNo())
                 .colStart(protoRule.getColStart() >= 0 ? protoRule.getColStart() : null)
                 .colEnd(protoRule.getColEnd() >= 0 ? protoRule.getColEnd() : null)
                 .tag(protoRule.getTag().isEmpty() ? null : protoRule.getTag())
+                .publisher(protoRule.getPublisher().isEmpty() ? null : protoRule.getPublisher())
+                .version(protoRule.getVersion() > 0 ? protoRule.getVersion() : null)
+                .sectionPath(buildSectionPath(protoRule))
                 .build();
+    }
+
+    /** 조문 경로 — 값이 있는 단계만 담는다(proto는 없는 단계를 ""로 준다). 전부 비면 null */
+    private Map<String, String> buildSectionPath(com.semojum.backend.grpc.RuleTrail protoRule) {
+        if (!protoRule.hasPath()) return null;
+        com.semojum.backend.grpc.SectionPath path = protoRule.getPath();
+        Map<String, String> map = new LinkedHashMap<>();
+        putIfPresent(map, "part", path.getPart());
+        putIfPresent(map, "chapter", path.getChapter());
+        putIfPresent(map, "section", path.getSection());
+        putIfPresent(map, "paragraph", path.getParagraph());
+        putIfPresent(map, "subparagraph", path.getSubparagraph());
+        putIfPresent(map, "item", path.getItem());
+        return map.isEmpty() ? null : map;
+    }
+
+    private void putIfPresent(Map<String, String> map, String key, String value) {
+        if (value != null && !value.isEmpty()) map.put(key, value);
     }
 
     // Drafts 변환 헬퍼: proto Draft(text/contents/label) → List<Map>.

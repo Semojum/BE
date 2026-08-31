@@ -122,6 +122,8 @@ com.semojum.backend
 
 ### Job 생성 (`POST /api/jobs`)
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
+- **조판 옵션 (V30, 2026-09-01)**: 업로드 폼 필드로 함께 받는다 — `cellsPerLine`(32)·`linesPerPage`(26)·`pageNumberLine`(odd|every|none)·`coverPages`(0)·`sourcePageStart`(1)·`braillePageStart`(1)·`showSourcePageNumber`·`showBraillePageNumber`·`footerAlign`(center|right)·`editScope`(all|page)·`advancedAi`. 안 보낸 항목은 기본값(괄호)으로 채워 **`jobs.layout_options`(jsonb) 한 칸**에 저장(기획 확정 전이라 컬럼을 쪼개지 않음). 값 범위 위반은 COMMON4000. **원본 쪽 번호 표기(숫자/로마자)는 미구현**(기획 보류). 응답(Create·페이지 조회)에 `layoutOptions`를 실어 **다음에 열 때 같은 설정으로 복원**. 옵션 없이 만든 기존 작업은 `Job.resolveLayoutOptions()`가 구 `insert_page_number`만 반영한 기본값을 준다
+- `advancedAi`는 스케줄러 태스크 JSON에 실려 `PageWorker`가 gRPC `BrailleRequest.advanced_ai`로 전달
 - 페이지 분리: a/c는 PDF 페이지별 / b는 TXT 30줄 청크 → S3 업로드
 - **mode a HWP 지원 (2026-08-24, HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
@@ -140,6 +142,7 @@ com.semojum.backend
 
 ### ResultService / Job 상태
 - 저장: page_results, text_elements, braille_elements, bounding_boxes, rule_trails, quality_* — drafts는 jsonb `List<Map>` 매핑(응답에 JSON 배열로 직렬화)
+- **rule_trail 출처 상세 (V30, proto 0901)**: `publisher`(문화체육관광부 등)·`version`(2024·2025)·`path`(부·장·절·항·호·목 jsonb, 값 있는 단계만) 추가. proto가 `title`→`rule_name`, `excerpt`→`contents`로 개명했지만 **필드 번호가 같아 값은 동일** — DB 컬럼·API 필드명은 `title`/`excerpt` 그대로 두고 `ResultService`에서만 새 getter로 맞춘다(이미 나가는 응답 필드명을 흔들지 않기 위해)
 - 종료 판정: 전 페이지 terminal 시 성공 0건이면 FAILED, 1건 이상 COMPLETED(부분 성공=완료)
 - `touchJob`/`finishJob` 모두 `WHERE status IN ('PENDING','IN_PROGRESS')` 가드 — **종료된 Job을 페이지 이벤트가 못 되살림. 가드 제거 금지**
 - StaleJobScheduler(5분): IN_PROGRESS 무진행 1h / 고아 PENDING 12h → FAILED (`job.stale.*`로 조정, Instant 기반)
@@ -151,7 +154,7 @@ com.semojum.backend
 ### 다운로드 (`POST /api/jobs/{jobId}/download`)
 - body `{fileName}`(선택), 응답은 파일 스트림. mode a=`.txt` / b·c=`.brf`
 - a: current를 읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 `-`×40 구분선 1줄, **빈 블록·빈 페이지 스킵**, `<!점역자주>` 마커 유지
-- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**
+- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — 구 `BrailleAssist.Job` 래퍼는 페이지행을 boolean으로만 받아 '모든 면'·표지 건너뜀을 표현 못 해 쓰지 않는다(종전 26줄·32칸 하드코딩 제거)
 - 꼬리말은 `jobs.footer_text`를 다운로드 시점에 점역. 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
 
 ### 취소 (`POST /api/jobs/{jobId}/cancel`)

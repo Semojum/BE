@@ -192,6 +192,10 @@ public class PageResultSerializer {
         map.put("col_start", rt.getColStart());
         map.put("col_end", rt.getColEnd());
         map.put("tag", rt.getTag());
+        // 규정 출처 상세 (proto 0901) — 어느 기관의 몇 년 판 어느 조문인지. AI가 안 주면 null
+        map.put("publisher", rt.getPublisher());
+        map.put("version", rt.getVersion());
+        map.put("path", rt.getSectionPath());
         return map;
     }
 

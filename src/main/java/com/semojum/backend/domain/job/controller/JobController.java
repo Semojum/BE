@@ -2,6 +2,7 @@ package com.semojum.backend.domain.job.controller;
 
 import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.service.JobService;
 import com.semojum.backend.domain.job.service.SseService;
@@ -96,11 +97,26 @@ public class JobController {
             @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber,
             // 꼬리말(묵자, 최대 200자) — 다운로드(brf) 때 점역해 페이지행 가운데 배치. 미전송 시 없음
             @RequestParam(value = "footerText", required = false) String footerText,
+            // 조판 옵션 (V30) — 폼 필드로 하나씩 받는다. 안 보낸 항목은 기본값(32칸×26줄·홀수 면 …)
+            @RequestParam(value = "cellsPerLine", required = false) Integer cellsPerLine,
+            @RequestParam(value = "linesPerPage", required = false) Integer linesPerPage,
+            @RequestParam(value = "pageNumberLine", required = false) String pageNumberLine,
+            @RequestParam(value = "coverPages", required = false) Integer coverPages,
+            @RequestParam(value = "sourcePageStart", required = false) Integer sourcePageStart,
+            @RequestParam(value = "braillePageStart", required = false) Integer braillePageStart,
+            @RequestParam(value = "showSourcePageNumber", required = false) Boolean showSourcePageNumber,
+            @RequestParam(value = "showBraillePageNumber", required = false) Boolean showBraillePageNumber,
+            @RequestParam(value = "footerAlign", required = false) String footerAlign,
+            @RequestParam(value = "editScope", required = false) String editScope,
+            @RequestParam(value = "advancedAi", required = false) Boolean advancedAi,
             jakarta.servlet.http.HttpServletRequest request
     ) throws Exception {
+        LayoutOptions options = new LayoutOptions(cellsPerLine, linesPerPage, pageNumberLine, coverPages,
+                sourcePageStart, braillePageStart, showSourcePageNumber, showBraillePageNumber,
+                footerAlign, editScope, advancedAi);
         return ApiResponse.success(
                 jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText,
-                        clientInfoResolver.resolve(request)));
+                        options, clientInfoResolver.resolve(request)));
     }
 
     // job 상태 확인 API
