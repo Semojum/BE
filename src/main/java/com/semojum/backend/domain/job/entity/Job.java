@@ -87,6 +87,12 @@ public class Job {
     @Column(name = "footer_text", length = 200)
     private String footerText;
 
+    // 업로드 시 고른 조판 옵션 (V30) — 한 줄 칸 수·한 면 줄 수·페이지행·꼬리말 정렬·고급 점역 등.
+    // 기획 확정 전이라 컬럼을 쪼개지 않는다. null = 옵션 없이 만든 기존 작업 → 코드가 기본값으로 처리
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "layout_options", columnDefinition = "jsonb")
+    private com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions;
+
     // 접속 메타데이터 (V19, T1-4 요청 정보) — 생성 시 1회 기록. 위치는 표시 시점에 IP로 GeoIP 조회
     @Column(name = "client_ip", length = 45)
     private String clientIp;
@@ -110,7 +116,8 @@ public class Job {
 
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName,
-               String thumbnailUrl, boolean insertPageNumber, String footerText, boolean adminCopy) {
+               String thumbnailUrl, boolean insertPageNumber, String footerText, boolean adminCopy,
+               com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -119,6 +126,7 @@ public class Job {
         this.thumbnailUrl = thumbnailUrl;
         this.insertPageNumber = insertPageNumber;
         this.footerText = footerText;
+        this.layoutOptions = layoutOptions;
         this.adminCopy = adminCopy;
         this.isFavorite = false;
         this.status = "PENDING";
@@ -178,6 +186,13 @@ public class Job {
         this.lastModifiedAt = LocalDateTime.now();
         this.lastEditedPage = pageNo;
         this.isEdited = true;
+    }
+
+    /** 조판에 쓸 옵션 — 없으면(기존 작업) 구 insert_page_number만 반영한 기본값을 준다 */
+    public com.semojum.backend.domain.job.dto.LayoutOptions resolveLayoutOptions() {
+        return layoutOptions != null
+                ? layoutOptions.withDefaults()
+                : com.semojum.backend.domain.job.dto.LayoutOptions.legacy(insertPageNumber);
     }
 
     public void updateStatus(String status) {

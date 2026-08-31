@@ -18,6 +18,7 @@ message BrailleRequest {
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
+  bool   advanced_ai = 7;   // 고급 점역 사용 여부 (업로드 옵션)
 }
 
 message TranslateTextRequest {
@@ -37,17 +38,31 @@ message BoundingBox {
   repeated string flags         = 9;   // 요소 단위 경고
 }
 
+// [변경 0901] title→rule_name, excerpt→contents로 개명(필드 번호는 그대로라 전선 형식은 동일).
+// publisher·version·path 신설 — 규정 출처를 발행처·판·조문 경로까지 특정한다.
 message RuleTrail {
-  string rule_id   = 1;     // 규정 식별자 (예: "KBR-6.13.56")
-  string source    = 2;     // 출처 문서명
-  string section   = 3;     // 조·항 위치
-  string title     = 4;     // 조항 제목
-  string excerpt   = 5;     // 조항 원문 발췌
-  string priority  = 6;     // "primary" | "secondary"
-  int32  line_no   = 7;     // 통 문자열이라 0 고정. -1 = 요소 전체
-  int32  col_start = 8;     // contents[0] 안의 시작 오프셋
-  int32  col_end   = 9;     // 끝 오프셋 (미포함)
-  string tag       = 10;    // 변환 종류 (number_sign / contraction / symbol ...)
+  string rule_id     = 1;   // 예: "MCST-한글-6.13.56"
+  string source      = 2;
+  string section     = 3;   // path 를 " · " 로 합친 표시용 한 줄
+  string rule_name   = 4;   // 옛 title
+  string contents    = 5;   // 옛 excerpt
+  string priority    = 6;
+  int32  line_no     = 7;
+  int32  col_start   = 8;
+  int32  col_end     = 9;
+  string tag         = 10;
+  string publisher   = 11;  // 문화체육관광부 · 국립장애인도서관 · 국립특수교육원
+  int32  version     = 12;  // 2024 · 2025
+  SectionPath path   = 13;
+}
+
+message SectionPath {
+  string part = 1;
+  string chapter = 2;
+  string section = 3;
+  string paragraph = 4;
+  string subparagraph = 5;
+  string item = 6;   // 없는 단계는 ""
 }
 
 message TactileGraphic {           // 미사용. 2차 PoC 이후

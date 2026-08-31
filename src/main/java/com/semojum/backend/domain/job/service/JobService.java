@@ -6,6 +6,7 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
@@ -51,8 +52,13 @@ public class JobService {
     @Transactional
     public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode,
                                            boolean insertPageNumber, String footerText,
+                                           LayoutOptions requestedOptions,
                                            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo)
             throws Exception {
+
+        // 조판 옵션 — 빠진 값은 기본값으로 채워 항상 완전한 형태로 저장한다(읽는 쪽에 null 분기를 안 남긴다)
+        LayoutOptions layoutOptions = validateLayoutOptions(
+                requestedOptions == null ? LayoutOptions.legacy(insertPageNumber) : requestedOptions.withDefaults());
 
         // 꼬리말(묵자) 정리 — 빈 값은 null, 200자 초과는 거절 (TranslateText 입력 상한)
         footerText = footerText == null || footerText.isBlank() ? null : footerText.trim();
@@ -129,6 +135,7 @@ public class JobService {
                     .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                     .insertPageNumber(insertPageNumber)
                     .footerText(footerText)
+                    .layoutOptions(layoutOptions)
                     .build();
             if (clientInfo != null) {
                 job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
@@ -167,8 +174,8 @@ public class JobService {
 
                 // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                 String task = String.format(
-                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\"}",
-                        jobId, pageNo, fullPath, mode, totalPages, user.getId()
+                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                        jobId, pageNo, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
                 );
                 tasks.add(task);
 
@@ -181,7 +188,7 @@ public class JobService {
             jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
             log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
-            return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
+            return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
 
         } else {
             // 5. PDF 페이지별 분리 및 GCS 업로드.
@@ -211,6 +218,7 @@ public class JobService {
                         .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
                         .insertPageNumber(insertPageNumber)
                         .footerText(footerText)
+                        .layoutOptions(layoutOptions)
                         .build();
                 if (clientInfo != null) {
                     job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
@@ -252,8 +260,8 @@ public class JobService {
 
                     // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                     String task = String.format(
-                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\"}",
-                            jobId, i, fullPath, mode, totalPages, user.getId()
+                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                            jobId, i, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
                     );
                     tasks.add(task);
 
@@ -266,9 +274,24 @@ public class JobService {
                 jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
 
                 log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
-                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText);
+                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
             }
         }
+    }
+
+    /**
+     * 조판 옵션 검증 — 값이 이상하면 조판이 조용히 깨지는 대신 업로드에서 막는다.
+     * 칸·줄 수 하한은 BrailleAssist가 던지는 조건(cols ≥ 8)에 맞추고, 상한은 실물 규격에서 나올 수 없는 값으로 둔다.
+     */
+    private LayoutOptions validateLayoutOptions(LayoutOptions o) {
+        boolean valid = o.cellsPerLine() >= 8 && o.cellsPerLine() <= 100
+                && o.linesPerPage() >= 4 && o.linesPerPage() <= 100
+                && o.coverPages() >= 0 && o.sourcePageStart() >= 0 && o.braillePageStart() >= 1
+                && List.of("odd", "every", "none").contains(o.pageNumberLine())
+                && List.of("center", "right").contains(o.footerAlign())
+                && List.of("all", "page").contains(o.editScope());
+        if (!valid) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        return o;
     }
 
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)

@@ -1,5 +1,6 @@
 package com.semojum.backend.domain.job.service;
 
+import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.result.entity.BrailleElement;
@@ -102,19 +103,31 @@ public class JobDownloadService {
         return String.join("\n" + PAGE_SEPARATOR + "\n", pages);
     }
 
-    /** mode b·c — braille-assist 조립 JSON을 만들어 조판·BRF 변환 전체를 위임 */
+    /**
+     * mode b·c — braille-assist에 조판·BRF 변환 전체를 위임.
+     *
+     * <p>업로드 때 고른 조판 옵션(V30)을 그대로 넘긴다. 종전엔 26줄·32칸·1면 시작이 하드코딩이었다.
+     * {@code BrailleAssist.Job} 대신 {@code buildPages(sources, footer, startPage, Options)}를 직접 쓰는 이유는
+     * Job 래퍼가 페이지행을 boolean(홀수/없음) 두 가지로만 받아 '모든 면'과 표지 건너뜀을 표현하지 못해서다.
+     * (braille-assist는 원 레포 복사본이라 수정하지 않는다 — 공개 API만 쓴다)
+     */
     private String buildBrf(Job job, List<PageResult> pageResults) {
-        List<BrailleAssist.JobPage> pages = new ArrayList<>();
+        LayoutOptions opts = job.resolveLayoutOptions();
+
+        // 원본 쪽 번호 시작(sourcePageStart) — 올린 문서 첫 쪽이 실제 몇 쪽인지. 표기만 옮긴다
+        int pageOffset = opts.sourcePageStart() - 1;
+
+        List<BrailleAssist.Source> sources = new ArrayList<>();
         for (PageResult pr : pageResults) {
-            List<BrailleAssist.JobElement> elements = new ArrayList<>();
+            List<BrailleAssist.Block> blocks = new ArrayList<>();
+            int order = 0;
             for (BrailleElement el : brailleElementRepository.findByPageResult(pr)) {
                 List<String> contents = el.getCurrentContent();
                 String text = contents == null || contents.isEmpty() ? "" : String.join("\n", contents);
-                elements.add(new BrailleAssist.JobElement(
-                        el.getElementId(), el.getType(),
-                        el.getHeadingLevel() == null ? 0 : el.getHeadingLevel(), text));
+                // 배열 순서가 읽기 순서다 — 그 순서를 order로 붙여 유지한다
+                blocks.add(new BrailleAssist.Block(order++, text));
             }
-            pages.add(new BrailleAssist.JobPage(pr.getPageNumber(), elements));
+            sources.add(new BrailleAssist.Source(pr.getPageNumber() + pageOffset, blocks));
         }
 
         // 꼬리말: Job 생성 시 받은 묵자를 이 시점에 점역 (braille-assist는 점역하지 않는다)
@@ -123,9 +136,22 @@ public class JobDownloadService {
             footerBraille = grpcClient.translateText(job.getFooterText());
         }
 
-        BrailleAssist.Job assistJob = new BrailleAssist.Job(
-                job.getId(), job.isInsertPageNumber(), 26, 32, footerBraille, 1, pages);
-        return BrailleAssist.buildBrf(assistJob);
+        BrailleAssist.Options assistOptions = new BrailleAssist.Options(
+                opts.cellsPerLine(), opts.linesPerPage(),
+                opts.showSourcePageNumber(), opts.showBraillePageNumber(),
+                opts.pageNumberLine(), opts.coverPages());
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (List<String> page : BrailleAssist.buildPages(
+                sources, footerBraille, opts.braillePageStart(), assistOptions)) {
+            for (String line : page) {
+                if (!first) sb.append('\n');
+                sb.append(BrailleAssist.toBrfAscii(line));
+                first = false;
+            }
+        }
+        return sb.toString();
     }
 
     /** 파일명: 요청값 우선, 없으면 원본 파일명 — 확장자는 모드가 결정. 경로 문자는 제거 */
