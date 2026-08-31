@@ -59,7 +59,8 @@ com.semojum.backend
 │   ├── job       Job 생성·다운로드·취소·SSE, JobManageService(이름변경/이동/삭제)
 │   │   ├── scheduler   JobDispatcher(공정 큐), StaleJobScheduler
 │   │   └── worker      PageWorker
-│   └── result    AI 결과 저장(ResultService), 페이지 일괄 저장(PageSaveService)
+│   ├── result    AI 결과 저장(ResultService), 페이지 일괄 저장(PageSaveService)
+│   └── rule      점자 규정 검색 (BrailleRuleRegistry 인메모리 + BrailleRuleSearchService)
 ├── global
 │   ├── config    SecurityConfig, RedisConfig, S3Config, SchedulingConfig, SwaggerConfig
 │   ├── jwt       JwtFilter, JwtProvider
@@ -188,6 +189,17 @@ com.semojum.backend
 ### page_edit_logs (RLHF 학습용)
 - **1저장 = 1행**, 페이지 전체 before/after 스냅샷(jsonb, origin ai/user 구분) + `changed`(edited/added/deleted/reordered)
 - 입력 컨텍스트 자기완결: a/c는 source_pdf_path+이미지 크기, b는 source_text. 저장과 같은 트랜잭션
+
+### 점자 규정 검색 (`GET /api/rules`, V31 2026-09-01)
+- 데이터는 **DB가 아니라 클래스패스 리소스** `resources/rules/braille-rules.json`(239건·118KB, MCST 184·NLD 42·NISE 13). AI 팀 rule registry와 **같은 파일**이다 — `_meta`에 "모든 emit rule_id ⊆ 이 키 집합" 명시라 어긋나면 에디터 규정 배지가 깨진다. 파일을 코드와 함께 배포해 커밋 단위로 동기화를 보장한다. **규정 개정 = JSON 교체 + 재배포**, 마이그레이션·테이블·시더 없음
+- **DB에 넣지 않은 이유**: ① 로컬·개발·운영이 RDS 하나를 공유해 DB에 두면 배포 색을 롤백해도 규정만 새 버전으로 남음 ② `rule_trails`가 publisher·version·section_path·title·excerpt를 **이미 스냅샷으로** 갖고 있어 조인할 대상이 없음 ③ 순수 읽기 전용이고 법정 고시문이라 운영 중 편집이 오히려 리스크. 폰트(`/fonts/NanumGothic.ttf`)와 같은 결 — 반대로 `pricing_configs`가 DB인 건 운영 중 바뀌고 과거 판 참조가 걸리기 때문. **운영자 무중단 편집이나 규정에 붙는 사용자 데이터(즐겨찾기 등)가 생기면 그때 DB로** — 바꿀 곳은 `BrailleRuleRegistry.load()` 하나
+- 실측(2026-09-01): 기동 로드 17ms / 상주 184KB(힙 768MB의 0.02%) / 검색 1회 **12~41µs**. DB로 했을 때는 왕복 1.66~2.30ms(EC2→RDS 같은 VPC, `SELECT 1` 왕복만 0.71~0.97ms) — 둘 다 충분히 빠르나 인메모리는 커넥션 풀(10개)을 아예 안 건드린다
+- **매칭은 rule_id·조문 경로(부·장·절·항)·규정명·본문 합본에 부분일치** — 어느 요소에 걸려도 결과에 포함. **점수는 결과를 거르지 않고 순서만 정한다**(rule_id 정확 1000 > 부분 300 > 규정명 완전 200 > 시작 140 > 부분 100 > 조문경로 50 > 본문 10+위치가점, 동점은 원문 순서)
+- **공백으로 나눈 여러 단어는 AND**. OR로 하면 "한글 점자 약자"가 208/239건이 된다(실측). 한 단어면 AND·OR 결과가 같아 손해 없음
+- `displayOrder`는 **파일 키 순서를 쓰면 안 된다** — 문자열 정렬이라 `MCST-한글-1.4.10`이 `1.4.8` 앞에 있다. 기관 순위(MCST>NLD>NISE) → MCST 편(기본·한글·수학·과학·외국어) → 조문 번호 **수치** 비교로 재정렬한다
+- 응답 `section`은 **rule_trail의 `section`과 같은 " · " 합본** — 에디터 규정 배지에서 본 문자열이 검색 결과에도 그대로 보인다. `matchedIn`(ruleId/ruleName/section/contents)은 FE 하이라이트 대상 판단용
+- ⚠️ **`contents`는 원문 전문이 아니라 첫 문장 발췌**(`_meta` 명시, 평균 46자). 그래서 본문 뒷부분 단어는 안 걸린다 — "띄어쓰기"가 1건뿐인 이유. 재현율을 올리려면 AI 팀 registry에 전문 필드 추가가 선행돼야 하고, 오면 `contents_full`을 `searchBlob`에 합치는 것으로 끝(API 스펙 불변)
+- 짧은 검색어는 노이즈가 크다(`q="표"` → 102건, "표기·표지·표준"에 다 걸림). 한국어 형태소 분석기 없는 부분일치의 한계 — 기관·편 필터로 좁히는 게 대응이고, pg_bigm 류 도입은 239건에 과잉
 
 ### HWP 페이지 분리 (HwpPageExtractor — ⚠️ 2026-08-24 mode b HWP 폐기로 프로덕션 미사용, 클래스는 도구·이력으로 유지)
 - 페이지 경계 = 레이아웃 캐시 LineSeg의 y좌표 **리셋 지점**. 다단 문서는 단 개수 N 추적해 N번째 리셋만 경계로. ⚠️ `isFirstLineAtPage()`는 실파일에서 항상 false — **사용 금지, y 리셋 방식 유지**
