@@ -1,6 +1,7 @@
 package com.semojum.backend.domain.job.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.repository.PageRepository;
@@ -179,8 +180,7 @@ public class SseService {
 
             // 서버가 미리 렌더해 둔 원본 이미지(a·c). 변환 중 화면은 FE가 업로드한 로컬 파일을 pdf.js로
             // 그려 왔는데, 스캔본은 그 렌더가 쪽당 1.8~2.9초다(2026-08-31 실측). 이 URL을 쓰면 ~10ms.
-            // 없으면(b·렌더 전·실패) null — FE는 지금처럼 로컬 파일로 그리면 되므로 PDF URL은 싣지 않는다.
-            addImageUrl(event, jobId, pageNo);
+            addOriginal(event, jobId, pageNo);
 
             String payload = objectMapper.writeValueAsString(event);
             emitter.send(SseEmitter.event().name("page_done").data(payload));
@@ -191,12 +191,22 @@ public class SseService {
         }
     }
 
-    /** 원본 이미지 presigned URL을 이벤트에 싣는다. 실패해도 이벤트 전송을 막지 않는다(로그만). (테스트 접근용 package-private) */
-    void addImageUrl(Map<String, Object> event, String jobId, int pageNo) {
+    /**
+     * 미리 렌더해 둔 원본 이미지를 페이지 조회 API와 <b>같은 모양</b>({@code {type, url}})으로 싣는다 —
+     * 같은 record를 그대로 써서 FE가 원본 렌더 코드를 한 벌만 두면 되게 한다.
+     *
+     * <p>이미지가 없으면(b · 렌더 실패 · page-image 비활성) <b>키 자체를 넣지 않는다.</b> 이때 PDF URL을
+     * 대신 주면 FE가 이미 쥐고 있는 로컬 파일 대신 S3에서 굳이 내려받는 더 느린 길로 가게 된다 —
+     * 변환 중 화면의 폴백은 그 로컬 파일이다(페이지 조회 API는 로컬 파일이 없어 pdf 폴백을 준다).
+     *
+     * <p>실패해도 이벤트 전송을 막지 않는다(로그만). (테스트 접근용 package-private)
+     */
+    void addOriginal(Map<String, Object> event, String jobId, int pageNo) {
         try {
             pageRepository.findByJob_IdAndPageNo(jobId, pageNo)
                     .map(page -> page.getImagePath())
-                    .ifPresent(path -> event.put("imageUrl", s3Service.getPresignedUrl(path, ORIGINAL_URL_TTL)));
+                    .ifPresent(path -> event.put("original", new JobResponseDto.OriginalContent(
+                            "image", s3Service.getPresignedUrl(path, ORIGINAL_URL_TTL), null)));
         } catch (Exception e) {
             log.warn("SSE 원본 이미지 URL 생성 실패(계속): jobId={}, pageNo={}, error={}", jobId, pageNo, e.getMessage());
         }
