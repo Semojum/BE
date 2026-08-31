@@ -100,15 +100,14 @@ public class JobResponseDto {
             OriginalContent original
     ) {}
 
-    // 페이지별 원본 (a/c: type="pdf"+url(+imageUrl), b: type="text"+lines). 안 쓰는 필드는 null.
-    //
-    // imageUrl = 서버가 미리 렌더해 둔 미리보기 이미지(JPEG). FE는 이 값이 있으면 <img>로 바로 그리고,
-    // null이면 기존대로 url(PDF)을 pdf.js로 그린다 — 아직 렌더 전이거나 렌더에 실패한 쪽의 폴백.
-    // url을 그대로 둔 건 구버전 FE·앱이 계속 동작하게 하기 위함이다(하위 호환).
+    // 페이지별 원본. URL은 하나이고 무엇인지는 type이 알려준다 (2026-08-31 단일화).
+    //   type="image" : a·c 정상 — 서버가 미리 렌더한 JPEG. FE는 <img>로 바로 그린다
+    //   type="pdf"   : a·c인데 이미지가 없을 때(렌더 실패·page-image 비활성) — FE는 pdf.js로 그린다
+    //   type="text"  : b — url 없이 lines(원문 줄 배열)
+    // 사실상 항상 image이지만, 렌더가 실패해도 원본 패널이 비지 않도록 pdf 경로를 남겨 둔다.
     public record OriginalContent(
             String type,
             String url,
-            String imageUrl,
             List<String> lines
     ) {}
 }
