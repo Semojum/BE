@@ -19,6 +19,17 @@ public class JobResponseDto {
             LayoutOptions layoutOptions
     ) {}
 
+    /**
+     * 이 작업의 업로드 설정 — 조판 옵션 + 꼬리말 (같은 옵션 화면에서 함께 고르는 값들).
+     * 에디터가 작업을 열 때 설정을 복원하는 용도. 페이지 조회를 거치지 않고 바로 볼 수 있다.
+     */
+    public record Options(
+            String jobId,
+            boolean insertPageNumber,
+            String footerText,
+            LayoutOptions layoutOptions
+    ) {}
+
     public record Status(
             String jobId,
             int totalPages,

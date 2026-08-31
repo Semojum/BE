@@ -294,6 +294,22 @@ public class JobService {
         return o;
     }
 
+    /**
+     * 이 작업의 업로드 설정 조회 — 조판 옵션 + 꼬리말.
+     *
+     * <p>옵션 없이 만들어진 기존 작업도 기본값이 채워진 완전한 형태를 준다(resolveLayoutOptions).
+     * 페이지 조회와 달리 <b>변환 결과가 없어도</b> 볼 수 있다 — 설정은 업로드 시점에 확정되므로
+     * 변환 중·실패한 작업에서도 필요하다.
+     */
+    @Transactional(readOnly = true)
+    public JobResponseDto.Options getJobOptions(String userId, String jobId) {
+        // 타인 작업이면 403 (페이지 조회와 같은 기준)
+        Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        return new JobResponseDto.Options(
+                job.getId(), job.isInsertPageNumber(), job.getFooterText(), job.resolveLayoutOptions());
+    }
+
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)
     public JobResponseDto.Status getJobStatus(String jobId) {
         Map<Object, Object> redisData = redisTemplate.opsForHash().entries("job:" + jobId + ":pages");
