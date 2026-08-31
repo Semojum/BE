@@ -32,6 +32,11 @@ public class Page {
     @Column(nullable = false)
     private String pdfPath;
 
+    // 원본 미리보기용 렌더 이미지(JPEG) 경로 — FE 좌측 패널이 pdf.js 대신 <img>로 바로 그린다.
+    // null = 아직 생성 전이거나 렌더 실패 → 조회 API가 원본 PDF로 폴백한다 (V29)
+    @Column
+    private String imagePath;
+
     @Column(nullable = false)
     private String status;
 
@@ -49,5 +54,9 @@ public class Page {
 
     public void updateStatus(String status) {
         this.status = status;
+    }
+
+    public void updateImagePath(String imagePath) {
+        this.imagePath = imagePath;
     }
 }

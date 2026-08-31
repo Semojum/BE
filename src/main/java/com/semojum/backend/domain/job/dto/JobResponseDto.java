@@ -100,10 +100,15 @@ public class JobResponseDto {
             OriginalContent original
     ) {}
 
-    // 페이지별 원본 (a/c: type="pdf"+url, b: type="text"+lines). 안 쓰는 필드는 null.
+    // 페이지별 원본 (a/c: type="pdf"+url(+imageUrl), b: type="text"+lines). 안 쓰는 필드는 null.
+    //
+    // imageUrl = 서버가 미리 렌더해 둔 미리보기 이미지(JPEG). FE는 이 값이 있으면 <img>로 바로 그리고,
+    // null이면 기존대로 url(PDF)을 pdf.js로 그린다 — 아직 렌더 전이거나 렌더에 실패한 쪽의 폴백.
+    // url을 그대로 둔 건 구버전 FE·앱이 계속 동작하게 하기 위함이다(하위 호환).
     public record OriginalContent(
             String type,
             String url,
+            String imageUrl,
             List<String> lines
     ) {}
 }

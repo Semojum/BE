@@ -243,11 +243,15 @@ public class UserService {
             // mode b: S3의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
             String text = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
             List<String> lines = Arrays.asList(text.split("\n", -1));
-            return new JobResponseDto.OriginalContent("text", null, lines);
+            return new JobResponseDto.OriginalContent("text", null, null, lines);
         }
         // mode a, c: 원본 PDF 만료형 서명 URL — 버킷 공개 읽기 회수 후에도 FE가 직접 받을 수 있는 유일한 경로
         String url = s3Service.getPresignedUrl(page.getPdfPath(), ORIGINAL_URL_TTL);
-        return new JobResponseDto.OriginalContent("pdf", url, null);
+        // 미리 렌더해 둔 이미지가 있으면 함께 — FE는 이걸 우선 쓰고, 없으면 위 PDF로 폴백한다
+        String imageUrl = page.getImagePath() == null
+                ? null
+                : s3Service.getPresignedUrl(page.getImagePath(), ORIGINAL_URL_TTL);
+        return new JobResponseDto.OriginalContent("pdf", url, imageUrl, null);
     }
 
     // 모드에 따라 FE에 전달할 result 필드 구성 (a: 텍스트추출, b: 점자변환, c: 이미지→점자)

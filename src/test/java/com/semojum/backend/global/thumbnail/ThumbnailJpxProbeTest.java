@@ -21,8 +21,8 @@ class ThumbnailJpxProbeTest {
     @Test
     void thumbnailIsNotBlank() throws Exception {
         byte[] pdf = Files.readAllBytes(Path.of(System.getenv("THUMB_PROBE_FILE")));
-        ThumbnailService service = new ThumbnailService(
-                System.getenv().getOrDefault("THUMB_PROBE_PDFTOPPM", "pdftoppm"), 30);
+        ThumbnailService service = new ThumbnailService(new com.semojum.backend.global.pdf.PdfPageRenderer(
+                System.getenv().getOrDefault("THUMB_PROBE_PDFTOPPM", "pdftoppm"), 30, 85));
         service.init();
         byte[] png = service.generatePdfThumbnail(pdf);
         BufferedImage img = ImageIO.read(new ByteArrayInputStream(png));

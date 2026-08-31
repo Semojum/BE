@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,20 +68,22 @@ public class PageResultSerializer {
 
         if ("a".equals(mode)) {
             // 결과물이므로 전체 필드
-            result.put("text_list", buildTextListFull(textElements));
+            result.put("text_list", buildTextListFull(textElements, loadRuleTrails(ids(textElements, TextElement::getId))));
         } else {
             if ("b".equals(mode)) {
                 // 좌측 패널에 원문을 띄우고 점자와 나란히 대조한다 — id + contents만
                 result.put("text_list", buildTextListSimple(textElements));
             }
-            result.put("braille_text_list", buildBrailleListFull(brailleElements));
+            result.put("braille_text_list",
+                    buildBrailleListFull(brailleElements, loadRuleTrails(ids(brailleElements, BrailleElement::getId))));
         }
 
         result.put("quality_report", buildQualityReport(criticalErrors, reviewFlags));
         return result;
     }
 
-    private List<Map<String, Object>> buildTextListFull(List<TextElement> elements) {
+    private List<Map<String, Object>> buildTextListFull(List<TextElement> elements,
+                                                        Map<UUID, List<Map<String, Object>>> ruleTrails) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (TextElement el : elements) {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -95,7 +99,7 @@ public class PageResultSerializer {
             map.put("contents", orEmpty(el.getCurrentContents()));
             map.put("drafts", orEmpty(el.getDrafts()));
             map.put("is_blocked", el.isBlocked());
-            map.put("rule_trail", buildRuleTrailList(el.getId()));
+            map.put("rule_trail", ruleTrails.getOrDefault(el.getId(), Collections.emptyList()));
             list.add(map);
         }
         return list;
@@ -113,7 +117,8 @@ public class PageResultSerializer {
         return list;
     }
 
-    private List<Map<String, Object>> buildBrailleListFull(List<BrailleElement> elements) {
+    private List<Map<String, Object>> buildBrailleListFull(List<BrailleElement> elements,
+                                                           Map<UUID, List<Map<String, Object>>> ruleTrails) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (BrailleElement el : elements) {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -129,7 +134,7 @@ public class PageResultSerializer {
             map.put("contents", orEmpty(el.getCurrentContent()));
             map.put("drafts", orEmpty(el.getDrafts()));
             map.put("is_blocked", el.isBlocked());
-            map.put("rule_trail", buildRuleTrailList(el.getId()));
+            map.put("rule_trail", ruleTrails.getOrDefault(el.getId(), Collections.emptyList()));
             list.add(map);
         }
         return list;
@@ -153,23 +158,41 @@ public class PageResultSerializer {
         return list;
     }
 
-    private List<Map<String, Object>> buildRuleTrailList(UUID elementId) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (RuleTrail rt : ruleTrailRepository.findByElementId(elementId)) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("rule_id", rt.getRuleId());
-            map.put("source", rt.getSource());
-            map.put("priority", rt.getPriority());
-            map.put("section", rt.getSection());
-            map.put("title", rt.getTitle());
-            map.put("excerpt", rt.getExcerpt());
-            map.put("line_no", rt.getLineNo());
-            map.put("col_start", rt.getColStart());
-            map.put("col_end", rt.getColEnd());
-            map.put("tag", rt.getTag());
-            list.add(map);
+    /**
+     * 페이지의 rule_trail을 <b>한 번의 쿼리</b>로 모아 요소 id별로 묶는다.
+     *
+     * <p>예전에는 요소마다 findByElementId를 불러 요소 수만큼 DB를 왕복했다(N+1). 실측(2026-08-31)
+     * 요소 95개 페이지의 응답이 266ms(행이 캐시에 없는 첫 조회는 1.4s)였고, 그 대부분이 이 왕복이었다.
+     * 요소가 없으면 쿼리 자체를 생략한다(빈 IN 절 방지).
+     */
+    private Map<UUID, List<Map<String, Object>>> loadRuleTrails(Collection<UUID> elementIds) {
+        if (elementIds.isEmpty()) return Collections.emptyMap();
+        Map<UUID, List<Map<String, Object>>> byElement = new HashMap<>();
+        for (RuleTrail rt : ruleTrailRepository.findByElementIdIn(elementIds)) {
+            byElement.computeIfAbsent(rt.getElementId(), k -> new ArrayList<>()).add(toRuleTrailMap(rt));
         }
+        return byElement;
+    }
+
+    private <T> List<UUID> ids(List<T> elements, java.util.function.Function<T, UUID> getId) {
+        List<UUID> list = new ArrayList<>(elements.size());
+        for (T el : elements) list.add(getId.apply(el));
         return list;
+    }
+
+    private Map<String, Object> toRuleTrailMap(RuleTrail rt) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("rule_id", rt.getRuleId());
+        map.put("source", rt.getSource());
+        map.put("priority", rt.getPriority());
+        map.put("section", rt.getSection());
+        map.put("title", rt.getTitle());
+        map.put("excerpt", rt.getExcerpt());
+        map.put("line_no", rt.getLineNo());
+        map.put("col_start", rt.getColStart());
+        map.put("col_end", rt.getColEnd());
+        map.put("tag", rt.getTag());
+        return map;
     }
 
     /**

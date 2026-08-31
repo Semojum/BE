@@ -2,6 +2,7 @@ package com.semojum.backend.domain.job.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.job.scheduler.JobDispatcher;
+import com.semojum.backend.domain.job.service.PageImageService;
 import com.semojum.backend.domain.job.service.JobCancelService;
 import com.semojum.backend.domain.result.service.ResultService;
 import com.semojum.backend.global.s3.S3Service;
@@ -37,6 +38,7 @@ public class PageWorker {
     private final AiServerPool aiServerPool;
     private final JobDispatcher jobDispatcher;
     private final JobCancelService jobCancelService;
+    private final PageImageService pageImageService;
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
@@ -111,6 +113,13 @@ public class PageWorker {
 
                 // GCS에서 파일 다운로드
                 byte[] fileData = s3Service.downloadFile(gcsPath);
+
+                // 원본 미리보기 이미지 렌더 (a·c만 — b는 원본이 텍스트).
+                // AI 요청 '전'에 만들어 둔다: 결과가 나오는 순간(page_done) 사용자가 그 쪽을 열어도
+                // 이미지가 이미 준비돼 있어 PDF 폴백으로 떨어지지 않는다. 실패는 서비스가 삼킨다.
+                if (!mode.equals("b")) {
+                    pageImageService.generateAndStore(jobId, pageNo, fileData);
+                }
 
                 // gRPC 요청 빌드
                 BrailleRequest.Builder requestBuilder = BrailleRequest.newBuilder()
