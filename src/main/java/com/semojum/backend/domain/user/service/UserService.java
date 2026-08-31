@@ -245,9 +245,14 @@ public class UserService {
             List<String> lines = Arrays.asList(text.split("\n", -1));
             return new JobResponseDto.OriginalContent("text", null, lines);
         }
-        // mode a, c: 원본 PDF 만료형 서명 URL — 버킷 공개 읽기 회수 후에도 FE가 직접 받을 수 있는 유일한 경로
-        String url = s3Service.getPresignedUrl(page.getPdfPath(), ORIGINAL_URL_TTL);
-        return new JobResponseDto.OriginalContent("pdf", url, null);
+        // mode a, c: 미리 렌더한 이미지가 원칙(FE가 <img>로 바로 그린다 — 실측 pdf.js 1.8~2.9s → 6~9ms).
+        // 렌더 실패·page-image 비활성으로 이미지가 없을 때만 원본 PDF로 내려 화면이 비지 않게 한다.
+        if (page.getImagePath() != null) {
+            return new JobResponseDto.OriginalContent(
+                    "image", s3Service.getPresignedUrl(page.getImagePath(), ORIGINAL_URL_TTL), null);
+        }
+        return new JobResponseDto.OriginalContent(
+                "pdf", s3Service.getPresignedUrl(page.getPdfPath(), ORIGINAL_URL_TTL), null);
     }
 
     // 모드에 따라 FE에 전달할 result 필드 구성 (a: 텍스트추출, b: 점자변환, c: 이미지→점자)

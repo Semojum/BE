@@ -3,11 +3,13 @@ package com.semojum.backend.domain.job.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.repository.JobRepository;
+import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.job.scheduler.JobDispatcher;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.domain.result.service.PageResultSerializer;
 import com.semojum.backend.global.grpc.AiServerPool;
+import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -34,6 +36,11 @@ public class SseService {
     private final AiServerPool aiServerPool;
     private final PageResultSerializer pageResultSerializer;
     private final JobDispatcher jobDispatcher;
+    private final PageRepository pageRepository;
+    private final S3Service s3Service;
+
+    // 페이지 조회 API와 같은 수명 — 변환 중 화면은 이벤트 도착 즉시 쓰므로 15분이면 충분하다
+    private static final java.time.Duration ORIGINAL_URL_TTL = java.time.Duration.ofMinutes(15);
 
     private static final long EMITTER_TIMEOUT = 3 * 60 * 60 * 1000L; // 3시간 (대용량 문서 직렬 처리 대비 SSE 최대 수명)
 
@@ -170,12 +177,28 @@ public class SseService {
                 event.put("result", pageResultSerializer.buildResult(pageResult));
             }
 
+            // 서버가 미리 렌더해 둔 원본 이미지(a·c). 변환 중 화면은 FE가 업로드한 로컬 파일을 pdf.js로
+            // 그려 왔는데, 스캔본은 그 렌더가 쪽당 1.8~2.9초다(2026-08-31 실측). 이 URL을 쓰면 ~10ms.
+            // 없으면(b·렌더 전·실패) null — FE는 지금처럼 로컬 파일로 그리면 되므로 PDF URL은 싣지 않는다.
+            addImageUrl(event, jobId, pageNo);
+
             String payload = objectMapper.writeValueAsString(event);
             emitter.send(SseEmitter.event().name("page_done").data(payload));
             log.info("SSE page_done 방출: jobId={}, pageNo={}, status={}, payload={}B", jobId, pageNo, status, payload.length());
             payloadLog.info("jobId={}, pageNo={} :: {}", jobId, pageNo, payload);
         } catch (Exception e) {
             log.error("page_done 이벤트 전송 실패: jobId={}, pageNo={}, {}", jobId, pageNo, e.getMessage());
+        }
+    }
+
+    /** 원본 이미지 presigned URL을 이벤트에 싣는다. 실패해도 이벤트 전송을 막지 않는다(로그만). (테스트 접근용 package-private) */
+    void addImageUrl(Map<String, Object> event, String jobId, int pageNo) {
+        try {
+            pageRepository.findByJob_IdAndPageNo(jobId, pageNo)
+                    .map(page -> page.getImagePath())
+                    .ifPresent(path -> event.put("imageUrl", s3Service.getPresignedUrl(path, ORIGINAL_URL_TTL)));
+        } catch (Exception e) {
+            log.warn("SSE 원본 이미지 URL 생성 실패(계속): jobId={}, pageNo={}, error={}", jobId, pageNo, e.getMessage());
         }
     }
 

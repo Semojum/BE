@@ -6,11 +6,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** FE 응답이 AI 변환 결과(proto V3.0.0)를 그대로 반영하는지 검증 */
@@ -34,7 +39,7 @@ class PageResultSerializerTest {
         flagRepo = Mockito.mock(QualityReviewFlagRepository.class);
         serializer = new PageResultSerializer(textRepo, brailleRepo, boxRepo, ruleRepo, errorRepo, flagRepo);
 
-        when(ruleRepo.findByElementId(any())).thenReturn(List.of());
+        when(ruleRepo.findByElementIdIn(any())).thenReturn(List.of());
         when(errorRepo.findByPageResult(any())).thenReturn(List.of());
         when(flagRepo.findByPageResult(any())).thenReturn(List.of());
         when(boxRepo.findByPageResult(any())).thenReturn(List.of());
@@ -135,5 +140,37 @@ class PageResultSerializerTest {
         Map<?, ?> bEl = ((List<Map<?, ?>>) serializer.buildResult(pageResult("b")).get("text_list")).get(0);
         assertEquals(2, bEl.size(), "원문은 id + contents만");
         assertTrue(bEl.containsKey("id") && bEl.containsKey("contents"));
+    }
+
+    /**
+     * N+1 회귀 방지 — rule_trail은 요소 수와 무관하게 <b>쿼리 한 번</b>으로 모아야 한다.
+     * 예전엔 요소마다 findByElementId를 불러 요소 95개 페이지의 응답이 266ms(콜드 1.4s)였다(2026-08-31 실측).
+     */
+    @Test
+    void rule_trail은_요소가_많아도_쿼리_한번으로_모은다() {
+        List<TextElement> many = new ArrayList<>();
+        for (int i = 1; i <= 50; i++) {
+            many.add(TextElement.builder()
+                    .elementId("el-" + i).type("text").readingOrder(i)
+                    .contents(List.of("본문 " + i))
+                    .build());
+        }
+        when(textRepo.findByPageResult(any())).thenReturn(many);
+
+        Map<String, Object> result = serializer.buildResult(pageResult("a"));
+
+        assertEquals(50, ((List<?>) result.get("text_list")).size());
+        verify(ruleRepo, times(1)).findByElementIdIn(anyCollection());  // 50번이 아니라 1번
+        verify(ruleRepo, never()).findByElementId(any());
+    }
+
+    /** 요소가 없는 쪽은 빈 IN 절을 날리지 않는다 (쿼리 자체 생략) */
+    @Test
+    void 요소가_없으면_rule_trail_쿼리를_아예_안_한다() {
+        when(textRepo.findByPageResult(any())).thenReturn(List.of());
+
+        serializer.buildResult(pageResult("a"));
+
+        verify(ruleRepo, never()).findByElementIdIn(anyCollection());
     }
 }

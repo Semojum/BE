@@ -31,6 +31,10 @@ x-backend-common: &backend-common
     - ADMIN_CONSOLE_ORIGINS=${ADMIN_CONSOLE_ORIGINS:-http://54.116.113.4,https://admin.semo-jum.com}
     # HWP→PDF 변환 단계별 타임아웃(초) — .env로 재배포 없이 조정 가능
     - HWP2PDF_TIMEOUT_SECONDS=${HWP2PDF_TIMEOUT_SECONDS:-300}
+    # 원본 미리보기 이미지 — 문제 시 PAGE_IMAGE_ENABLED=false로 즉시 PDF 방식 회귀 가능
+    - PAGE_IMAGE_ENABLED=${PAGE_IMAGE_ENABLED:-true}
+    - PAGE_IMAGE_DPI=${PAGE_IMAGE_DPI:-150}
+    - PDF_RENDER_TIMEOUT_SECONDS=${PDF_RENDER_TIMEOUT_SECONDS:-60}
     - S3_BUCKET=${S3_BUCKET}
     - AWS_REGION=${AWS_REGION}
     # 서비스가 국내 전용이라 서버 시간을 KST로 고정한다.

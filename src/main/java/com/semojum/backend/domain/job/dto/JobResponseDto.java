@@ -1,5 +1,7 @@
 package com.semojum.backend.domain.job.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -100,7 +102,16 @@ public class JobResponseDto {
             OriginalContent original
     ) {}
 
-    // 페이지별 원본 (a/c: type="pdf"+url, b: type="text"+lines). 안 쓰는 필드는 null.
+    // 페이지별 원본. URL은 하나이고 무엇인지는 type이 알려준다 (2026-08-31 단일화).
+    //   type="image" : a·c 정상 — 서버가 미리 렌더한 JPEG. FE는 <img>로 바로 그린다
+    //   type="pdf"   : a·c인데 이미지가 없을 때(렌더 실패·page-image 비활성) — FE는 pdf.js로 그린다
+    //   type="text"  : b — url 없이 lines(원문 줄 배열)
+    // 사실상 항상 image이지만, 렌더가 실패해도 원본 패널이 비지 않도록 pdf 경로를 남겨 둔다.
+    //
+    // NON_NULL: 그 모드에 해당 없는 필드는 키 자체를 빼 응답을 명확하게 한다
+    //   a·c → {type, url}  /  b → {type, lines}
+    // (result 안의 repeated 필드는 여전히 항상 배열로 나간다 — PageResultSerializer 담당, 이 설정과 무관)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record OriginalContent(
             String type,
             String url,
