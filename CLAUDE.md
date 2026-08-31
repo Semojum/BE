@@ -124,6 +124,7 @@ com.semojum.backend
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
 - **조판 옵션 (V30, 2026-09-01)**: 업로드 폼 필드로 함께 받는다 — `cellsPerLine`(32)·`linesPerPage`(26)·`pageNumberLine`(odd|every|none)·`coverPages`(0)·`sourcePageStart`(1)·`braillePageStart`(1)·`showSourcePageNumber`·`showBraillePageNumber`·`footerAlign`(center|right)·`editScope`(all|page)·`advancedAi`. 안 보낸 항목은 기본값(괄호)으로 채워 **`jobs.layout_options`(jsonb) 한 칸**에 저장(기획 확정 전이라 컬럼을 쪼개지 않음). 값 범위 위반은 COMMON4000. **원본 쪽 번호 표기(숫자/로마자)는 미구현**(기획 보류). 응답(Create·페이지 조회)에 `layoutOptions`를 실어 **다음에 열 때 같은 설정으로 복원**. 옵션 없이 만든 기존 작업은 `Job.resolveLayoutOptions()`가 구 `insert_page_number`만 반영한 기본값을 준다
 - `advancedAi`는 스케줄러 태스크 JSON에 실려 `PageWorker`가 gRPC `BrailleRequest.advanced_ai`로 전달
+- **설정 조회 `GET /api/jobs/{jobId}/options`**: 조판 옵션 + 꼬리말 + insertPageNumber를 한 번에. **변환 결과가 없어도 조회 가능**(설정은 업로드 시점 확정 — 변환 중·실패 작업에서도 필요). 타인 작업 403
 - 페이지 분리: a/c는 PDF 페이지별 / b는 TXT 30줄 청크 → S3 업로드
 - **mode a HWP 지원 (2026-08-24, HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
