@@ -119,6 +119,15 @@ public class JobController {
                         options, clientInfoResolver.resolve(request)));
     }
 
+    // 업로드 설정 조회 — 조판 옵션 + 꼬리말. 에디터가 작업을 열 때 설정 복원용 (V30)
+    @GetMapping("/{jobId}/options")
+    public ApiResponse<JobResponseDto.Options> getJobOptions(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(jobService.getJobOptions(userDetails.getUsername(), jobId));
+    }
+
     // job 상태 확인 API
     @GetMapping("/{jobId}/status")
     public ApiResponse<JobResponseDto.Status> getJobStatus(
