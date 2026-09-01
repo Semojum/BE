@@ -59,7 +59,7 @@ public class AuthService {
         boolean webAdmin = user.getRole() == Role.ROLE_ADMIN
                 && User.ADMIN_SCOPE_WEB.equals(user.getAdminScope());
         if (consoleLogin && !webAdmin) {
-            // 웹사이트(콘솔) 로그인은 웹 관리자만 — semojum(APP)·verify01·기관 계정 전부 거부
+            // 웹사이트(콘솔) 로그인은 웹 관리자만 — 앱 관리자(APP)·스코프 미지정·기관 계정 전부 거부
             log.warn("로그인 거부: loginId={} (콘솔은 웹 관리자 전용)", request.loginId());
             throw new CustomException(ErrorCode.AUTH_WRONG_CHANNEL);
         }
