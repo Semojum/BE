@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * 인증 주체 (2026-08-24) — 표준 UserDetails에 loginId를 더한 것.
  * username은 기존 계약대로 유저 UUID 문자열(컨트롤러들이 auth.getName()을 UUID로 파싱한다),
- * loginId는 로그 표기용("REQ … user=org0101" — UUID 8자는 사람이 못 읽어 교체).
+ * loginId는 로그 표기용("REQ … user=testorg01" — UUID 8자는 사람이 못 읽어 교체).
  */
 public record AuthUser(String userId, String loginId, String role) implements UserDetails {
 
