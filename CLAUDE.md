@@ -8,7 +8,7 @@
 |---|---|---|
 | a | 이미지 → 텍스트 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-08-24) |
 | b | 텍스트 → 점자 | TXT (HWP는 a로 이관) |
-| c | 이미지 → 점자 | PDF |
+| c | 이미지 → 점자 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-09-03) |
 
 ## 기술 스택
 
@@ -128,7 +128,7 @@ com.semojum.backend
 - `advancedAi`는 스케줄러 태스크 JSON에 실려 `PageWorker`가 gRPC `BrailleRequest.advanced_ai`로 전달
 - **설정 조회 `GET /api/jobs/{jobId}/options`**: 조판 옵션 + 꼬리말 + insertPageNumber를 한 번에. **변환 결과가 없어도 조회 가능**(설정은 업로드 시점 확정 — 변환 중·실패 작업에서도 필요). 타인 작업 403
 - 페이지 분리: a/c는 PDF 페이지별 / b는 TXT 30줄 청크 → S3 업로드
-- **mode a HWP 지원 (2026-08-24, HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
+- **mode a·c HWP 지원 (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5 — HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
 - **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존. **앱은 Tauri — UA(`tauri-plugin-http/x`)에 OS가 없어 브라우저="세모점 앱 (Tauri x)"·OS는 FE의 `X-Client-Os` 헤더가 있으면 그 값**). **위치는 저장 안 함** — T1-4 조회 시점에 `GeoIpResolver`(ip-api.com+Redis 캐시 24h, 실패·사설 IP null, `geoip.enabled`로 차단 가능 — ⚠️ 무료는 비상업 조건·분당 45회, 정식 확장 시 유료/교체)로 `clientLocation` 응답. T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
 - 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행. **PDF 첫 장은 poppler `pdftoppm`(별도 프로세스, Dockerfile 내장) 우선, 미설치·실패 시 PDFBox 폴백(2026-08-27)** — PDFBox는 JPEG 2000(JPXDecode) 스캔본을 백지로 그리고, 순수 Java JPX 디코더(jai-imageio)는 768MB 힙에서도 OOM이라 **JVM 안에서 풀지 말 것**. 설정 `pdf-render.pdftoppm`·`timeout-seconds`(공용, 2026-08-31 키 이동)
