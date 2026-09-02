@@ -68,6 +68,19 @@ public class S3Service {
         return content;
     }
 
+    /**
+     * 객체 하나 삭제 (원본 페이지 삭제용 — X-1). 저장된 경로 컬럼 값을 그대로 받는다
+     * (s3://·gs://·순수 key 모두 허용). 없는 키를 지워도 S3는 성공으로 응답한다.
+     */
+    public void deleteObject(String storagePath) {
+        String key = toKey(storagePath);
+        s3Client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build());
+        log.info("S3 객체 삭제: {}", key);
+    }
+
     // V3 휴지통 완전 삭제: jobId 프리픽스 아래 모든 객체(원본·페이지·썸네일) 제거
     public void deleteByPrefix(String prefix) {
         software.amazon.awssdk.services.s3.model.ListObjectsV2Request listReq =

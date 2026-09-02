@@ -225,6 +225,24 @@ public class Job {
         this.thumbnailUrl = thumbnailUrl;
     }
 
+    /**
+     * 원본 페이지 한 장을 지운 뒤 쪽 관련 값을 맞춘다 (X-1).
+     * lastEditedPage는 삭제된 쪽을 가리키거나 범위를 넘을 수 있어 함께 보정한다 —
+     * 에디터가 "마지막 편집 위치"로 없는 쪽을 열지 않게.
+     */
+    public void applyPageDeleted(int deletedPageNo, int remainingPages, int[] shiftedFailedPages) {
+        this.totalPages = remainingPages;
+        this.failedPages = shiftedFailedPages;
+        if (lastEditedPage != null) {
+            if (lastEditedPage == deletedPageNo) {
+                this.lastEditedPage = Math.min(deletedPageNo, remainingPages);
+            } else if (lastEditedPage > deletedPageNo) {
+                this.lastEditedPage = lastEditedPage - 1;
+            }
+        }
+        this.lastModifiedAt = LocalDateTime.now();   // 내용이 바뀌었다 — 카드 날짜·정렬 기준
+    }
+
     public void complete(int[] failedPages) {
         this.status = "COMPLETED";
         this.failedPages = failedPages;
