@@ -181,6 +181,7 @@ public class SseService {
             // 서버가 미리 렌더해 둔 원본 이미지(a·c). 변환 중 화면은 FE가 업로드한 로컬 파일을 pdf.js로
             // 그려 왔는데, 스캔본은 그 렌더가 쪽당 1.8~2.9초다(2026-08-31 실측). 이 URL을 쓰면 ~10ms.
             addOriginal(event, jobId, pageNo);
+            addFooterBraille(event, jobId);
 
             String payload = objectMapper.writeValueAsString(event);
             emitter.send(SseEmitter.event().name("page_done").data(payload));
@@ -201,6 +202,26 @@ public class SseService {
      *
      * <p>실패해도 이벤트 전송을 막지 않는다(로그만). (테스트 접근용 package-private)
      */
+    /**
+     * 이 면의 페이지행에 들어갈 점역된 꼬리말 (V31 · FE 요청 S-4).
+     *
+     * <p>업로드 때 미리 점역해 둔 값을 읽기만 한다 — 방출 경로에서 AI를 부르면 SSE가 그만큼 늦어진다.
+     * 값이 없으면(꼬리말 미입력 · 점역 실패) <b>키를 넣지 않는다</b>. 페이지 조회 API는 그 자리에서
+     * 다시 점역해 채우므로, 변환이 끝난 뒤 화면을 열면 결국 값이 온다.
+     *
+     * <p>실패해도 이벤트 전송을 막지 않는다(로그만). (테스트 접근용 package-private)
+     */
+    void addFooterBraille(Map<String, Object> event, String jobId) {
+        try {
+            jobRepository.findById(jobId)
+                    .map(com.semojum.backend.domain.job.entity.Job::getFooterBraille)
+                    .filter(f -> !f.isBlank())
+                    .ifPresent(f -> event.put("footer_braille", f));
+        } catch (Exception e) {
+            log.warn("SSE 꼬리말 점역 조회 실패(계속): jobId={}, error={}", jobId, e.getMessage());
+        }
+    }
+
     void addOriginal(Map<String, Object> event, String jobId, int pageNo) {
         try {
             pageRepository.findByJob_IdAndPageNo(jobId, pageNo)

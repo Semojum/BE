@@ -83,9 +83,14 @@ public class Job {
     @Column(name = "insert_page_number", nullable = false)
     private boolean insertPageNumber;
 
-    // 업로드 시 입력 — 꼬리말(묵자, V15). 다운로드(brf) 때 TranslateText로 점역해 페이지행 가운데 배치
+    // 업로드 시 입력 — 꼬리말(묵자, V15). 업로드 후 수정 경로가 없다(2026-09-03 확인)
     @Column(name = "footer_text", length = 200)
     private String footerText;
+
+    // 위 꼬리말의 점역 결과 (V31) — 업로드 때 한 번 점역해 담고, 화면·SSE·다운로드가 같은 값을 쓴다.
+    // null = 미점역(꼬리말이 없거나 AI 호출 실패) → 읽는 쪽에서 필요할 때 채운다
+    @Column(name = "footer_braille", length = 400)
+    private String footerBraille;
 
     // 업로드 시 고른 조판 옵션 (V30) — 한 줄 칸 수·한 면 줄 수·페이지행·꼬리말 정렬·고급 점역 등.
     // 기획 확정 전이라 컬럼을 쪼개지 않는다. null = 옵션 없이 만든 기존 작업 → 코드가 기본값으로 처리
@@ -186,6 +191,11 @@ public class Job {
         this.lastModifiedAt = LocalDateTime.now();
         this.lastEditedPage = pageNo;
         this.isEdited = true;
+    }
+
+    /** 꼬리말 점역 결과를 채운다 (V31) — 업로드 때, 또는 그때 실패했으면 조회 시점에 */
+    public void updateFooterBraille(String footerBraille) {
+        this.footerBraille = footerBraille;
     }
 
     /** 조판에 쓸 옵션 — 없으면(기존 작업) 구 insert_page_number만 반영한 기본값을 준다 */

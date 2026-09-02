@@ -160,7 +160,8 @@ com.semojum.backend
 - b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — `BrailleAssist.Job` 래퍼는 쓰지 않는다(옛 래퍼가 페이지행을 boolean으로만 받아 못 썼고, 지금은 래퍼도 같은 항목을 받지만 이미 Options로 다 넘기고 있어 옮기지 않았다)
 - **원 레포 동기화 (2026-09-02, 원 레포 `6d5f61e`)**: 복사본은 **본체·테스트·벡터 3종을 함께** 갈아끼운다 — `src/main/java/com/semojum/brailleassist/BrailleAssist.java` + `src/test/java/com/semojum/brailleassist/VectorsTest.java` + `src/test/resources/braille-assist/vectors.json`. 본체만 바꾸면 벡터가 어긋나 `VectorsTest`가 깨진다. ⚠️ `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포(`Path.of("..","vectors.json")`)를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지해야 한다
 - 이 동기화로 고쳐진 것: ① **표지 건너뜀(`coverPages`) 판정이 쪽 번호 → 순번**으로 바뀌었다. 종전엔 `head <= coverPages`라 원본 쪽이 1이 아닌 문서(`sourcePageStart`가 `coverPages`보다 큼)에서 표지 지정이 **조용히 무시**됐다(실측: 시작 100·표지 2 → 아무 면도 표지가 아님) ② 원본 쪽 번호를 끄면 번호 없는 `⠤` 줄만 남던 변경선을 함께 끈다 ③ **꼬리말 우측 정렬(`footerAlign`)이 조판에 반영**된다 — 업로드에서 받아 저장만 하던 값을 이제 `Options` 9인자로 넘긴다. `origPageStart`는 BE가 `pageOffset`으로 이미 처리하므로 null. `showChangeLine`은 2026-09-03에 업로드 옵션으로 승격해 이제 사용자가 고른 값을 넘긴다 — **원본 쪽 번호를 켠 채 변경선만 끄는 것**이 가능해졌다(FE 요청 A-1). `showSourcePageNumber=false`면 라이브러리가 변경선을 함께 끄는 결합은 그대로다(번호 없는 `⠤` 줄만 남는 걸 막는다)
-- 꼬리말은 `jobs.footer_text`를 다운로드 시점에 점역. 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
+- **꼬리말 점역은 업로드 때 한 번 (V31, 2026-09-03 · FE 요청 S-4)**: `jobs.footer_braille`에 담아 **화면(페이지 조회·SSE)·다운로드가 같은 값**을 쓴다. 종전엔 다운로드 순간에만 점역해 에디터가 페이지행의 꼬리말을 그릴 방법이 없었고(파일엔 정상) 내려받을 때마다 AI를 다시 불렀다. `footer_text`는 업로드 후 수정 경로가 없어 캐시 무효화가 없다. **AI 호출 실패는 삼킨다**(썸네일과 같은 취급) — null이면 조회 시점에 `FooterBrailleService.resolve()`가 채운다. SSE는 저장된 값만 읽는다(방출 경로에서 gRPC 금지). **길이 검증(S-9)**: 점역 결과가 페이지행에 안 들어가면 업로드에서 COMMON4000 — 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문(지침 1장3-4). 남는 자리는 `cellsPerLine − (원본 쪽 번호+2) − (점자 면 번호+2)`를 최악 자릿수로 잡아 계산
+- 다운로드는 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
 
 ### 취소 (`POST /api/jobs/{jobId}/cancel`)
 - 즉시가 아닌 **수렴**: 플래그 → 큐 배수 → 인플라이트 마무리 → 확정(완료된 마지막 페이지 뒤는 Page 삭제+total_pages 축소, 사이 구멍은 BLOCKED)
@@ -251,6 +252,7 @@ com.semojum.backend
 users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions** / **coupons** / **notices** / **inquiries** / **inquiry_attachments** / **orders** / **app_versions**
 
 - `pages.image_path` = 원본 미리보기 JPEG 경로(V29, null이면 PDF 폴백)
+- `jobs.footer_braille` = 꼬리말 점역 결과(V31, null이면 미점역 → 조회 시점에 채움)
 - 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)

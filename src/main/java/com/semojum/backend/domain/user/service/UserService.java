@@ -39,6 +39,7 @@ public class UserService {
     private final S3Service s3Service;
     private final PageResultRepository pageResultRepository;
     private final com.semojum.backend.domain.result.service.PageResultSerializer pageResultSerializer;
+    private final com.semojum.backend.domain.job.service.FooterBrailleService footerBrailleService;
 
     /**
      * 전체보기·검색 화면 — 폴더 구분 없이 <b>전역</b>으로 폴더와 파일을 모두 준다.
@@ -212,6 +213,7 @@ public class UserService {
                 pageNo,
                 job.isInsertPageNumber(),
                 job.resolveLayoutOptions(),
+                footerBrailleService.resolve(job),
                 pageResultSerializer.buildResult(pageResult),
                 original
         );
@@ -231,6 +233,7 @@ public class UserService {
                 jobId, job.getMode(), job.getStatus(), job.getTotalPages(), job.getFailedPages(),
                 job.getOriginalFileName(), job.getStartedAt(), job.getFinishedAt(), pageNo,
                 job.isInsertPageNumber(), job.resolveLayoutOptions(),
+                footerBrailleService.resolve(job),
                 pageResultSerializer.buildResult(pageResult),
                 buildOriginal(job.getMode(), page));
     }
