@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -44,12 +45,25 @@ public class PageDeleteService {
     private final PageDeleteRepository pageDeleteRepository;
     private final S3Service s3Service;
 
-    /**
-     * @return 삭제 후 남은 총 쪽수
-     * @throws CustomException 타인 작업 403 · 변환 중 JOB4010 · 없는 쪽 JOB4001 · 마지막 한 장 COMMON4000
-     */
+    /** 한 장 삭제 — 여러 장은 {@link #deletePages}를 쓴다 */
     @Transactional
     public int deletePage(String userId, String jobId, int pageNo) {
+        return deletePages(userId, jobId, List.of(pageNo));
+    }
+
+    /**
+     * 여러 장을 한 번에 지운다.
+     *
+     * <p><b>요청은 지금 화면에 보이는 번호 그대로</b> 보내면 된다. 한 장씩 호출하면 지울 때마다
+     * 뒤 번호가 당겨져 두 번째 요청부터 엉뚱한 쪽을 지우게 되는데(3·5를 지우려다 3을 지우면
+     * 원래 5는 4가 된다), 여기서는 <b>큰 번호부터 내려가며</b> 지워 그 문제가 없다.
+     *
+     * @return 삭제 후 남은 총 쪽수
+     * @throws CustomException 타인 작업 403 · 변환 중 JOB4010 · 없는 쪽 JOB4001 ·
+     *                         빈 목록이거나 전부 지우려 하면 COMMON4000
+     */
+    @Transactional
+    public int deletePages(String userId, String jobId, List<Integer> pageNos) {
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
 
@@ -57,11 +71,34 @@ public class PageDeleteService {
         if ("PENDING".equals(job.getStatus()) || "IN_PROGRESS".equals(job.getStatus())) {
             throw new CustomException(ErrorCode.JOB_IN_PROGRESS);
         }
-        // 마지막 한 장까지 지우면 결과가 하나도 없는 껍데기가 된다 — 그건 작업 삭제로 해야 한다
-        if (job.getTotalPages() <= 1) {
+
+        // 중복은 한 번으로 접고, 큰 번호부터 지운다 — 앞을 먼저 지우면 뒤 번호가 당겨져 어긋난다
+        List<Integer> targets = pageNos.stream().distinct()
+                .sorted(java.util.Comparator.reverseOrder()).toList();
+        if (targets.isEmpty()) {
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
+        // 전부 지우면 결과가 하나도 없는 껍데기가 된다 — 그건 작업 삭제로 해야 한다
+        if (targets.size() >= job.getTotalPages()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        // 하나라도 없는 쪽이면 아무것도 지우지 않는다 — 절반만 지워진 상태를 만들지 않는다
+        for (int pageNo : targets) {
+            if (pageRepository.findByJob_IdAndPageNo(jobId, pageNo).isEmpty()) {
+                throw new CustomException(ErrorCode.JOB_NOT_FOUND);
+            }
+        }
 
+        int remaining = job.getTotalPages();
+        for (int pageNo : targets) {
+            remaining = deleteOne(job, jobId, pageNo, remaining);
+        }
+        log.info("원본 페이지 삭제: jobId={}, 지운 쪽={}, 남은 쪽={}", jobId, targets, remaining);
+        return remaining;
+    }
+
+    /** 한 장을 실제로 지우고 번호를 당긴다. 가드는 호출부가 이미 마쳤다 */
+    private int deleteOne(Job job, String jobId, int pageNo, int currentTotal) {
         Page page = pageRepository.findByJob_IdAndPageNo(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -80,7 +117,7 @@ public class PageDeleteService {
         pageDeleteRepository.shiftPageResultsAfter(jobId, pageNo);
 
         // 3) Job의 쪽 관련 값 보정
-        int remaining = job.getTotalPages() - 1;
+        int remaining = currentTotal - 1;
         jobRepository.updateTotalPages(jobId, remaining);
         job.applyPageDeleted(pageNo, remaining, shiftFailedPages(job.getFailedPages(), pageNo));
 
@@ -88,7 +125,6 @@ public class PageDeleteService {
         deleteQuietly(page.getPdfPath());
         deleteQuietly(page.getImagePath());
 
-        log.info("원본 페이지 삭제: jobId={}, pageNo={}, 남은 쪽={}", jobId, pageNo, remaining);
         return remaining;
     }
 
