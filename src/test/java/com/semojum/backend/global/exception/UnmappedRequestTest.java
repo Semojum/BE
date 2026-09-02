@@ -68,4 +68,28 @@ class UnmappedRequestTest {
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("COMMON4005"));
     }
+
+    /**
+     * 깨진 JSON은 클라이언트 잘못이라 400이어야 한다.
+     * 핸들러가 없으면 catch-all이 삼켜 500 + ERROR 스택으로 나가고,
+     * "grep WARN|ERROR가 곧 장애 화면"이라는 로깅 원칙이 깨진다(2026-09-02 실측).
+     */
+    @Test
+    void 깨진_JSON_본문은_400을_준다() throws Exception {
+        mockMvc.perform(post("/api/public/inquiries")
+                        .contentType("application/json")
+                        .content("not-json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON4000"));
+    }
+
+    /** 객체를 기대하는 자리에 배열을 보낸 경우도 파싱 실패다 (역직렬화 타입 불일치) */
+    @Test
+    void 기대와_다른_타입의_본문도_400을_준다() throws Exception {
+        mockMvc.perform(post("/api/public/inquiries")
+                        .contentType("application/json")
+                        .content("[]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON4000"));
+    }
 }
