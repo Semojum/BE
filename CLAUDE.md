@@ -44,6 +44,7 @@
 - Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 timeout 0s·idle_timeout 10800s 변경 금지**
 - 안전핀: `-Xmx768m`(JAVA_TOOL_OPTIONS), EC2 스왑 1GB, graceful shutdown 20s(+stop_grace_period 30s)
 - 로그 뷰어: `scripts/semlog.sh` (ERROR 빨강·WARN 노랑·REQ 시안)
+- **로그 아카이브 (2026-09-02)**: Docker json-file 로그는 컨테이너에 딸려 있어 **배포로 컨테이너를 갈아끼우면 함께 사라진다**. deploy.sh가 사라지기 직전(비활성 색 재생성 전)·정지 직후·헬스 실패 시 `docker logs`를 통째로 `~/semojum/logs/backend-{색}-{기동시각}.log`에 뜬다(최근 30개 보관, 파일명이 기동 시각이라 재실행해도 덮어쓰기·중복 없음). 장애 분석은 이 파일 → `page_results.raw_response`·T1-4 순으로 본다
 
 ## 패키지 구조 (요약)
 
