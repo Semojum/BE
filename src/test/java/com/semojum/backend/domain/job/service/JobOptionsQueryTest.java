@@ -48,7 +48,7 @@ class JobOptionsQueryTest {
     @Test
     void 저장된_옵션을_그대로_돌려준다() {
         LayoutOptions saved = new LayoutOptions(40, 20, "every", 2, 100, 5,
-                true, false, "right", "page", true).withDefaults();
+                true, false, true, "right", "page", true).withDefaults();
         when(jobRepository.findByIdAndUserId(anyString(), any(UUID.class)))
                 .thenReturn(Optional.of(job(saved, true, "수학 익힘책 1")));
 

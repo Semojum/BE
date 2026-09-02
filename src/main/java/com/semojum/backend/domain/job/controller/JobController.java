@@ -106,6 +106,7 @@ public class JobController {
             @RequestParam(value = "braillePageStart", required = false) Integer braillePageStart,
             @RequestParam(value = "showSourcePageNumber", required = false) Boolean showSourcePageNumber,
             @RequestParam(value = "showBraillePageNumber", required = false) Boolean showBraillePageNumber,
+            @RequestParam(value = "showChangeLine", required = false) Boolean showChangeLine,
             @RequestParam(value = "footerAlign", required = false) String footerAlign,
             @RequestParam(value = "editScope", required = false) String editScope,
             @RequestParam(value = "advancedAi", required = false) Boolean advancedAi,
@@ -113,7 +114,7 @@ public class JobController {
     ) throws Exception {
         LayoutOptions options = new LayoutOptions(cellsPerLine, linesPerPage, pageNumberLine, coverPages,
                 sourcePageStart, braillePageStart, showSourcePageNumber, showBraillePageNumber,
-                footerAlign, editScope, advancedAi);
+                showChangeLine, footerAlign, editScope, advancedAi);
         return ApiResponse.success(
                 jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText,
                         options, clientInfoResolver.resolve(request)));

@@ -32,11 +32,11 @@ class LayoutOptionsTypesettingTest {
                 o.cellsPerLine(), o.linesPerPage(),
                 o.showSourcePageNumber(), o.showBraillePageNumber(),
                 o.pageNumberLine(), o.coverPages(),
-                null, true, o.footerAlign());
+                null, o.showChangeLine(), o.footerAlign());
     }
 
     private LayoutOptions opts(Integer cells, Integer lines, String pageRow, Integer sourceStart) {
-        return new LayoutOptions(cells, lines, pageRow, null, sourceStart, null, null, null, null, null, null)
+        return new LayoutOptions(cells, lines, pageRow, null, sourceStart, null, null, null, null, null, null, null)
                 .withDefaults();
     }
 
@@ -89,12 +89,48 @@ class LayoutOptionsTypesettingTest {
     void 표지_건너뛰기는_원본_쪽_번호가_1이_아니어도_동작한다() {
         for (int start : new int[]{1, 3, 100}) {
             LayoutOptions o = new LayoutOptions(null, null, "every", 2, start,
-                    null, null, null, null, null, null).withDefaults();
+                    null, null, null, null, null, null, null).withDefaults();
             List<List<String>> pages = typeset(o, 4);
 
             assertTrue(!hasPageRow(pages, 0),
                     "표지 첫 면엔 페이지행이 없어야 한다 (sourcePageStart=" + start + ")");
         }
+    }
+
+    /**
+     * 변경선 스위치(showChangeLine) — 원본 쪽 번호를 켠 채로도 변경선만 끌 수 있어야 한다.
+     *
+     * <p>FE 요청 A-1(2026-09-03). 종전엔 이 스위치가 없어 `showSourcePageNumber`를 꺼야만
+     * 변경선이 덩달아 꺼졌고, 화면에서 변경선만 끈 작업을 내려받으면 .brf엔 그대로 남아 있었다.
+     */
+    @Test
+    void 변경선만_따로_끌_수_있다() {
+        // 원본 쪽 번호는 켜 둔 채 변경선만 끈다
+        List<List<String>> on = typeset(changeLine(true), 3);
+        List<List<String>> off = typeset(changeLine(false), 3);
+
+        assertTrue(hasChangeLine(on), "켜면 변경선(⠤ 줄)이 있어야 한다");
+        assertTrue(!hasChangeLine(off), "끄면 변경선이 없어야 한다");
+        // 번호 자체는 살아 있어야 한다 — 페이지행의 원본 쪽 번호는 그대로
+        assertTrue(hasPageRow(off, 0), "변경선을 꺼도 페이지행은 남는다");
+    }
+
+    /** 기본값은 켜짐 — 옵션을 안 보낸 기존 작업은 종전과 같이 동작한다 */
+    @Test
+    void 변경선_기본값은_켜짐이다() {
+        assertTrue(new LayoutOptions(null, null, null, null, null, null, null, null,
+                null, null, null, null).withDefaults().showChangeLine());
+        assertTrue(hasChangeLine(typeset(opts(null, null, "every", null), 3)));
+    }
+
+    private LayoutOptions changeLine(boolean on) {
+        return new LayoutOptions(null, null, "every", null, null, null, true, null,
+                on, null, null, null).withDefaults();
+    }
+
+    /** 변경선 = 하이픈 점형(⠤)으로만 이뤄진 앞부분을 가진 줄 */
+    private boolean hasChangeLine(List<List<String>> pages) {
+        return pages.stream().flatMap(List::stream).anyMatch(l -> l.startsWith("⠤⠤⠤⠤"));
     }
 
     /** 꼬리말 정렬 — right면 가운데보다 오른쪽에 붙는다 (동기화로 조판까지 반영됨) */
@@ -114,7 +150,7 @@ class LayoutOptionsTypesettingTest {
 
     private LayoutOptions align(String footerAlign) {
         return new LayoutOptions(null, null, "every", null, null, null, null, null,
-                footerAlign, null, null).withDefaults();
+                null, footerAlign, null, null).withDefaults();
     }
 
     private String lastLine(List<List<String>> pages) {
