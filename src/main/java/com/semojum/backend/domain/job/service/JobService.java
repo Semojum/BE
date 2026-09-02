@@ -111,16 +111,10 @@ public class JobService {
         List<String> tasks = new ArrayList<>();
 
         if (mode.equals("b")) {
-            // 5-b. txt → 30줄 단위 청크로 분리하여 S3 업로드
+            // 5-b. txt → 쪽 단위 청크로 분리하여 S3 업로드
             // (HWP는 2026-08-24부터 mode a에서 PDF 변환으로 처리 — 텍스트 추출 경로 폐기)
             String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
-            String[] lines = fullText.split("\n");
-            List<String> chunks = new ArrayList<>();
-            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
-                int end = Math.min(i + LINES_PER_PAGE, lines.length);
-                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
-            }
-            if (chunks.isEmpty()) chunks.add(fullText);
+            List<String> chunks = splitIntoPages(fullText);
 
             int totalPages = chunks.size();
 
@@ -315,6 +309,53 @@ public class JobService {
         return new JobResponseDto.Options(
                 job.getId(), job.isInsertPageNumber(), job.getFooterText(),
                 footerBrailleService.resolve(job), job.resolveLayoutOptions());
+    }
+
+
+    /** mode a 다운로드가 원본 쪽 사이에 넣는 구분선 — 하이픈 정확히 40개인 줄 (JobDownloadService와 같은 값) */
+    private static final String PAGE_SEPARATOR = "-".repeat(40);
+
+    /**
+     * mode b 입력 텍스트를 쪽 단위로 자른다.
+     *
+     * <p><b>구분선이 있으면 그 경계를 쓰고, 없으면 30줄씩</b> 자른다.
+     *
+     * <p>mode a 결과(.txt)는 원본 쪽 사이에 {@link #PAGE_SEPARATOR}를 넣는다 — "점역으로 보내기"로
+     * mode b에 넘길 것을 전제한 포맷이다. 종전엔 mode b가 이 표식을 못 알아보고 무조건 30줄로 잘라
+     * ① 하이픈 40개가 본문으로 점역되고 ② 쪽 경계가 원문과 무관해져 <b>페이지행의 원본 쪽 번호가
+     * 실제 원문과 어긋났다</b>(FE 요청 B-1). 이제 구분선을 경계로 쓰고 그 줄은 본문에서 뺀다.
+     *
+     * <p>구분선이 없는 보통 TXT는 종전과 똑같이 30줄씩 — 이 30이라는 값은 원문 쪽과 아무 관계가
+     * 없는 임의값이라, 그 경우 페이지행의 "원본 쪽 번호"는 청크 번호일 뿐이다.
+     *
+     * <p>⚠️ mode a는 <b>내용이 전부 빈 쪽에는 구분선도 남기지 않는다</b>. 그래서 원문 중간에 빈
+     * 쪽이 있었다면 그만큼 번호가 앞으로 당겨진다 — .txt 자체에 그 쪽이 없으므로 복원할 수 없다.
+     */
+    static List<String> splitIntoPages(String fullText) {
+        String[] lines = fullText.split("\n", -1);
+        boolean hasSeparator = Arrays.stream(lines).anyMatch(PAGE_SEPARATOR::equals);
+
+        List<String> chunks = new ArrayList<>();
+        if (hasSeparator) {
+            List<String> current = new ArrayList<>();
+            for (String line : lines) {
+                if (PAGE_SEPARATOR.equals(line)) {     // 경계 — 구분선 자체는 버린다
+                    chunks.add(String.join("\n", current));
+                    current.clear();
+                } else {
+                    current.add(line);
+                }
+            }
+            chunks.add(String.join("\n", current));   // 마지막 쪽
+            chunks.removeIf(String::isBlank);          // 구분선이 연달아 있거나 끝에 붙은 경우
+        } else {
+            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
+                int end = Math.min(i + LINES_PER_PAGE, lines.length);
+                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
+            }
+        }
+        if (chunks.isEmpty()) chunks.add(fullText);
+        return chunks;
     }
 
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)
