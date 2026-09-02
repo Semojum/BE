@@ -137,15 +137,13 @@ public class JobDownloadService {
             footerBraille = grpcClient.translateText(job.getFooterText());
         }
 
-        // 뒤 3개는 2026-09-02 원 레포 동기화로 생긴 항목이다.
-        //  - origPageStart: null — 쪽 번호는 위 pageOffset으로 BE가 이미 옮겨 담았다
-        //  - showChangeLine: true(라이브러리 기본) — 업로드 화면에 없는 항목이라 기본값을 쓴다
-        //  - footerAlign: 업로드에서 받아 저장해두고도 조판에 못 넘기던 값 — 이제 연결한다
+        // origPageStart는 null — 원본 쪽 번호는 위 pageOffset으로 BE가 이미 옮겨 담았다.
+        // showChangeLine·footerAlign은 업로드에서 받은 값을 그대로 넘긴다.
         BrailleAssist.Options assistOptions = new BrailleAssist.Options(
                 opts.cellsPerLine(), opts.linesPerPage(),
                 opts.showSourcePageNumber(), opts.showBraillePageNumber(),
                 opts.pageNumberLine(), opts.coverPages(),
-                null, true, opts.footerAlign());
+                null, opts.showChangeLine(), opts.footerAlign());
 
         StringBuilder sb = new StringBuilder();
         boolean first = true;
