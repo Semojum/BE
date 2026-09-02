@@ -23,11 +23,16 @@ class LayoutOptionsTypesettingTest {
             sources.add(new BrailleAssist.Source(p + o.sourcePageStart() - 1,
                     List.of(new BrailleAssist.Block(0, body))));
         }
-        BrailleAssist.Options opts = new BrailleAssist.Options(
+        return BrailleAssist.buildPages(sources, "", o.braillePageStart(), assistOptions(o));
+    }
+
+    /** JobDownloadService.buildBrf와 같은 방식으로 조립한다 — 호출부가 바뀌면 여기도 바꾼다 */
+    private BrailleAssist.Options assistOptions(LayoutOptions o) {
+        return new BrailleAssist.Options(
                 o.cellsPerLine(), o.linesPerPage(),
                 o.showSourcePageNumber(), o.showBraillePageNumber(),
-                o.pageNumberLine(), o.coverPages());
-        return BrailleAssist.buildPages(sources, "", o.braillePageStart(), opts);
+                o.pageNumberLine(), o.coverPages(),
+                null, true, o.footerAlign());
     }
 
     private LayoutOptions opts(Integer cells, Integer lines, String pageRow, Integer sourceStart) {
@@ -71,6 +76,50 @@ class LayoutOptionsTypesettingTest {
         // 두 번째 원본 쪽으로 넘어가는 변경선에 101이 찍힌다(수표 ⠼ + 숫자 점형)
         String all = String.join("\n", shifted.stream().flatMap(List::stream).toList());
         assertTrue(all.contains("⠼"), "수표가 있어야 한다");
+    }
+
+    /**
+     * 표지 건너뛰기는 <b>순번</b>으로 판정해야 한다.
+     *
+     * <p>2026-09-02 원 레포 동기화 전 복사본은 원본 <b>쪽 번호</b>로 판정해서
+     * ({@code head <= coverPages}) 원본 쪽이 1이 아닌 문서에서는 표지 지정이 조용히 무시됐다.
+     * 100쪽부터 시작하는 문서에 표지 2쪽을 주면 {@code 100 <= 2}가 거짓이라 아무 면도 표지가 아니었다.
+     */
+    @Test
+    void 표지_건너뛰기는_원본_쪽_번호가_1이_아니어도_동작한다() {
+        for (int start : new int[]{1, 3, 100}) {
+            LayoutOptions o = new LayoutOptions(null, null, "every", 2, start,
+                    null, null, null, null, null, null).withDefaults();
+            List<List<String>> pages = typeset(o, 4);
+
+            assertTrue(!hasPageRow(pages, 0),
+                    "표지 첫 면엔 페이지행이 없어야 한다 (sourcePageStart=" + start + ")");
+        }
+    }
+
+    /** 꼬리말 정렬 — right면 가운데보다 오른쪽에 붙는다 (동기화로 조판까지 반영됨) */
+    @Test
+    void 꼬리말_우측_정렬이_조판에_반영된다() {
+        String footer = "⠋⠕⠕⠞";
+        List<BrailleAssist.Source> src = List.of(
+                new BrailleAssist.Source(1, List.of(new BrailleAssist.Block(0, "⠁⠃⠉"))));
+
+        String center = lastLine(BrailleAssist.buildPages(src, footer, 1, assistOptions(align("center"))));
+        String right = lastLine(BrailleAssist.buildPages(src, footer, 1, assistOptions(align("right"))));
+
+        assertTrue(center.indexOf(footer) < right.indexOf(footer),
+                "right가 center보다 오른쪽이어야 한다: center=" + center.indexOf(footer)
+                        + " right=" + right.indexOf(footer));
+    }
+
+    private LayoutOptions align(String footerAlign) {
+        return new LayoutOptions(null, null, "every", null, null, null, null, null,
+                footerAlign, null, null).withDefaults();
+    }
+
+    private String lastLine(List<List<String>> pages) {
+        List<String> page = pages.get(0);
+        return page.get(page.size() - 1);
     }
 
     /**
