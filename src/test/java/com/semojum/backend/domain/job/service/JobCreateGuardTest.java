@@ -35,7 +35,8 @@ class JobCreateGuardTest {
                 Mockito.mock(JobRepository.class), Mockito.mock(PageRepository.class),
                 userRepository, Mockito.mock(S3Service.class),
                 Mockito.mock(RedisTemplate.class), Mockito.mock(JobDispatcher.class),
-                Mockito.mock(ThumbnailService.class), Mockito.mock(HwpToPdfConverter.class));
+                Mockito.mock(ThumbnailService.class), Mockito.mock(HwpToPdfConverter.class),
+                Mockito.mock(FooterBrailleService.class));
 
         User orgAdmin = User.builder().loginId("kblib01").password("pw").build();
         orgAdmin.changeRole(Role.ROLE_ORG_ADMIN);
