@@ -322,7 +322,12 @@ public class JobService {
         jobDispatcher.touchForeground(jobId);
 
         int totalPages = Integer.parseInt((String) redisData.get("total_pages"));
+        // 끝난 쪽 수 — BLOCKED(실패)도 포함한다. 진행률의 분자라서 실패 쪽을 빼면
+        // 실패가 섞인 작업은 분자가 total에 영원히 못 닿아 화면이 "진행 중"에 멈춘다.
+        // 이름이 내용과 어긋나지만 이미 나간 응답 필드라 의미를 흔들지 않는다.
         int completedPages = 0;
+        // 그중 결과가 나온 쪽(COMPLETED·NEEDS_REVIEW) — 종료 판정에만 쓴다
+        int succeededPages = 0;
         int pendingPages = 0;
         int runningPages = 0;
         Map<String, String> pages = new HashMap<>();
@@ -336,16 +341,20 @@ public class JobService {
             pages.put(key, value);
 
             switch (value) {
-                case "COMPLETED", "NEEDS_REVIEW", "BLOCKED" -> completedPages++;
+                case "COMPLETED", "NEEDS_REVIEW" -> { completedPages++; succeededPages++; }
+                case "BLOCKED" -> completedPages++;   // 끝났지만 성공은 아니다
                 case "RUNNING" -> runningPages++;
                 case "PENDING" -> pendingPages++;
             }
         }
 
-        // 전체 job 상태 계산
+        // 전체 job 상태 계산 — 판정 규칙은 ResultService.evaluateJobTermination과 같아야 한다.
+        // 전 쪽이 terminal일 때 성공 0건이면 FAILED다. 예전엔 BLOCKED를 성공과 묶어 세는 바람에
+        // 취소로 전 쪽이 BLOCKED된 작업을 COMPLETED라고 답했고, 같은 작업을 DB로 읽는
+        // 마이페이지·운영자 화면은 FAILED라 서로 어긋났다(2026-09-02 실측).
         String overallStatus;
         if (completedPages == totalPages) {
-            overallStatus = "COMPLETED";
+            overallStatus = succeededPages > 0 ? "COMPLETED" : "FAILED";
         } else if (runningPages > 0 || completedPages > 0) {
             overallStatus = "IN_PROGRESS";
         } else {

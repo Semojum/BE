@@ -2,6 +2,7 @@ package com.semojum.backend.global.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -19,6 +20,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().get(0).getDefaultMessage();
         log.warn("요청 검증 실패: {}", message);
+        return ResponseEntity
+                .badRequest()
+                .body(ApiResponse.failure(ErrorCode.COMMON_BAD_REQUEST));
+    }
+
+    // 본문을 읽지 못한 경우 — 깨진 JSON, 기대와 다른 타입(객체 자리에 배열) 등.
+    // 아래 catch-all이 삼키면 클라이언트 실수가 500 + 스택으로 나가 서버 장애처럼 보인다
+    // (grep "WARN|ERROR"가 장애 화면이라는 로깅 원칙도 깨진다). 4xx이므로 스택 없이 WARN.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException e) {
+        log.warn("요청 본문 파싱 실패: {}", e.getMostSpecificCause().getMessage());
         return ResponseEntity
                 .badRequest()
                 .body(ApiResponse.failure(ErrorCode.COMMON_BAD_REQUEST));
