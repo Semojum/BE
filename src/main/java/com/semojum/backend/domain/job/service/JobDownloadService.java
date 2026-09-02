@@ -107,8 +107,9 @@ public class JobDownloadService {
      * mode b·c — braille-assist에 조판·BRF 변환 전체를 위임.
      *
      * <p>업로드 때 고른 조판 옵션(V30)을 그대로 넘긴다. 종전엔 26줄·32칸·1면 시작이 하드코딩이었다.
-     * {@code BrailleAssist.Job} 대신 {@code buildPages(sources, footer, startPage, Options)}를 직접 쓰는 이유는
-     * Job 래퍼가 페이지행을 boolean(홀수/없음) 두 가지로만 받아 '모든 면'과 표지 건너뜀을 표현하지 못해서다.
+     * {@code BrailleAssist.Job} 래퍼 대신 {@code buildPages(sources, footer, startPage, Options)}를 직접 쓴다 —
+     * 옛 래퍼가 페이지행을 boolean으로만 받아 못 썼던 것이고, 2026-09-02 동기화로 래퍼도 같은 항목을
+     * 받게 됐지만 이미 Options로 다 넘기고 있어 굳이 옮기지 않았다.
      * (braille-assist는 원 레포 복사본이라 수정하지 않는다 — 공개 API만 쓴다)
      */
     private String buildBrf(Job job, List<PageResult> pageResults) {
@@ -136,10 +137,15 @@ public class JobDownloadService {
             footerBraille = grpcClient.translateText(job.getFooterText());
         }
 
+        // 뒤 3개는 2026-09-02 원 레포 동기화로 생긴 항목이다.
+        //  - origPageStart: null — 쪽 번호는 위 pageOffset으로 BE가 이미 옮겨 담았다
+        //  - showChangeLine: true(라이브러리 기본) — 업로드 화면에 없는 항목이라 기본값을 쓴다
+        //  - footerAlign: 업로드에서 받아 저장해두고도 조판에 못 넘기던 값 — 이제 연결한다
         BrailleAssist.Options assistOptions = new BrailleAssist.Options(
                 opts.cellsPerLine(), opts.linesPerPage(),
                 opts.showSourcePageNumber(), opts.showBraillePageNumber(),
-                opts.pageNumberLine(), opts.coverPages());
+                opts.pageNumberLine(), opts.coverPages(),
+                null, true, opts.footerAlign());
 
         StringBuilder sb = new StringBuilder();
         boolean first = true;

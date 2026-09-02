@@ -1,11 +1,7 @@
 package com.semojum.brailleassist;
 
 /**
- * braille-assist — 점자 조판 공용 함수 (Java).
- *
- * <p>⚠ 원본: https://github.com/Semojum/braille-assist (v0.1.0, 커밋 2ff5ea0) — <b>수정 금지, 통째로 복사해 쓴다.</b>
- * 규칙 변경은 원 레포에서 세 구현+vectors.json을 한 PR로 갱신한 뒤 여기로 다시 복사한다.
- * BE의 VectorsTest가 src/test/resources/braille-assist/vectors.json 42건으로 동일성을 검증한다.
+ * braille-assist — 점자 조판 공용 함수 3개 (Java).
  *
  * <p>python/ts 구현과 출력이 같아야 한다. 규칙이 바뀌면 세 구현과 vectors.json을 한 PR로 갱신한다.
  * 이 클래스는 한글을 점역하지 않는다 — 꼬리말은 이미 점역된 점자를 받아 배치만 한다.
@@ -45,20 +41,42 @@ public final class BrailleAssist {
          * 값: odd | every | even | none
          */
         public final String pageRowOn;
+        /** 앞에서 이만큼의 <b>원본 페이지</b>가 표지. 점자 면 수가 아니다(2026-09-01 결정 C). */
         public final int coverPages;
+        /** 표지 다음 첫 본문 원본 페이지에 붙일 번호. null이면 준 값 그대로. */
+        public final Integer origPageStart;
+        /** 원본 페이지 변경선을 넣을지. showOrigPage가 꺼지면 함께 꺼진다(결정 D). */
+        public final boolean showChangeLine;
+        /** 꼬리말 정렬. right는 점자 면 번호에서 두 칸 띄운 자리가 오른쪽 끝이다. */
+        public final String footerAlign;
 
         public Options(int cols, int rows, boolean showOrigPage, boolean showBraillePage,
-                       String pageRowOn, int coverPages) {
+                       String pageRowOn, int coverPages,
+                       Integer origPageStart, boolean showChangeLine, String footerAlign) {
             if (cols < 8) throw new IllegalArgumentException("cols는 8 이상이어야 한다: " + cols);
             if (!pageRowOn.equals("every") && !pageRowOn.equals("odd")
                     && !pageRowOn.equals("even") && !pageRowOn.equals("none"))
                 throw new IllegalArgumentException("pageRowOn은 odd|every|even|none: " + pageRowOn);
+            if (!footerAlign.equals("center") && !footerAlign.equals("right"))
+                throw new IllegalArgumentException("footerAlign은 center|right: " + footerAlign);
+            if (coverPages < 0)
+                throw new IllegalArgumentException("coverPages는 0 이상이어야 한다: " + coverPages);
             this.cols = cols;
             this.rows = rows;
             this.showOrigPage = showOrigPage;
             this.showBraillePage = showBraillePage;
             this.pageRowOn = pageRowOn;
             this.coverPages = coverPages;
+            this.origPageStart = origPageStart;
+            this.showChangeLine = showChangeLine;
+            this.footerAlign = footerAlign;
+        }
+
+        /** 종전 6인자 형태 — 새 항목은 기본값으로 채운다. */
+        public Options(int cols, int rows, boolean showOrigPage, boolean showBraillePage,
+                       String pageRowOn, int coverPages) {
+            this(cols, rows, showOrigPage, showBraillePage, pageRowOn, coverPages,
+                 null, true, "center");
         }
 
         public static Options defaults() {
@@ -123,7 +141,10 @@ public final class BrailleAssist {
             int hi = right.isEmpty() ? n : n - right.length() - 2;
             String f = footer.length() > hi - lo ? footer.substring(0, Math.max(0, hi - lo)) : footer;
             if (!f.isEmpty()) {
-                int start = (n - f.length() + 1) / 2; // ★ 올림 — 지침 실물로 확정
+                // 우측 정렬이면 번호와 두 칸 띄운 자리가 오른쪽 끝이다.
+                int start = "right".equals(opts.footerAlign)
+                        ? hi - f.length()
+                        : (n - f.length() + 1) / 2;   // ★ 올림 — 지침 실물로 확정
                 start = Math.min(Math.max(start, lo), hi - f.length());
                 for (int i = 0; i < f.length(); i++) cells[start + i] = f.charAt(i);
             }
@@ -244,14 +265,37 @@ public final class BrailleAssist {
      */
     public static java.util.List<java.util.List<String>> buildPages(
             java.util.List<Source> sources, String footer, int startBraillePage, Options opts) {
-        // 1) 원본 쪽 경계마다 변경선을 넣고 32칸으로 자른다. 줄마다 소속 원본 쪽을 들고 간다.
+        return buildPages(sources, footer, startBraillePage, opts, null);
+    }
+
+    /**
+     * footers — {점자 면 번호: 꼬리말 점자}. 그 면만 이 값을 쓰고, 없는 면은 footer를 쓴다.
+     * "이 면부터 끝까지 / 이 면만"은 편집 시점의 뜻이라 여기서 풀지 않는다 — 호출자(FE)가
+     * 범위를 해석해 면별 값으로 펼쳐 넘긴다(2026-09-01 결정 E).
+     */
+    public static java.util.List<java.util.List<String>> buildPages(
+            java.util.List<Source> sources, String footer, int startBraillePage, Options opts,
+            java.util.Map<Integer, String> footers) {
+        java.util.Map<Integer, String> fmap =
+                footers == null ? java.util.Collections.emptyMap() : footers;
+        // 원본 페이지 번호를 끄면 변경선은 ⠤만 남은 빈 줄이 된다 — 함께 끈다(결정 D).
+        boolean withChange = opts.showChangeLine && opts.showOrigPage;
+        // 1) 원본 쪽 경계마다 변경선을 넣고 32칸으로 자른다. 줄마다 소속 원본 쪽·표지 여부를 들고 간다.
         java.util.List<String> lines = new java.util.ArrayList<>();
         java.util.List<Integer> owner = new java.util.ArrayList<>();
+        java.util.List<Boolean> coverOf = new java.util.ArrayList<>();
         for (int i = 0; i < sources.size(); i++) {
             Source src = sources.get(i);
-            if (i > 0) {                       // 첫 원본 쪽 앞에는 변경선을 두지 않는다
-                lines.add(pageChangeLine(src.origPage, opts));
-                owner.add(src.origPage);
+            // origPageStart가 있으면 표지 뒤 n번째 본문 원본 페이지를 다시 매긴다.
+            int op = (opts.origPageStart != null && i >= opts.coverPages)
+                    ? opts.origPageStart + (i - opts.coverPages)
+                    : src.origPage;
+            // ★ 표지 판정은 **순번**이다(결정 C). 쪽 번호로 보면 번호를 다시 매길 때 어긋난다.
+            boolean cover = i < opts.coverPages;
+            if (i > 0 && withChange) {         // 첫 원본 쪽 앞에는 변경선을 두지 않는다
+                lines.add(pageChangeLine(op, opts));
+                owner.add(op);
+                coverOf.add(cover);
             }
             java.util.List<Block> bs = new java.util.ArrayList<>(
                     src.blocks == null ? java.util.Collections.emptyList() : src.blocks);
@@ -261,7 +305,8 @@ public final class BrailleAssist {
             for (String logical : sb.toString().split("\n", -1)) {
                 for (String w : wrap(logical, opts.cols)) {
                     lines.add(w);
-                    owner.add(src.origPage);
+                    owner.add(op);
+                    coverOf.add(cover);
                 }
             }
         }
@@ -276,7 +321,7 @@ public final class BrailleAssist {
             int idx = pages.size();
             int bp = startBraillePage + idx;
             int head = owner.get(pos);
-            boolean onCover = head <= opts.coverPages;    // 표지 범위는 페이지행 생략
+            boolean onCover = coverOf.get(pos);           // 표지 범위는 페이지행 생략
             boolean hasRow = hasPageRow(bp, opts.pageRowOn) && !onCover;
             int cap = opts.rows - (hasRow ? 1 : 0);
             java.util.List<String> body = new java.util.ArrayList<>(
@@ -284,7 +329,10 @@ public final class BrailleAssist {
             pos += cap;
             firstSeen.putIfAbsent(head, idx);
             while (body.size() < cap) body.add("");
-            if (hasRow) body.add(pageRow(head, idx - firstSeen.get(head), bp, footer, opts));
+            if (hasRow) {
+                String f = fmap.getOrDefault(bp, footer);
+                body.add(pageRow(head, idx - firstSeen.get(head), bp, f, opts));
+            }
             pages.add(body);
         }
         return pages;
@@ -334,24 +382,55 @@ public final class BrailleAssist {
     /** 조립 JSON 전체. */
     public static final class Job {
         public final String jobId;
-        /** 점역사가 Job을 만들 때 고른 값. 끄면 페이지행을 넣지 않는다. */
+        /**
+         * 점역사가 Job을 만들 때 고른 값. 끄면 페이지행을 넣지 않는다.
+         * pageRowOn(어느 면)과 <b>같은 스위치</b>다 — 끄기가 이긴다(2026-09-01 결정 B).
+         */
         public final boolean includePageNumber;
+        public final String pageRowOn;
         public final int rows;
         public final int cols;
+        public final boolean showOrigPage;
+        public final boolean showBraillePage;
+        public final int coverPages;
+        public final Integer origPageStart;
+        public final boolean showChangeLine;
+        public final String footerAlign;
         /** 이미 점역된 꼬리말 점자. 이 레포는 점역하지 않는다. */
         public final String footerBraille;
+        /** 면별 꼬리말. {점자 면 번호: 꼬리말 점자} — 없는 면은 footerBraille를 쓴다. */
+        public final java.util.Map<Integer, String> footersBraille;
         public final int startBraillePage;
         public final java.util.List<JobPage> pages;
 
-        public Job(String jobId, boolean includePageNumber, int rows, int cols,
-                   String footerBraille, int startBraillePage, java.util.List<JobPage> pages) {
+        public Job(String jobId, boolean includePageNumber, String pageRowOn, int rows, int cols,
+                   boolean showOrigPage, boolean showBraillePage, int coverPages,
+                   Integer origPageStart, boolean showChangeLine, String footerAlign,
+                   String footerBraille, java.util.Map<Integer, String> footersBraille,
+                   int startBraillePage, java.util.List<JobPage> pages) {
             this.jobId = jobId;
             this.includePageNumber = includePageNumber;
+            this.pageRowOn = pageRowOn == null || pageRowOn.isEmpty() ? "odd" : pageRowOn;
             this.rows = rows <= 0 ? 26 : rows;
             this.cols = cols <= 0 ? 32 : cols;
+            this.showOrigPage = showOrigPage;
+            this.showBraillePage = showBraillePage;
+            this.coverPages = Math.max(0, coverPages);
+            this.origPageStart = origPageStart;
+            this.showChangeLine = showChangeLine;
+            this.footerAlign = footerAlign == null || footerAlign.isEmpty() ? "center" : footerAlign;
             this.footerBraille = footerBraille == null ? "" : footerBraille;
+            this.footersBraille = footersBraille == null
+                    ? java.util.Collections.emptyMap() : footersBraille;
             this.startBraillePage = startBraillePage <= 0 ? 1 : startBraillePage;
             this.pages = pages == null ? java.util.Collections.emptyList() : pages;
+        }
+
+        /** 종전 7인자 형태 — 새 항목은 기본값으로 채운다. */
+        public Job(String jobId, boolean includePageNumber, int rows, int cols,
+                   String footerBraille, int startBraillePage, java.util.List<JobPage> pages) {
+            this(jobId, includePageNumber, "odd", rows, cols, true, true, 0, null, true,
+                 "center", footerBraille, null, startBraillePage, pages);
         }
 
         public Job(java.util.List<JobPage> pages) { this(null, true, 26, 32, "", 1, pages); }
@@ -361,11 +440,13 @@ public final class BrailleAssist {
      * 조립 JSON → Options.
      *
      * <p>includePageNumber를 끄면 <b>페이지행을 넣지 않는다.</b> 원본 페이지 변경선은
-     * 유지한다 — 그건 쪽 번호가 아니라 쪽 경계 표시다.
+     * showChangeLine이 따로 정한다(2026-09-01 결정 D).
      */
     public static Options optionsFromJob(Job job) {
-        return new Options(job.cols, job.rows, true, true,
-                           job.includePageNumber ? "odd" : "none", 0);
+        String on = job.includePageNumber ? job.pageRowOn : "none";
+        return new Options(job.cols, job.rows, job.showOrigPage, job.showBraillePage,
+                           on, job.coverPages,
+                           job.origPageStart, job.showChangeLine, job.footerAlign);
     }
 
     /** 조립 JSON → 점자 면 배열. buildPages의 얇은 어댑터다. */
@@ -380,7 +461,8 @@ public final class BrailleAssist {
             }
             sources.add(new Source(pg.origPageNo > 0 ? pg.origPageNo : i + 1, blocks));
         }
-        return buildPages(sources, job.footerBraille, job.startBraillePage, optionsFromJob(job));
+        return buildPages(sources, job.footerBraille, job.startBraillePage, optionsFromJob(job),
+                          job.footersBraille);
     }
 
     /**

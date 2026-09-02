@@ -15,7 +15,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠃⠑⠀⠀⠀⠀⠀⠀⠀⠴⠠⠊⠲⠀⠉⠣⠺⠀⠘⠂⠈⠡⠀⠀⠀⠀⠀⠀⠼⠃⠁",
@@ -34,7 +37,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠛⠃⠀⠀⠀⠀⠀⠠⠦⠊⠗⠘⠁⠴⠄⠺⠀⠈⠻⠨⠝⠚⠁⠀⠀⠀⠀⠼⠁⠚⠑",
@@ -53,7 +59,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠃⠼⠛⠃⠀⠀⠀⠀⠠⠦⠊⠗⠘⠁⠴⠄⠺⠀⠈⠻⠨⠝⠚⠁⠀⠀⠀⠀⠼⠁⠚⠛",
@@ -72,7 +81,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠙⠼⠛⠃⠀⠀⠀⠀⠠⠦⠊⠗⠘⠁⠴⠄⠺⠀⠈⠻⠨⠝⠚⠁⠀⠀⠀⠀⠼⠁⠚⠊",
@@ -91,7 +103,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠁⠚⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠑",
@@ -110,7 +125,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁⠃"
@@ -128,7 +146,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠁⠼⠓⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁⠉"
@@ -146,7 +167,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁"
@@ -164,7 +188,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠃⠑⠚⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠉⠃⠁"
@@ -182,7 +209,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠵⠼⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠙⠚"
@@ -200,7 +230,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠁⠁⠼⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠙⠁"
@@ -218,7 +251,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠁⠚⠚⠀⠀⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠀⠀⠼⠃⠚⠚",
@@ -237,7 +273,10 @@
             "show_orig_page": false,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁⠃",
@@ -256,7 +295,10 @@
             "show_orig_page": true,
             "show_braille_page": false,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
@@ -275,7 +317,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁⠃",
@@ -293,7 +338,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠛⠃",
@@ -309,7 +357,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠁⠚",
@@ -325,7 +376,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠁⠁",
@@ -341,7 +395,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠓"
@@ -356,7 +413,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠃⠑⠚"
@@ -371,7 +431,10 @@
             "show_orig_page": false,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤"
@@ -386,7 +449,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠓"
@@ -479,7 +545,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "odd",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -656,7 +725,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -708,7 +780,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -754,7 +829,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -796,7 +874,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 7
+            "cover_pages": 1,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -818,6 +899,229 @@
           ]
         ],
         "source": "조판 옵션 §5"
+      },
+      {
+        "name": "꼬리말 우측 정렬",
+        "args": {
+          "sources": [
+            {
+              "orig_page": 7,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁\n"
+                }
+              ]
+            },
+            {
+              "orig_page": 8,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "\n⠃⠃⠃\n\n⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉\n"
+                }
+              ]
+            }
+          ],
+          "footer": "⠑⠎⠐⠕⠑⠂",
+          "opts": {
+            "cols": 32,
+            "rows": 6,
+            "show_orig_page": true,
+            "show_braille_page": true,
+            "page_row_on": "every",
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "right"
+          }
+        },
+        "expect": [
+          [
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁",
+            "",
+            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠓",
+            "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠼⠁"
+          ],
+          [
+            "⠃⠃⠃",
+            "",
+            "⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉",
+            "⠉⠉⠉⠉⠉⠉⠉⠉",
+            "",
+            "⠼⠓⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠼⠃"
+          ]
+        ]
+      },
+      {
+        "name": "원본 페이지 변경선 끔",
+        "args": {
+          "sources": [
+            {
+              "orig_page": 7,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁\n"
+                }
+              ]
+            },
+            {
+              "orig_page": 8,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "\n⠃⠃⠃\n\n⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉\n"
+                }
+              ]
+            }
+          ],
+          "footer": "⠑⠎⠐⠕⠑⠂",
+          "opts": {
+            "cols": 32,
+            "rows": 6,
+            "show_orig_page": true,
+            "show_braille_page": true,
+            "page_row_on": "every",
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": false,
+            "footer_align": "center"
+          }
+        },
+        "expect": [
+          [
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁",
+            "",
+            "",
+            "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁"
+          ],
+          [
+            "⠃⠃⠃",
+            "",
+            "⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉",
+            "⠉⠉⠉⠉⠉⠉⠉⠉",
+            "",
+            "⠼⠓⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠃"
+          ]
+        ]
+      },
+      {
+        "name": "원본 페이지 번호 다시 매기기",
+        "args": {
+          "sources": [
+            {
+              "orig_page": 7,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁\n"
+                }
+              ]
+            },
+            {
+              "orig_page": 8,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "\n⠃⠃⠃\n\n⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉\n"
+                }
+              ]
+            }
+          ],
+          "footer": "⠑⠎⠐⠕⠑⠂",
+          "opts": {
+            "cols": 32,
+            "rows": 6,
+            "show_orig_page": true,
+            "show_braille_page": true,
+            "page_row_on": "every",
+            "cover_pages": 1,
+            "orig_page_start": 20,
+            "show_change_line": true,
+            "footer_align": "center"
+          }
+        },
+        "expect": [
+          [
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁",
+            "",
+            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠃⠚",
+            ""
+          ],
+          [
+            "⠃⠃⠃",
+            "",
+            "⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉",
+            "⠉⠉⠉⠉⠉⠉⠉⠉",
+            "",
+            "⠼⠃⠚⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠃"
+          ]
+        ]
+      },
+      {
+        "name": "면별 꼬리말",
+        "args": {
+          "sources": [
+            {
+              "orig_page": 7,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁\n"
+                }
+              ]
+            },
+            {
+              "orig_page": 8,
+              "blocks": [
+                {
+                  "order": 1,
+                  "text": "\n⠃⠃⠃\n\n⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉\n"
+                }
+              ]
+            }
+          ],
+          "footer": "⠑⠎⠐⠕⠑⠂",
+          "footers": {
+            "2": "⠴⠠⠊⠲⠀⠉⠣⠺⠀⠘⠂⠈⠡"
+          },
+          "opts": {
+            "cols": 32,
+            "rows": 6,
+            "show_orig_page": true,
+            "show_braille_page": true,
+            "page_row_on": "every",
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
+          }
+        },
+        "expect": [
+          [
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁⠁",
+            "⠁⠁⠁⠁⠁⠁",
+            "",
+            "⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠼⠓",
+            "⠼⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠑⠎⠐⠕⠑⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠼⠁"
+          ],
+          [
+            "⠃⠃⠃",
+            "",
+            "⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉",
+            "⠉⠉⠉⠉⠉⠉⠉⠉",
+            "",
+            "⠼⠓⠀⠀⠀⠀⠀⠀⠀⠀⠴⠠⠊⠲⠀⠉⠣⠺⠀⠘⠂⠈⠡⠀⠀⠀⠀⠀⠀⠀⠼⠃"
+          ]
+        ]
       },
       {
         "name": "페이지행 끔(짝수만)",
@@ -849,7 +1153,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "even",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": [
@@ -881,7 +1188,10 @@
             "show_orig_page": true,
             "show_braille_page": true,
             "page_row_on": "every",
-            "cover_pages": 0
+            "cover_pages": 0,
+            "orig_page_start": null,
+            "show_change_line": true,
+            "footer_align": "center"
           }
         },
         "expect": []
@@ -934,6 +1244,110 @@
         },
         "expect": "  ,o1,{b\n  o;raz d<o\n\n------------------------------#h\n  #b/#a\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n#g                            #a",
         "source": "기본 page_row_on=odd — 지침 1장2절2-1·원장 C-11"
+      },
+      {
+        "name": "조립 JSON 새 조판 옵션 전부",
+        "args": {
+          "job": {
+            "job_id": "j2",
+            "options": {
+              "include_page_number": true,
+              "page_row_on": "every",
+              "rows": 6,
+              "cols": 32,
+              "show_orig_page": true,
+              "show_braille_page": true,
+              "cover_pages": 1,
+              "orig_page_start": 20,
+              "show_change_line": true,
+              "footer_align": "right"
+            },
+            "footer_braille": "⠑⠎⠐⠕⠑⠂",
+            "footers_braille": {
+              "2": "⠴⠠⠊⠲⠀⠉⠣⠺⠀⠘⠂⠈⠡"
+            },
+            "start_braille_page": 1,
+            "pages": [
+              {
+                "orig_page_no": 7,
+                "elements": [
+                  {
+                    "id": "e1",
+                    "type": "title",
+                    "heading_level": 1,
+                    "text": "  ⠠⠕⠂⠠⠪⠃\n"
+                  },
+                  {
+                    "id": "e2",
+                    "type": "text",
+                    "heading_level": 0,
+                    "text": "  ⠕⠰⠗⠁⠵⠀⠙⠣⠕\n"
+                  }
+                ]
+              },
+              {
+                "orig_page_no": 8,
+                "elements": [
+                  {
+                    "id": "e3",
+                    "type": "text",
+                    "heading_level": 0,
+                    "text": "  ⠼⠃⠌⠼⠁\n"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "expect": "  ,o1,{b\n  o;raz d<o\n\n-----------------------------#bj\n  #b/#a\n",
+        "source": "2026-09-01 결정 B·C·D·E — 표지 순번·번호 재매김·우측 정렬·면별 꼬리말"
+      },
+      {
+        "name": "조립 JSON 변경선 끔",
+        "args": {
+          "job": {
+            "options": {
+              "include_page_number": true,
+              "rows": 6,
+              "cols": 32,
+              "show_change_line": false
+            },
+            "footer_braille": "",
+            "start_braille_page": 1,
+            "pages": [
+              {
+                "orig_page_no": 7,
+                "elements": [
+                  {
+                    "id": "e1",
+                    "type": "title",
+                    "heading_level": 1,
+                    "text": "  ⠠⠕⠂⠠⠪⠃\n"
+                  },
+                  {
+                    "id": "e2",
+                    "type": "text",
+                    "heading_level": 0,
+                    "text": "  ⠕⠰⠗⠁⠵⠀⠙⠣⠕\n"
+                  }
+                ]
+              },
+              {
+                "orig_page_no": 8,
+                "elements": [
+                  {
+                    "id": "e3",
+                    "type": "text",
+                    "heading_level": 0,
+                    "text": "  ⠼⠃⠌⠼⠁\n"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "expect": "  ,o1,{b\n  o;raz d<o\n\n  #b/#a\n\n#g                            #a",
+        "source": "show_change_line=false → 원본 페이지 변경선 생략(결정 D)"
       },
       {
         "name": "조립 JSON 페이지행 끔",

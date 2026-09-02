@@ -156,7 +156,9 @@ com.semojum.backend
 ### 다운로드 (`POST /api/jobs/{jobId}/download`)
 - body `{fileName}`(선택), 응답은 파일 스트림. mode a=`.txt` / b·c=`.brf`
 - a: current를 읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 `-`×40 구분선 1줄, **빈 블록·빈 페이지 스킵**, `<!점역자주>` 마커 유지
-- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — 구 `BrailleAssist.Job` 래퍼는 페이지행을 boolean으로만 받아 '모든 면'·표지 건너뜀을 표현 못 해 쓰지 않는다(종전 26줄·32칸 하드코딩 제거)
+- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — `BrailleAssist.Job` 래퍼는 쓰지 않는다(옛 래퍼가 페이지행을 boolean으로만 받아 못 썼고, 지금은 래퍼도 같은 항목을 받지만 이미 Options로 다 넘기고 있어 옮기지 않았다)
+- **원 레포 동기화 (2026-09-02, 원 레포 `6d5f61e`)**: 복사본은 **본체·테스트·벡터 3종을 함께** 갈아끼운다 — `src/main/java/com/semojum/brailleassist/BrailleAssist.java` + `src/test/java/com/semojum/brailleassist/VectorsTest.java` + `src/test/resources/braille-assist/vectors.json`. 본체만 바꾸면 벡터가 어긋나 `VectorsTest`가 깨진다. ⚠️ `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포(`Path.of("..","vectors.json")`)를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지해야 한다
+- 이 동기화로 고쳐진 것: ① **표지 건너뜀(`coverPages`) 판정이 쪽 번호 → 순번**으로 바뀌었다. 종전엔 `head <= coverPages`라 원본 쪽이 1이 아닌 문서(`sourcePageStart`가 `coverPages`보다 큼)에서 표지 지정이 **조용히 무시**됐다(실측: 시작 100·표지 2 → 아무 면도 표지가 아님) ② 원본 쪽 번호를 끄면 번호 없는 `⠤` 줄만 남던 변경선을 함께 끈다 ③ **꼬리말 우측 정렬(`footerAlign`)이 조판에 반영**된다 — 업로드에서 받아 저장만 하던 값을 이제 `Options` 9인자로 넘긴다. `origPageStart`는 BE가 `pageOffset`으로 이미 처리하므로 null, `showChangeLine`은 업로드 옵션에 없어 기본값(true)
 - 꼬리말은 `jobs.footer_text`를 다운로드 시점에 점역. 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
 
 ### 취소 (`POST /api/jobs/{jobId}/cancel`)
