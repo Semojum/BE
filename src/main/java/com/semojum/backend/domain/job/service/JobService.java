@@ -46,6 +46,7 @@ public class JobService {
     private final com.semojum.backend.domain.job.scheduler.JobDispatcher jobDispatcher;
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
     private final com.semojum.backend.global.hwp.HwpToPdfConverter hwpToPdfConverter;
+    private final FooterBrailleService footerBrailleService;
 
     private static final int LINES_PER_PAGE = 30;
 
@@ -89,14 +90,11 @@ public class JobService {
         String ext = originalFilename != null && originalFilename.contains(".")
                 ? originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase()
                 : "";
-        // mode a는 HWP도 허용(2026-08-24) — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다.
+        // a·c는 HWP도 허용 — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다
+        // (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5. 변환 경로가 확장자로 갈리므로 같은 코드를 탄다).
         // mode b는 TXT 전용으로 축소(HWP는 a로 이관 — 텍스트 추출 대신 렌더링 보존 방식)
-        if (mode.equals("a")) {
+        if (mode.equals("a") || mode.equals("c")) {
             if (!List.of("pdf", "hwp").contains(ext)) {
-                throw new CustomException(ErrorCode.JOB_INVALID_FILE);
-            }
-        } else if (mode.equals("c")) {
-            if (!ext.equals("pdf")) {
                 throw new CustomException(ErrorCode.JOB_INVALID_FILE);
             }
         } else if (mode.equals("b")) {
@@ -137,6 +135,10 @@ public class JobService {
                     .footerText(footerText)
                     .layoutOptions(layoutOptions)
                     .build();
+            // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
+            // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
+            job.updateFooterBraille(
+                    footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
             if (clientInfo != null) {
                 job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
             }
@@ -220,6 +222,10 @@ public class JobService {
                         .footerText(footerText)
                         .layoutOptions(layoutOptions)
                         .build();
+                // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
+                // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
+                job.updateFooterBraille(
+                        footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
                 if (clientInfo != null) {
                     job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
                 }
@@ -307,7 +313,8 @@ public class JobService {
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         return new JobResponseDto.Options(
-                job.getId(), job.isInsertPageNumber(), job.getFooterText(), job.resolveLayoutOptions());
+                job.getId(), job.isInsertPageNumber(), job.getFooterText(),
+                footerBrailleService.resolve(job), job.resolveLayoutOptions());
     }
 
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)

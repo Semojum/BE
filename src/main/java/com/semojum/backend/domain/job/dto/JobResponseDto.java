@@ -27,6 +27,8 @@ public class JobResponseDto {
             String jobId,
             boolean insertPageNumber,
             String footerText,
+            // 위 꼬리말의 점역 결과 (V31) — 화면이 페이지행에 그대로 그릴 수 있게. 미점역이면 null
+            String footerBraille,
             LayoutOptions layoutOptions
     ) {}
 
@@ -113,6 +115,9 @@ public class JobResponseDto {
             boolean insertPageNumber,
             // 업로드 때 고른 조판 옵션 — 에디터가 다음에 열 때도 같은 설정으로 열도록 (V30)
             LayoutOptions layoutOptions,
+            // 이 면의 페이지행에 들어갈 점역된 꼬리말 (V31) — 없으면 null.
+            // 구간 꼬리말이 생겨도 면마다 다른 값을 주면 되므로 모양은 그대로다
+            String footerBraille,
             Map<String, Object> result,
             OriginalContent original
     ) {}

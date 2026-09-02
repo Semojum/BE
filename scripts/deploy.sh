@@ -8,12 +8,50 @@
 #   4. Envoy가 새 색을 healthy로 편입할 시간을 준 뒤 구 색 graceful 정지
 #   5. 구 이미지 정리
 #
+# 로그: 컨테이너가 재생성되면 Docker json-file 로그도 함께 사라지므로,
+#       사라지기 직전에 통째로 ~/semojum/logs 로 떠 둔다 (archive_logs)
+#
 # 롤백: 방금 내려간 색을 다시 켜면 된다 (구 이미지가 로컬에 남아 있음)
 #   docker compose --profile blue up -d backend-blue && docker compose --profile green stop backend-green
 set -euo pipefail
 cd /home/ubuntu/semojum
 
 log() { echo "[deploy] $(date '+%H:%M:%S') $*"; }
+
+# ── 로그 아카이브 ───────────────────────────────────────────────
+# Docker json-file 로그(10MB×5)는 컨테이너에 딸려 있어, 새 이미지로 갈아끼우는 순간
+# 이전 로그가 통째로 사라진다. 배포가 잦을수록 장애 분석용 기록이 먼저 없어지므로
+# 컨테이너가 사라지기 직전·정지 직후에 파일로 떠 둔다.
+#
+# 파일명에 컨테이너 시작 시각을 쓴다 — 같은 컨테이너를 두 번 떠도 같은 이름이라
+# 덮어쓰기가 되고 중복이 쌓이지 않는다(부분 덤프 → 완전 덤프로 갱신).
+LOG_DIR=/home/ubuntu/semojum/logs
+LOG_KEEP=30   # 보관 개수. 초과분은 오래된 것부터 삭제 (한 파일 상한 50MB)
+
+archive_logs() {
+  local color="$1"
+  local cname="semojum-backend-${color}-1"
+
+  # 컨테이너가 아예 없으면(최초 기동 등) 뜰 로그도 없다
+  docker inspect "$cname" >/dev/null 2>&1 || return 0
+
+  mkdir -p "$LOG_DIR"
+  local started out
+  started=$(docker inspect --format '{{.State.StartedAt}}' "$cname" 2>/dev/null \
+            | cut -c1-19 | tr -d ':-' | tr 'T' '-')
+  out="${LOG_DIR}/backend-${color}-${started:-unknown}.log"
+
+  # 아카이브 실패가 배포를 막지는 않는다 — 로그는 부수 작업이다
+  if docker logs "$cname" > "$out" 2>&1; then
+    log "로그 보관: $(basename "$out") ($(du -h "$out" | cut -f1))"
+  else
+    log "WARN: ${color} 로그 보관 실패 — 배포는 계속"
+    rm -f "$out"
+  fi
+
+  # 오래된 것부터 정리 (파일이 없으면 조용히 넘어간다)
+  ls -1t "${LOG_DIR}"/backend-*.log 2>/dev/null | tail -n +$((LOG_KEEP + 1)) | xargs -r rm -f || true
+}
 
 # ── 1. 활성 색 감지 ─────────────────────────────────────────────
 if docker ps --format '{{.Names}}' | grep -q 'backend-blue'; then
@@ -28,6 +66,8 @@ log "활성=${ACTIVE} → 새 버전은 ${IDLE}로 기동"
 # ── 2. 새 이미지로 비활성 색 기동 ────────────────────────────────
 docker pull zxhwan/semojum-backend:latest
 docker compose up -d redis
+# up -d 는 새 이미지로 컨테이너를 재생성한다 = 이 색의 기존 로그가 여기서 사라진다
+archive_logs "$IDLE"
 docker compose --profile "$IDLE" up -d "backend-$IDLE"
 
 # ── 3. 헬스 게이트 (최대 120초) ──────────────────────────────────
@@ -42,6 +82,7 @@ if [ "$HEALTHY" != "1" ]; then
   log "FAIL: ${IDLE} 헬스 실패 — 새 색 중지, ${ACTIVE}가 계속 서비스"
   docker compose --profile "$IDLE" logs --tail 50 "backend-$IDLE" || true
   docker compose --profile "$IDLE" stop "backend-$IDLE"
+  archive_logs "$IDLE"   # tail 50으로 안 잡히는 기동 실패 원인을 통째로 남긴다
   exit 1
 fi
 log "OK: ${IDLE} 헬스 통과"
@@ -64,6 +105,7 @@ else
   sleep 10
   docker compose --profile "$ACTIVE" stop "backend-$ACTIVE"
   log "구 색(${ACTIVE}) graceful 정지 완료"
+  archive_logs "$ACTIVE"   # 이 버전이 서비스한 전 구간 로그가 여기서 완성된다
 fi
 
 # ── 5. 정리 ─────────────────────────────────────────────────────

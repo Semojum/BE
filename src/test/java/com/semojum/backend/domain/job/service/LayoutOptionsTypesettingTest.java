@@ -23,15 +23,20 @@ class LayoutOptionsTypesettingTest {
             sources.add(new BrailleAssist.Source(p + o.sourcePageStart() - 1,
                     List.of(new BrailleAssist.Block(0, body))));
         }
-        BrailleAssist.Options opts = new BrailleAssist.Options(
+        return BrailleAssist.buildPages(sources, "", o.braillePageStart(), assistOptions(o));
+    }
+
+    /** JobDownloadService.buildBrf와 같은 방식으로 조립한다 — 호출부가 바뀌면 여기도 바꾼다 */
+    private BrailleAssist.Options assistOptions(LayoutOptions o) {
+        return new BrailleAssist.Options(
                 o.cellsPerLine(), o.linesPerPage(),
                 o.showSourcePageNumber(), o.showBraillePageNumber(),
-                o.pageNumberLine(), o.coverPages());
-        return BrailleAssist.buildPages(sources, "", o.braillePageStart(), opts);
+                o.pageNumberLine(), o.coverPages(),
+                null, o.showChangeLine(), o.footerAlign());
     }
 
     private LayoutOptions opts(Integer cells, Integer lines, String pageRow, Integer sourceStart) {
-        return new LayoutOptions(cells, lines, pageRow, null, sourceStart, null, null, null, null, null, null)
+        return new LayoutOptions(cells, lines, pageRow, null, sourceStart, null, null, null, null, null, null, null)
                 .withDefaults();
     }
 
@@ -71,6 +76,86 @@ class LayoutOptionsTypesettingTest {
         // 두 번째 원본 쪽으로 넘어가는 변경선에 101이 찍힌다(수표 ⠼ + 숫자 점형)
         String all = String.join("\n", shifted.stream().flatMap(List::stream).toList());
         assertTrue(all.contains("⠼"), "수표가 있어야 한다");
+    }
+
+    /**
+     * 표지 건너뛰기는 <b>순번</b>으로 판정해야 한다.
+     *
+     * <p>2026-09-02 원 레포 동기화 전 복사본은 원본 <b>쪽 번호</b>로 판정해서
+     * ({@code head <= coverPages}) 원본 쪽이 1이 아닌 문서에서는 표지 지정이 조용히 무시됐다.
+     * 100쪽부터 시작하는 문서에 표지 2쪽을 주면 {@code 100 <= 2}가 거짓이라 아무 면도 표지가 아니었다.
+     */
+    @Test
+    void 표지_건너뛰기는_원본_쪽_번호가_1이_아니어도_동작한다() {
+        for (int start : new int[]{1, 3, 100}) {
+            LayoutOptions o = new LayoutOptions(null, null, "every", 2, start,
+                    null, null, null, null, null, null, null).withDefaults();
+            List<List<String>> pages = typeset(o, 4);
+
+            assertTrue(!hasPageRow(pages, 0),
+                    "표지 첫 면엔 페이지행이 없어야 한다 (sourcePageStart=" + start + ")");
+        }
+    }
+
+    /**
+     * 변경선 스위치(showChangeLine) — 원본 쪽 번호를 켠 채로도 변경선만 끌 수 있어야 한다.
+     *
+     * <p>FE 요청 A-1(2026-09-03). 종전엔 이 스위치가 없어 `showSourcePageNumber`를 꺼야만
+     * 변경선이 덩달아 꺼졌고, 화면에서 변경선만 끈 작업을 내려받으면 .brf엔 그대로 남아 있었다.
+     */
+    @Test
+    void 변경선만_따로_끌_수_있다() {
+        // 원본 쪽 번호는 켜 둔 채 변경선만 끈다
+        List<List<String>> on = typeset(changeLine(true), 3);
+        List<List<String>> off = typeset(changeLine(false), 3);
+
+        assertTrue(hasChangeLine(on), "켜면 변경선(⠤ 줄)이 있어야 한다");
+        assertTrue(!hasChangeLine(off), "끄면 변경선이 없어야 한다");
+        // 번호 자체는 살아 있어야 한다 — 페이지행의 원본 쪽 번호는 그대로
+        assertTrue(hasPageRow(off, 0), "변경선을 꺼도 페이지행은 남는다");
+    }
+
+    /** 기본값은 켜짐 — 옵션을 안 보낸 기존 작업은 종전과 같이 동작한다 */
+    @Test
+    void 변경선_기본값은_켜짐이다() {
+        assertTrue(new LayoutOptions(null, null, null, null, null, null, null, null,
+                null, null, null, null).withDefaults().showChangeLine());
+        assertTrue(hasChangeLine(typeset(opts(null, null, "every", null), 3)));
+    }
+
+    private LayoutOptions changeLine(boolean on) {
+        return new LayoutOptions(null, null, "every", null, null, null, true, null,
+                on, null, null, null).withDefaults();
+    }
+
+    /** 변경선 = 하이픈 점형(⠤)으로만 이뤄진 앞부분을 가진 줄 */
+    private boolean hasChangeLine(List<List<String>> pages) {
+        return pages.stream().flatMap(List::stream).anyMatch(l -> l.startsWith("⠤⠤⠤⠤"));
+    }
+
+    /** 꼬리말 정렬 — right면 가운데보다 오른쪽에 붙는다 (동기화로 조판까지 반영됨) */
+    @Test
+    void 꼬리말_우측_정렬이_조판에_반영된다() {
+        String footer = "⠋⠕⠕⠞";
+        List<BrailleAssist.Source> src = List.of(
+                new BrailleAssist.Source(1, List.of(new BrailleAssist.Block(0, "⠁⠃⠉"))));
+
+        String center = lastLine(BrailleAssist.buildPages(src, footer, 1, assistOptions(align("center"))));
+        String right = lastLine(BrailleAssist.buildPages(src, footer, 1, assistOptions(align("right"))));
+
+        assertTrue(center.indexOf(footer) < right.indexOf(footer),
+                "right가 center보다 오른쪽이어야 한다: center=" + center.indexOf(footer)
+                        + " right=" + right.indexOf(footer));
+    }
+
+    private LayoutOptions align(String footerAlign) {
+        return new LayoutOptions(null, null, "every", null, null, null, null, null,
+                null, footerAlign, null, null).withDefaults();
+    }
+
+    private String lastLine(List<List<String>> pages) {
+        List<String> page = pages.get(0);
+        return page.get(page.size() - 1);
     }
 
     /**

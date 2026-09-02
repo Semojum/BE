@@ -8,7 +8,7 @@
 |---|---|---|
 | a | 이미지 → 텍스트 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-08-24) |
 | b | 텍스트 → 점자 | TXT (HWP는 a로 이관) |
-| c | 이미지 → 점자 | PDF |
+| c | 이미지 → 점자 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-09-03) |
 
 ## 기술 스택
 
@@ -44,6 +44,7 @@
 - Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 timeout 0s·idle_timeout 10800s 변경 금지**
 - 안전핀: `-Xmx768m`(JAVA_TOOL_OPTIONS), EC2 스왑 1GB, graceful shutdown 20s(+stop_grace_period 30s)
 - 로그 뷰어: `scripts/semlog.sh` (ERROR 빨강·WARN 노랑·REQ 시안)
+- **로그 아카이브 (2026-09-02)**: Docker json-file 로그는 컨테이너에 딸려 있어 **배포로 컨테이너를 갈아끼우면 함께 사라진다**. deploy.sh가 사라지기 직전(비활성 색 재생성 전)·정지 직후·헬스 실패 시 `docker logs`를 통째로 `~/semojum/logs/backend-{색}-{기동시각}.log`에 뜬다(최근 30개 보관, 파일명이 기동 시각이라 재실행해도 덮어쓰기·중복 없음). 장애 분석은 이 파일 → `page_results.raw_response`·T1-4 순으로 본다
 
 ## 패키지 구조 (요약)
 
@@ -123,11 +124,11 @@ com.semojum.backend
 
 ### Job 생성 (`POST /api/jobs`)
 - multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
-- **조판 옵션 (V30, 2026-09-01)**: 업로드 폼 필드로 함께 받는다 — `cellsPerLine`(32)·`linesPerPage`(26)·`pageNumberLine`(odd|every|none)·`coverPages`(0)·`sourcePageStart`(1)·`braillePageStart`(1)·`showSourcePageNumber`·`showBraillePageNumber`·`footerAlign`(center|right)·`editScope`(all|page)·`advancedAi`. 안 보낸 항목은 기본값(괄호)으로 채워 **`jobs.layout_options`(jsonb) 한 칸**에 저장(기획 확정 전이라 컬럼을 쪼개지 않음). 값 범위 위반은 COMMON4000. **원본 쪽 번호 표기(숫자/로마자)는 미구현**(기획 보류). 응답(Create·페이지 조회)에 `layoutOptions`를 실어 **다음에 열 때 같은 설정으로 복원**. 옵션 없이 만든 기존 작업은 `Job.resolveLayoutOptions()`가 구 `insert_page_number`만 반영한 기본값을 준다
+- **조판 옵션 (V30, 2026-09-01)**: 업로드 폼 필드로 함께 받는다 — `cellsPerLine`(32)·`linesPerPage`(26)·`pageNumberLine`(odd|every|none)·`coverPages`(0)·`sourcePageStart`(1)·`braillePageStart`(1)·`showSourcePageNumber`·`showBraillePageNumber`·**`showChangeLine`(true — 원본 쪽이 바뀌는 자리의 변경선, 2026-09-03 추가)**·`footerAlign`(center|right)·`editScope`(all|page)·`advancedAi`. 안 보낸 항목은 기본값(괄호)으로 채워 **`jobs.layout_options`(jsonb) 한 칸**에 저장(기획 확정 전이라 컬럼을 쪼개지 않음). 값 범위 위반은 COMMON4000. **원본 쪽 번호 표기(숫자/로마자)는 미구현**(기획 보류). 응답(Create·페이지 조회)에 `layoutOptions`를 실어 **다음에 열 때 같은 설정으로 복원**. 옵션 없이 만든 기존 작업은 `Job.resolveLayoutOptions()`가 구 `insert_page_number`만 반영한 기본값을 준다
 - `advancedAi`는 스케줄러 태스크 JSON에 실려 `PageWorker`가 gRPC `BrailleRequest.advanced_ai`로 전달
 - **설정 조회 `GET /api/jobs/{jobId}/options`**: 조판 옵션 + 꼬리말 + insertPageNumber를 한 번에. **변환 결과가 없어도 조회 가능**(설정은 업로드 시점 확정 — 변환 중·실패 작업에서도 필요). 타인 작업 403
 - 페이지 분리: a/c는 PDF 페이지별 / b는 TXT 30줄 청크 → S3 업로드
-- **mode a HWP 지원 (2026-08-24, HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
+- **mode a·c HWP 지원 (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5 — HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
 - 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
 - **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존. **앱은 Tauri — UA(`tauri-plugin-http/x`)에 OS가 없어 브라우저="세모점 앱 (Tauri x)"·OS는 FE의 `X-Client-Os` 헤더가 있으면 그 값**). **위치는 저장 안 함** — T1-4 조회 시점에 `GeoIpResolver`(ip-api.com+Redis 캐시 24h, 실패·사설 IP null, `geoip.enabled`로 차단 가능 — ⚠️ 무료는 비상업 조건·분당 45회, 정식 확장 시 유료/교체)로 `clientLocation` 응답. T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
 - 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행. **PDF 첫 장은 poppler `pdftoppm`(별도 프로세스, Dockerfile 내장) 우선, 미설치·실패 시 PDFBox 폴백(2026-08-27)** — PDFBox는 JPEG 2000(JPXDecode) 스캔본을 백지로 그리고, 순수 Java JPX 디코더(jai-imageio)는 768MB 힙에서도 OOM이라 **JVM 안에서 풀지 말 것**. 설정 `pdf-render.pdftoppm`·`timeout-seconds`(공용, 2026-08-31 키 이동)
@@ -156,8 +157,20 @@ com.semojum.backend
 ### 다운로드 (`POST /api/jobs/{jobId}/download`)
 - body `{fileName}`(선택), 응답은 파일 스트림. mode a=`.txt` / b·c=`.brf`
 - a: current를 읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 `-`×40 구분선 1줄, **빈 블록·빈 페이지 스킵**, `<!점역자주>` 마커 유지
-- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — 구 `BrailleAssist.Job` 래퍼는 페이지행을 boolean으로만 받아 '모든 면'·표지 건너뜀을 표현 못 해 쓰지 않는다(종전 26줄·32칸 하드코딩 제거)
-- 꼬리말은 `jobs.footer_text`를 다운로드 시점에 점역. 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
+- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — `BrailleAssist.Job` 래퍼는 쓰지 않는다(옛 래퍼가 페이지행을 boolean으로만 받아 못 썼고, 지금은 래퍼도 같은 항목을 받지만 이미 Options로 다 넘기고 있어 옮기지 않았다)
+- **원 레포 동기화 (2026-09-02, 원 레포 `6d5f61e`)**: 복사본은 **본체·테스트·벡터 3종을 함께** 갈아끼운다 — `src/main/java/com/semojum/brailleassist/BrailleAssist.java` + `src/test/java/com/semojum/brailleassist/VectorsTest.java` + `src/test/resources/braille-assist/vectors.json`. 본체만 바꾸면 벡터가 어긋나 `VectorsTest`가 깨진다. ⚠️ `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포(`Path.of("..","vectors.json")`)를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지해야 한다
+- 이 동기화로 고쳐진 것: ① **표지 건너뜀(`coverPages`) 판정이 쪽 번호 → 순번**으로 바뀌었다. 종전엔 `head <= coverPages`라 원본 쪽이 1이 아닌 문서(`sourcePageStart`가 `coverPages`보다 큼)에서 표지 지정이 **조용히 무시**됐다(실측: 시작 100·표지 2 → 아무 면도 표지가 아님) ② 원본 쪽 번호를 끄면 번호 없는 `⠤` 줄만 남던 변경선을 함께 끈다 ③ **꼬리말 우측 정렬(`footerAlign`)이 조판에 반영**된다 — 업로드에서 받아 저장만 하던 값을 이제 `Options` 9인자로 넘긴다. `origPageStart`는 BE가 `pageOffset`으로 이미 처리하므로 null. `showChangeLine`은 2026-09-03에 업로드 옵션으로 승격해 이제 사용자가 고른 값을 넘긴다 — **원본 쪽 번호를 켠 채 변경선만 끄는 것**이 가능해졌다(FE 요청 A-1). `showSourcePageNumber=false`면 라이브러리가 변경선을 함께 끄는 결합은 그대로다(번호 없는 `⠤` 줄만 남는 걸 막는다)
+- **꼬리말 점역은 업로드 때 한 번 (V31, 2026-09-03 · FE 요청 S-4)**: `jobs.footer_braille`에 담아 **화면(페이지 조회·SSE)·다운로드가 같은 값**을 쓴다. 종전엔 다운로드 순간에만 점역해 에디터가 페이지행의 꼬리말을 그릴 방법이 없었고(파일엔 정상) 내려받을 때마다 AI를 다시 불렀다. `footer_text`는 업로드 후 수정 경로가 없어 캐시 무효화가 없다. **AI 호출 실패는 삼킨다**(썸네일과 같은 취급) — null이면 조회 시점에 `FooterBrailleService.resolve()`가 채운다. SSE는 저장된 값만 읽는다(방출 경로에서 gRPC 금지). **길이 검증(S-9)**: 점역 결과가 페이지행에 안 들어가면 업로드에서 COMMON4000 — 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문(지침 1장3-4). 남는 자리는 `cellsPerLine − (원본 쪽 번호+2) − (점자 면 번호+2)`를 최악 자릿수로 잡아 계산
+- 다운로드는 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
+
+### 원본 페이지 삭제 (`DELETE /api/jobs/{jobId}/pages/{pageNo}`, X-1 2026-09-03)
+- **영구 삭제 + 뒤 번호 자동 당김**. 휴지통을 안 거치고 되돌릴 수 없다(유저 확정)
+- **크레딧 환불 없음** — `credit_transactions`는 손대지 않는다. 이미 AI가 처리해 원가가 났고 장부는 일어난 일을 적는 곳이다. **편집 이력(`page_edit_logs`)도 남긴다**(RLHF 자료)
+- ⚠️ 남기는 두 표는 **번호를 당기지 않는다** — 그때의 기록이라 사실이 달라진다. 삭제 뒤 두 표의 page_no는 현재 쪽 번호와 어긋날 수 있다(의도)
+- 지우는 것: rule_trails → text/braille_elements → bounding_boxes → quality_* → page_results → pages (FK NO ACTION이라 자식부터, 휴지통 완전 삭제와 같은 순서) + 그 쪽의 S3 객체 2개(pdf·jpg)
+- **S3 키는 옮기지 않는다** — `pages.pdf_path`·`image_path`가 컬럼이라 읽는 쪽이 그 값을 쓴다. 옮기면 삭제 한 번에 남은 쪽 수만큼 복사+삭제가 난다(205쪽이면 400회). 번호를 당겨도 키는 `page-7.pdf`인 채 `page_no`만 6이 된다
+- `jobs`의 `total_pages`·`failed_pages`·`last_edited_page`를 함께 보정(`applyPageDeleted`) — 에디터가 없는 쪽을 열지 않게
+- 가드: 타인 403 · **변환 중 JOB4010** · 없는 쪽 JOB4001 · **마지막 한 장 COMMON4000**(껍데기가 되므로 작업 삭제로 해야 한다). S3 삭제 실패는 삼킨다(고아 객체만 남음)
 
 ### 취소 (`POST /api/jobs/{jobId}/cancel`)
 - 즉시가 아닌 **수렴**: 플래그 → 큐 배수 → 인플라이트 마무리 → 확정(완료된 마지막 페이지 뒤는 Page 삭제+total_pages 축소, 사이 구멍은 BLOCKED)
@@ -248,6 +261,7 @@ com.semojum.backend
 users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions** / **coupons** / **notices** / **inquiries** / **inquiry_attachments** / **orders** / **app_versions**
 
 - `pages.image_path` = 원본 미리보기 JPEG 경로(V29, null이면 PDF 폴백)
+- `jobs.footer_braille` = 꼬리말 점역 결과(V31, null이면 미점역 → 조회 시점에 채움)
 - 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)

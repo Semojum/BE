@@ -34,6 +34,9 @@ class JobOptionsQueryTest {
         jobRepository = Mockito.mock(JobRepository.class);
         jobService = Mockito.mock(JobService.class, Mockito.CALLS_REAL_METHODS);
         ReflectionTestUtils.setField(jobService, "jobRepository", jobRepository);
+        // 옵션 조회는 점역된 꼬리말도 함께 준다(V31) — 여기선 조판 옵션만 보므로 빈 값으로 둔다
+        ReflectionTestUtils.setField(jobService, "footerBrailleService",
+                Mockito.mock(FooterBrailleService.class));
     }
 
     private Job job(LayoutOptions options, boolean insertPageNumber, String footerText) {
@@ -48,7 +51,7 @@ class JobOptionsQueryTest {
     @Test
     void 저장된_옵션을_그대로_돌려준다() {
         LayoutOptions saved = new LayoutOptions(40, 20, "every", 2, 100, 5,
-                true, false, "right", "page", true).withDefaults();
+                true, false, true, "right", "page", true).withDefaults();
         when(jobRepository.findByIdAndUserId(anyString(), any(UUID.class)))
                 .thenReturn(Optional.of(job(saved, true, "수학 익힘책 1")));
 

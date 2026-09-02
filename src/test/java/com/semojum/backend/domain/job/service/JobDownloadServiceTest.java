@@ -36,6 +36,7 @@ class JobDownloadServiceTest {
     TextElementRepository textRepo;
     BrailleElementRepository brailleRepo;
     BrailleGrpcClient grpc;
+    FooterBrailleService footerBrailleService;
     JobDownloadService service;
 
     final String USER = UUID.randomUUID().toString();
@@ -48,7 +49,9 @@ class JobDownloadServiceTest {
         textRepo = Mockito.mock(TextElementRepository.class);
         brailleRepo = Mockito.mock(BrailleElementRepository.class);
         grpc = Mockito.mock(BrailleGrpcClient.class);
-        service = new JobDownloadService(jobRepo, pageResultRepo, textRepo, brailleRepo, grpc);
+        footerBrailleService = Mockito.mock(FooterBrailleService.class);
+        service = new JobDownloadService(jobRepo, pageResultRepo, textRepo, brailleRepo, grpc,
+                footerBrailleService);
     }
 
     private Job givenJob(String mode, boolean insertPageNumber, String footerText) {
@@ -141,19 +144,23 @@ class JobDownloadServiceTest {
         assertTrue(lines[25].isEmpty(), "쪽번호 off → 페이지행 없음");
     }
 
-    /** 꼬리말: Job 생성 시 저장한 묵자를 다운로드 때 점역해 페이지행에 배치 */
+    /**
+     * 꼬리말: 업로드 때 점역해 둔 값을 페이지행에 배치 (V31).
+     * 종전엔 내려받을 때마다 AI를 다시 불렀는데, 이제 FooterBrailleService가 그 값을 돌려준다 —
+     * 화면(페이지 조회·SSE)과 파일이 같은 값을 쓰게 하려는 것이다.
+     */
     @Test
-    void 꼬리말은_저장된_묵자를_점역해_페이지행에_넣는다() {
+    void 꼬리말은_점역된_값을_페이지행에_넣는다() {
         givenJob("c", true, "수특 사회문화 2");
         PageResult p1 = pr(1, "c");
         when(pageResultRepo.findByJobIdOrderByPageNumber("job1")).thenReturn(List.of(p1));
         when(brailleRepo.findByPageResult(p1)).thenReturn(List.of(
                 BrailleElement.builder().elementId("b1").content(List.of("⠼⠁⠃")).build()));
-        when(grpc.translateText("수특 사회문화 2")).thenReturn("⠎⠣⠞⠕⠛");
+        when(footerBrailleService.resolve(job)).thenReturn("⠎⠣⠞⠕⠛");
 
         JobDownloadService.DownloadFile f = service.download(USER, "job1", null);
 
-        verify(grpc).translateText("수특 사회문화 2");
+        verify(grpc, never()).translateText(anyString());   // 다운로드가 AI를 다시 부르지 않는다
         String[] lines = new String(f.content(), StandardCharsets.UTF_8).split("\n", -1);
         assertEquals(26, lines.length);
         String pageRow = lines[25];

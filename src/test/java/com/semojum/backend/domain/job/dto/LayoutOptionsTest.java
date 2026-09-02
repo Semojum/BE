@@ -14,7 +14,7 @@ class LayoutOptionsTest {
 
     @Test
     void 아무것도_안_보내면_점자도서_기본값으로_채워진다() {
-        LayoutOptions o = new LayoutOptions(null, null, null, null, null, null, null, null, null, null, null)
+        LayoutOptions o = new LayoutOptions(null, null, null, null, null, null, null, null, null, null, null, null)
                 .withDefaults();
 
         assertEquals(32, o.cellsPerLine());
@@ -32,7 +32,7 @@ class LayoutOptionsTest {
 
     @Test
     void 보낸_값은_그대로_유지되고_빠진_값만_채워진다() {
-        LayoutOptions o = new LayoutOptions(40, null, "every", 2, null, 5, false, null, "right", null, true)
+        LayoutOptions o = new LayoutOptions(40, null, "every", 2, null, 5, false, null, null, "right", null, true)
                 .withDefaults();
 
         assertEquals(40, o.cellsPerLine());

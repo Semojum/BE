@@ -22,6 +22,9 @@ public record LayoutOptions(
         Integer braillePageStart,       // 점자 면 번호 시작 (기본 1)
         Boolean showSourcePageNumber,   // 페이지행 왼쪽에 원본 쪽 번호 (기본 true)
         Boolean showBraillePageNumber,  // 페이지행 오른쪽에 점자 면 번호 (기본 true)
+        // 원본 쪽이 바뀌는 자리의 변경선 (기본 true). 끄면 화면과 .brf 둘 다에서 사라진다 —
+        // 종전엔 이 스위치가 없어 showSourcePageNumber를 꺼야만 덩달아 꺼졌다(2026-09-03 추가)
+        Boolean showChangeLine,
         String footerAlign,             // 꼬리말 정렬: center(가운데) | right(우측). 기본 center
         String editScope,               // 판면 수정 시 기본 적용 범위: all(이후 전부) | page(그 면만). 기본 all
         Boolean advancedAi              // 고급 점역 사용 여부 (기본 false) — AI 요청에 실린다
@@ -43,6 +46,7 @@ public record LayoutOptions(
                 braillePageStart == null ? 1 : braillePageStart,
                 showSourcePageNumber == null || showSourcePageNumber,
                 showBraillePageNumber == null || showBraillePageNumber,
+                showChangeLine == null || showChangeLine,
                 footerAlign == null ? DEFAULT_FOOTER_ALIGN : footerAlign,
                 editScope == null ? DEFAULT_EDIT_SCOPE : editScope,
                 advancedAi != null && advancedAi);
@@ -51,6 +55,6 @@ public record LayoutOptions(
     /** 옵션 없이 만들어진 기존 작업용 — 구 insert_page_number만 반영한 기본값 */
     public static LayoutOptions legacy(boolean insertPageNumber) {
         return new LayoutOptions(null, null, insertPageNumber ? "odd" : "none",
-                null, null, null, null, null, null, null, null).withDefaults();
+                null, null, null, null, null, null, null, null, null).withDefaults();
     }
 }

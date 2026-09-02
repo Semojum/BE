@@ -44,6 +44,7 @@ public class JobDownloadService {
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
     private final BrailleGrpcClient grpcClient;
+    private final FooterBrailleService footerBrailleService;
 
     /** 생성된 파일 — 내용과 파일명(확장자 포함) */
     public record DownloadFile(byte[] content, String fileName, String contentType) {}
@@ -107,8 +108,9 @@ public class JobDownloadService {
      * mode b·c — braille-assist에 조판·BRF 변환 전체를 위임.
      *
      * <p>업로드 때 고른 조판 옵션(V30)을 그대로 넘긴다. 종전엔 26줄·32칸·1면 시작이 하드코딩이었다.
-     * {@code BrailleAssist.Job} 대신 {@code buildPages(sources, footer, startPage, Options)}를 직접 쓰는 이유는
-     * Job 래퍼가 페이지행을 boolean(홀수/없음) 두 가지로만 받아 '모든 면'과 표지 건너뜀을 표현하지 못해서다.
+     * {@code BrailleAssist.Job} 래퍼 대신 {@code buildPages(sources, footer, startPage, Options)}를 직접 쓴다 —
+     * 옛 래퍼가 페이지행을 boolean으로만 받아 못 썼던 것이고, 2026-09-02 동기화로 래퍼도 같은 항목을
+     * 받게 됐지만 이미 Options로 다 넘기고 있어 굳이 옮기지 않았다.
      * (braille-assist는 원 레포 복사본이라 수정하지 않는다 — 공개 API만 쓴다)
      */
     private String buildBrf(Job job, List<PageResult> pageResults) {
@@ -130,16 +132,18 @@ public class JobDownloadService {
             sources.add(new BrailleAssist.Source(pr.getPageNumber() + pageOffset, blocks));
         }
 
-        // 꼬리말: Job 생성 시 받은 묵자를 이 시점에 점역 (braille-assist는 점역하지 않는다)
-        String footerBraille = "";
-        if (job.getFooterText() != null) {
-            footerBraille = grpcClient.translateText(job.getFooterText());
-        }
+        // 꼬리말: 업로드 때 점역해 둔 값을 쓴다 (V31) — 종전엔 내려받을 때마다 AI를 다시 불렀고,
+        // 그래서 화면은 같은 값을 볼 방법이 없었다. 미점역이면 그 자리에서 채운다
+        String footerBraille = footerBrailleService.resolve(job);
+        if (footerBraille == null) footerBraille = "";
 
+        // origPageStart는 null — 원본 쪽 번호는 위 pageOffset으로 BE가 이미 옮겨 담았다.
+        // showChangeLine·footerAlign은 업로드에서 받은 값을 그대로 넘긴다.
         BrailleAssist.Options assistOptions = new BrailleAssist.Options(
                 opts.cellsPerLine(), opts.linesPerPage(),
                 opts.showSourcePageNumber(), opts.showBraillePageNumber(),
-                opts.pageNumberLine(), opts.coverPages());
+                opts.pageNumberLine(), opts.coverPages(),
+                null, opts.showChangeLine(), opts.footerAlign());
 
         StringBuilder sb = new StringBuilder();
         boolean first = true;

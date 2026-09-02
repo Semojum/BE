@@ -30,7 +30,7 @@ public enum ErrorCode {
 
     // ========== 작업 (JOB) ==========
     JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4001", "존재하지 않는 작업입니다."),
-    JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "mode a는 PDF/HWP, mode b는 TXT, mode c는 PDF 파일만 업로드 가능합니다."),
+    JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "mode a·c는 PDF/HWP, mode b는 TXT 파일만 업로드 가능합니다."),
     JOB_INVALID_MODE(HttpStatus.BAD_REQUEST, "JOB4003", "지원하지 않는 모드입니다."),
     ELEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4004", "존재하지 않는 요소입니다."),
     // JOB4005(elementType 검증)는 페이지 일괄 저장 도입으로 폐기 — 편집 대상 테이블은 mode가 정한다
