@@ -90,14 +90,11 @@ public class JobService {
         String ext = originalFilename != null && originalFilename.contains(".")
                 ? originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase()
                 : "";
-        // mode a는 HWP도 허용(2026-08-24) — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다.
+        // a·c는 HWP도 허용 — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다
+        // (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5. 변환 경로가 확장자로 갈리므로 같은 코드를 탄다).
         // mode b는 TXT 전용으로 축소(HWP는 a로 이관 — 텍스트 추출 대신 렌더링 보존 방식)
-        if (mode.equals("a")) {
+        if (mode.equals("a") || mode.equals("c")) {
             if (!List.of("pdf", "hwp").contains(ext)) {
-                throw new CustomException(ErrorCode.JOB_INVALID_FILE);
-            }
-        } else if (mode.equals("c")) {
-            if (!ext.equals("pdf")) {
                 throw new CustomException(ErrorCode.JOB_INVALID_FILE);
             }
         } else if (mode.equals("b")) {
