@@ -34,6 +34,7 @@ public class JobController {
     private final SseService sseService;
     private final JobRepository jobRepository;
     private final PageSaveService pageSaveService;
+    private final com.semojum.backend.domain.job.service.PageDeleteService pageDeleteService;
     private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
     private final com.semojum.backend.domain.job.service.JobDownloadService jobDownloadService;
@@ -169,6 +170,22 @@ public class JobController {
     ) {
         return ApiResponse.success(pageSaveService.savePage(
                 userDetails.getUsername(), jobId, pageNo, request.elements()));
+    }
+
+    /**
+     * 원본 페이지 영구 삭제 + 뒤 번호 자동 당김 (X-1).
+     *
+     * <p><b>되돌릴 수 없다.</b> 크레딧은 환불하지 않고 편집 이력은 남긴다(유저 확정).
+     * 변환 중이면 JOB4010, 마지막 한 장이면 COMMON4000(작업 자체를 지워야 한다).
+     */
+    @DeleteMapping("/{jobId}/pages/{pageNo}")
+    public ApiResponse<Map<String, Object>> deletePage(
+            @PathVariable String jobId,
+            @PathVariable int pageNo,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        int remaining = pageDeleteService.deletePage(userDetails.getUsername(), jobId, pageNo);
+        return ApiResponse.success(Map.of("jobId", jobId, "deletedPageNo", pageNo, "totalPages", remaining));
     }
 
     // 결과 다운로드 — mode a는 .txt(텍스트 병합), b·c는 .brf(braille-assist 조판).
