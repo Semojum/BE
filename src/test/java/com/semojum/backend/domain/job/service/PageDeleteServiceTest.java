@@ -15,6 +15,7 @@ import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -165,6 +166,89 @@ class PageDeleteServiceTest {
         CustomException e = assertThrows(CustomException.class,
                 () -> service.deletePage(userId, "job1", 99));
         assertEquals(ErrorCode.JOB_NOT_FOUND, e.getErrorCode());
+    }
+
+    // ── 벌크 삭제 ───────────────────────────────────────────────────
+
+    /** 여러 장을 한 번에 — 큰 번호부터 지워야 앞을 지운 탓에 뒤 번호가 어긋나지 않는다 */
+    @Test
+    void 여러_장을_큰_번호부터_지운다() {
+        Job j = job("COMPLETED", 12);
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class))).thenReturn(Optional.of(j));
+        for (int n : new int[]{5, 6, 7, 8}) {
+            Page p = Page.builder().job(j).pageNo(n).pdfPath("job1/pages/page-" + n + ".pdf").build();
+            when(pageRepository.findByJob_IdAndPageNo("job1", n)).thenReturn(Optional.of(p));
+        }
+
+        assertEquals(8, service.deletePages(userId, "job1", List.of(5, 6, 7, 8)));
+
+        InOrder o = inOrder(deleteRepo);
+        o.verify(deleteRepo).deletePage("job1", 8);
+        o.verify(deleteRepo).deletePage("job1", 7);
+        o.verify(deleteRepo).deletePage("job1", 6);
+        o.verify(deleteRepo).deletePage("job1", 5);
+        verify(jobRepository).updateTotalPages("job1", 8);
+    }
+
+    /** 순서를 섞어 보내도 큰 번호부터 — FE가 정렬해 보낼 필요가 없다 */
+    @Test
+    void 순서를_섞어_보내도_된다() {
+        Job j = job("COMPLETED", 10);
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class))).thenReturn(Optional.of(j));
+        for (int n : new int[]{3, 7}) {
+            Page p = Page.builder().job(j).pageNo(n).pdfPath("p" + n).build();
+            when(pageRepository.findByJob_IdAndPageNo("job1", n)).thenReturn(Optional.of(p));
+        }
+
+        assertEquals(8, service.deletePages(userId, "job1", List.of(3, 7)));
+
+        InOrder o = inOrder(deleteRepo);
+        o.verify(deleteRepo).deletePage("job1", 7);
+        o.verify(deleteRepo).deletePage("job1", 3);
+    }
+
+    @Test
+    void 중복_번호는_한_번만_센다() {
+        Job j = job("COMPLETED", 5);
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class))).thenReturn(Optional.of(j));
+        Page p = Page.builder().job(j).pageNo(2).pdfPath("p2").build();
+        when(pageRepository.findByJob_IdAndPageNo("job1", 2)).thenReturn(Optional.of(p));
+
+        assertEquals(4, service.deletePages(userId, "job1", List.of(2, 2, 2)));
+        verify(deleteRepo, times(1)).deletePage("job1", 2);
+    }
+
+    /** 하나라도 없는 쪽이 섞이면 아무것도 지우지 않는다 — 절반만 지워진 상태를 만들지 않는다 */
+    @Test
+    void 없는_쪽이_섞이면_아무것도_안_지운다() {
+        Job j = job("COMPLETED", 5);
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class))).thenReturn(Optional.of(j));
+        Page p = Page.builder().job(j).pageNo(2).pdfPath("p2").build();
+        when(pageRepository.findByJob_IdAndPageNo("job1", 2)).thenReturn(Optional.of(p));
+        when(pageRepository.findByJob_IdAndPageNo("job1", 99)).thenReturn(Optional.empty());
+
+        assertThrows(CustomException.class, () -> service.deletePages(userId, "job1", List.of(2, 99)));
+        verify(deleteRepo, never()).deletePage(anyString(), anyInt());
+    }
+
+    @Test
+    void 전부_지우려_하면_COMMON4000() {
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class)))
+                .thenReturn(Optional.of(job("COMPLETED", 3)));
+
+        CustomException e = assertThrows(CustomException.class,
+                () -> service.deletePages(userId, "job1", List.of(1, 2, 3)));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+    }
+
+    @Test
+    void 빈_목록은_COMMON4000() {
+        when(jobRepository.findByIdAndUserId(eq("job1"), any(UUID.class)))
+                .thenReturn(Optional.of(job("COMPLETED", 5)));
+
+        CustomException e = assertThrows(CustomException.class,
+                () -> service.deletePages(userId, "job1", List.of()));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 
     // ── 실패 쪽 목록·마지막 편집 위치 보정 ──────────────────────────
