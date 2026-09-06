@@ -5,6 +5,7 @@ import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.repository.UserRepository;
+import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.entity.Job;
@@ -309,6 +310,69 @@ public class JobService {
         return new JobResponseDto.Options(
                 job.getId(), job.isInsertPageNumber(), job.getFooterText(),
                 footerBrailleService.resolve(job), job.resolveLayoutOptions());
+    }
+
+    /**
+     * 업로드 후 조판 설정 변경 (V32) — 에디터 "이 파일의 조판 설정" 모달.
+     *
+     * <p>종전엔 조회만 있어 모달이 <b>화면에만</b> 반영됐다 — 40칸으로 다듬어 놓고 내려받으면
+     * 32칸 파일이 나오고, 다시 열면 32칸으로 돌아갔다. 이제 저장해 화면·다운로드·재열람이 같은 값을 쓴다.
+     *
+     * <p><b>보낸 항목만 바뀐다</b>({@link LayoutOptions#merge}). 꼬리말만 {@code ""}로 지울 수 있다.
+     *
+     * <p>꼬리말 처리가 이 메서드의 핵심이다.
+     * <ul>
+     *   <li>묵자가 <b>바뀌면</b> 다시 점역한다(AI 1회) — 화면·SSE·다운로드가 같은 값을 쓰는 전제(V31)를 지킨다</li>
+     *   <li>묵자가 그대로여도 <b>판면이 좁아지면</b>(칸 수↓·쪽 번호 켜기) 기존 점자가 페이지행에 안 들어갈 수
+     *       있다 — 재점역 없이 길이만 다시 검사한다(S-9). 이 검사가 없으면 라이브러리가 말없이 뒤에서 자른다</li>
+     *   <li>꼬리말을 지우면 점역 결과도 함께 비운다</li>
+     * </ul>
+     *
+     * <p><b>변환 중에는 거부한다(JOB4010).</b> 조판 옵션 자체는 워커가 안 쓰지만 {@code advancedAi}가
+     * gRPC 요청에 실려, 중간에 바뀌면 쪽마다 다른 설정으로 처리된 문서가 나온다.
+     * ⚠️ 이미 변환이 끝난 작업에서 {@code advancedAi}를 바꿔도 <b>결과는 달라지지 않는다</b> —
+     * 재변환 경로가 없어 기록만 남는다(모달이 그 항목을 보여주므로 거부하지 않고 받아 둔다).
+     */
+    @Transactional
+    public JobResponseDto.Options updateJobOptions(String userId, String jobId,
+                                                   JobRequestDto.UpdateOptions request) {
+        // 타인 작업이면 403 (조회와 같은 기준 — 존재 여부를 숨긴다)
+        Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+        if (job.isInProgress()) {
+            throw new CustomException(ErrorCode.JOB_IN_PROGRESS);
+        }
+
+        LayoutOptions merged = validateLayoutOptions(job.resolveLayoutOptions().merge(request.layoutOptions()));
+        boolean insertPageNumber = request.insertPageNumber() != null
+                ? request.insertPageNumber() : job.isInsertPageNumber();
+
+        // 꼬리말: 미전송(null)이면 그대로, ""면 삭제, 값이 있으면 교체
+        String footerText = job.getFooterText();
+        if (request.footerText() != null) {
+            String trimmed = request.footerText().trim();
+            footerText = trimmed.isEmpty() ? null : trimmed;
+            if (footerText != null && footerText.length() > 200) {
+                throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+            }
+        }
+
+        String footerBraille;
+        if (footerText == null) {
+            footerBraille = null;                                   // 지웠다 — 점역 결과도 함께 비운다
+        } else if (footerText.equals(job.getFooterText()) && job.getFooterBraille() != null) {
+            footerBraille = job.getFooterBraille();                 // 묵자 그대로 — 새 판면에 들어가는지만 본다
+            footerBrailleService.validateFits(footerBraille, merged, job.getTotalPages());
+        } else {
+            footerBraille = footerBrailleService                    // 바뀌었거나 아직 점역 전 — 다시 점역(길이 검증 포함)
+                    .translateForUpload(footerText, merged, job.getTotalPages());
+        }
+
+        job.updateOptions(insertPageNumber, footerText, merged);
+        job.updateFooterBraille(footerBraille);
+        log.info("조판 설정 변경: jobId={}, 꼬리말={}, 판면={}칸×{}줄",
+                jobId, footerText == null ? "(없음)" : footerText, merged.cellsPerLine(), merged.linesPerPage());
+        return new JobResponseDto.Options(jobId, insertPageNumber, footerText, footerBraille, merged);
     }
 
 

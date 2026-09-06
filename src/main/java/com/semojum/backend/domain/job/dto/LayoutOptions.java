@@ -52,6 +52,35 @@ public record LayoutOptions(
                 advancedAi != null && advancedAi);
     }
 
+    /**
+     * 이 값 위에 {@code patch}의 <b>비어 있지 않은 항목만</b> 덮어쓴 사본 (부분 갱신용, V32).
+     *
+     * <p>{@code PATCH /api/jobs/{jobId}/options}가 쓴다 — 에디터 조판 설정 모달이 바꾼 항목만
+     * 보내도 나머지가 유지되게. null은 "그대로 두라"는 뜻이라 <b>이 방식으로는 값을 비울 수 없지만</b>,
+     * 12개 항목 전부 기본값이 있는 스칼라라 비울 일 자체가 없다(꼬리말만 지울 수 있고, 그건
+     * {@code jobs.footer_text}라 여기 없다).
+     *
+     * <p>받는 쪽(this)은 이미 {@link #withDefaults()}를 거친 완전한 형태라고 본다 —
+     * {@code Job.resolveLayoutOptions()}가 항상 그렇게 준다.
+     */
+    public LayoutOptions merge(LayoutOptions patch) {
+        if (patch == null) return this;
+        return new LayoutOptions(
+                patch.cellsPerLine() != null ? patch.cellsPerLine() : cellsPerLine,
+                patch.linesPerPage() != null ? patch.linesPerPage() : linesPerPage,
+                patch.pageNumberLine() != null ? patch.pageNumberLine() : pageNumberLine,
+                patch.coverPages() != null ? patch.coverPages() : coverPages,
+                patch.sourcePageStart() != null ? patch.sourcePageStart() : sourcePageStart,
+                patch.braillePageStart() != null ? patch.braillePageStart() : braillePageStart,
+                patch.showSourcePageNumber() != null ? patch.showSourcePageNumber() : showSourcePageNumber,
+                patch.showBraillePageNumber() != null ? patch.showBraillePageNumber() : showBraillePageNumber,
+                patch.showChangeLine() != null ? patch.showChangeLine() : showChangeLine,
+                patch.footerAlign() != null ? patch.footerAlign() : footerAlign,
+                patch.editScope() != null ? patch.editScope() : editScope,
+                patch.advancedAi() != null ? patch.advancedAi() : advancedAi
+        ).withDefaults();
+    }
+
     /** 옵션 없이 만들어진 기존 작업용 — 구 insert_page_number만 반영한 기본값 */
     public static LayoutOptions legacy(boolean insertPageNumber) {
         return new LayoutOptions(null, null, insertPageNumber ? "odd" : "none",
