@@ -84,8 +84,11 @@ public class FooterBrailleService {
      *
      * <p>남는 자리는 면마다 조금씩 다르다(쪽 번호 자릿수·걸침 순번). 여기서는 <b>가장 빠듯한 경우</b>로
      * 잡는다 — 원본 쪽·점자 면 번호가 모두 이 문서에서 가장 긴 자릿수일 때.
+     *
+     * <p>package-private인 이유: 조판 설정 변경({@code PATCH …/options}, V32)은 꼬리말을 그대로 둔 채
+     * <b>판면만 좁힐 수 있어</b>(32칸→20칸, 쪽 번호 켜기 등) 재점역 없이 이 검사만 다시 돌려야 한다.
      */
-    private void validateFits(String braille, LayoutOptions options, int totalPages) {
+    void validateFits(String braille, LayoutOptions options, int totalPages) {
         LayoutOptions opts = options == null ? LayoutOptions.legacy(false) : options.withDefaults();
         if ("none".equals(opts.pageNumberLine())) return;   // 페이지행 자체가 없으면 잘릴 일이 없다
 

@@ -34,6 +34,21 @@ public class JobRequestDto {
             String fileName
     ) {}
 
+    /**
+     * 업로드 후 조판 설정 변경 (V32) — 에디터 "이 파일의 조판 설정" 모달.
+     *
+     * <p><b>전부 선택이고, 보낸 항목만 바뀐다.</b> null·미전송은 "그대로 두라"는 뜻이다
+     * ({@code layoutOptions} 안의 12개 항목도 같은 규칙 — {@link LayoutOptions#merge}).
+     *
+     * <p>꼬리말만 예외적으로 지울 수 있다 — {@code footerText: ""}를 보내면 삭제된다.
+     * null(미전송)과 구분해야 해서 빈 문자열에 그 뜻을 준다.
+     */
+    public record UpdateOptions(
+            Boolean insertPageNumber,
+            String footerText,
+            LayoutOptions layoutOptions
+    ) {}
+
     // ===== V3 마이페이지 작업 관리 =====
     // 파일 이름은 하나만 사용 (팀 결정) — 이름 변경은 originalFileName 자체를 바꾼다
     public record Rename(
