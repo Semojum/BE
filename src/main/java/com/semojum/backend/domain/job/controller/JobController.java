@@ -130,6 +130,17 @@ public class JobController {
         return ApiResponse.success(jobService.getJobOptions(userDetails.getUsername(), jobId));
     }
 
+    // 업로드 후 조판 설정 변경 (V32) — 에디터 "이 파일의 조판 설정" 모달.
+    // 보낸 항목만 바뀐다. 응답은 GET과 같은 모양이라 FE가 그대로 갈아끼우면 된다
+    @PatchMapping("/{jobId}/options")
+    public ApiResponse<JobResponseDto.Options> updateJobOptions(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody JobRequestDto.UpdateOptions request
+    ) {
+        return ApiResponse.success(jobService.updateJobOptions(userDetails.getUsername(), jobId, request));
+    }
+
     // job 상태 확인 API
     @GetMapping("/{jobId}/status")
     public ApiResponse<JobResponseDto.Status> getJobStatus(

@@ -198,6 +198,19 @@ public class Job {
         this.footerBraille = footerBraille;
     }
 
+    /**
+     * 업로드 후 조판 설정을 바꾼다 (V32) — 에디터 조판 설정 모달.
+     *
+     * <p>{@code lastModifiedAt}은 <b>건드리지 않는다.</b> 그 컬럼은 "내용이 바뀐 시각"이라
+     * 페이지 편집만 갱신한다 — 설정 변경은 이름변경·이동과 같은 취급이다.
+     */
+    public void updateOptions(boolean insertPageNumber, String footerText,
+                              com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions) {
+        this.insertPageNumber = insertPageNumber;
+        this.footerText = footerText;
+        this.layoutOptions = layoutOptions;
+    }
+
     /** 조판에 쓸 옵션 — 없으면(기존 작업) 구 insert_page_number만 반영한 기본값을 준다 */
     public com.semojum.backend.domain.job.dto.LayoutOptions resolveLayoutOptions() {
         return layoutOptions != null
