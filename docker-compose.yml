@@ -46,7 +46,7 @@ x-backend-common: &backend-common
   depends_on:
     - redis
   volumes:
-    # 호스트 경로를 compose 파일 기준 상대경로로 (GCP/AWS 어느 VM에서든 동작)
+    # 호스트 경로를 compose 파일 기준 상대경로로 (어느 VM에서든 동작)
     - ./server.crt:/home/joha-eun/server.crt:ro
 
 services:
