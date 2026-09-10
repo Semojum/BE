@@ -9,7 +9,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-// GCS → S3 이전: 기존 GcsService와 동일한 3개 메서드 시그니처 유지 (호출부 로직 무변경)
+// 파일 저장소. 경로는 `s3://{버킷}/{key}` 형태로 DB에 담고, 읽을 때 key만 뽑아 쓴다.
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -102,8 +102,6 @@ public class S3Service {
         log.info("S3 프리픽스 삭제 완료: {}", prefix);
     }
 
-    // s3://bucket/key · gs://bucket/key(GCP 시절 DB 경로 호환) · 순수 key 모두에서 객체 key만 추출.
-    // 기존 DB 행의 gs:// 경로도 객체를 같은 key로 S3에 복사해두면 UPDATE 없이 그대로 읽힌다.
     // 같은 버킷 내 서버사이드 복사 (다운로드 없이) — 관리자 "마이페이지로 보내기" 사본용
     public String copyObject(String sourceStoragePath, String destPath) {
         s3Client.copyObject(b -> b.sourceBucket(bucketName).sourceKey(toKey(sourceStoragePath))
@@ -111,9 +109,10 @@ public class S3Service {
         return "s3://" + bucketName + "/" + destPath;
     }
 
+    /** `s3://{버킷}/{key}` 또는 순수 key에서 객체 key만 뽑는다. */
     private String toKey(String storagePath) {
-        if (storagePath.startsWith("s3://") || storagePath.startsWith("gs://")) {
-            String withoutScheme = storagePath.substring(5);
+        if (storagePath.startsWith("s3://")) {
+            String withoutScheme = storagePath.substring("s3://".length());
             return withoutScheme.substring(withoutScheme.indexOf('/') + 1);
         }
         return storagePath;
