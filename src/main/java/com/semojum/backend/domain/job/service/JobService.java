@@ -141,8 +141,8 @@ public class JobService {
 
             try {
                 byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
-                String thumbnailGcsPath = jobId + "/thumbnail.png";
-                String thumbnailFullPath = s3Service.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                String thumbnailKey = jobId + "/thumbnail.png";
+                String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
                 job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
                 jobRepository.save(job);
             } catch (Exception e) {
@@ -156,10 +156,10 @@ public class JobService {
             for (int i = 0; i < totalPages; i++) {
                 int pageNo = i + 1;
 
-                // GCS 업로드 (txt로 통일)
-                String gcsPath = jobId + "/pages/page-" + pageNo + ".txt";
+                // S3 업로드 (txt로 통일)
+                String pageKey = jobId + "/pages/page-" + pageNo + ".txt";
                 byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
-                String fullPath = s3Service.uploadFile(gcsPath, chunkBytes, "text/plain");
+                String fullPath = s3Service.uploadFile(pageKey, chunkBytes, "text/plain");
 
                 // Page 엔티티 생성
                 Page page = Page.builder()
@@ -171,7 +171,7 @@ public class JobService {
 
                 // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                 String task = String.format(
-                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
                         jobId, pageNo, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
                 );
                 tasks.add(task);
@@ -188,7 +188,7 @@ public class JobService {
             return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
 
         } else {
-            // 5. PDF 페이지별 분리 및 GCS 업로드.
+            // 5. PDF 페이지별 분리 및 S3 업로드.
             // mode a의 HWP는 업로드 시점에 PDF로 변환(2026-08-24) — 이후는 PDF와 완전히 동일하게 처리
             byte[] pdfBytes;
             if (ext.equals("hwp")) {
@@ -228,8 +228,8 @@ public class JobService {
 
                 try {
                     byte[] thumbnailBytes = thumbnailService.generatePdfThumbnail(pdfBytes);
-                    String thumbnailGcsPath = jobId + "/thumbnail.png";
-                    String thumbnailFullPath = s3Service.uploadFile(thumbnailGcsPath, thumbnailBytes, "image/png");
+                    String thumbnailKey = jobId + "/thumbnail.png";
+                    String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
                     job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
                     jobRepository.save(job);
                 } catch (Exception e) {
@@ -247,9 +247,9 @@ public class JobService {
                         pdfDoc.copyPagesTo(i, i, pageDoc);
                     }
 
-                    // GCS 업로드
-                    String gcsPath = jobId + "/pages/page-" + i + ".pdf";
-                    String fullPath = s3Service.uploadFile(gcsPath, pageOut.toByteArray(), "application/pdf");
+                    // S3 업로드
+                    String pageKey = jobId + "/pages/page-" + i + ".pdf";
+                    String fullPath = s3Service.uploadFile(pageKey, pageOut.toByteArray(), "application/pdf");
 
                     // Page 엔티티 생성
                     Page page = Page.builder()
@@ -261,7 +261,7 @@ public class JobService {
 
                     // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                     String task = String.format(
-                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"gcsPath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
                             jobId, i, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
                     );
                     tasks.add(task);

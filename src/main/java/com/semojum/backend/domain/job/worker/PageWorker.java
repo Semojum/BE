@@ -74,6 +74,19 @@ public class PageWorker {
         log.info("PageWorker 종료 완료");
     }
 
+    /**
+     * 태스크에서 이 쪽의 원본 조각(txt·pdf) S3 경로를 꺼낸다.
+     *
+     * <p>필드명이 {@code gcsPath} → {@code sourcePath}로 바뀌었다(2026-09-11, GCP 정리).
+     * 큐는 Redis에 있어 <b>배포로 사라지지 않으므로</b>, 이름을 바꾸는 배포 순간 큐에 남아 있던
+     * 구 형식 태스크가 워커에 도달한다. 그것들이 경로를 못 찾아 실패하지 않도록 한 릴리스만
+     * 구 이름도 읽는다 — <b>다음 정리 때 이 폴백을 뺀다.</b>
+     */
+    static String sourcePathOf(Map<String, Object> taskMap) {
+        String path = (String) taskMap.get("sourcePath");
+        return path != null ? path : (String) taskMap.get("gcsPath");
+    }
+
     private void runWorker(int workerId) {
         log.info("Worker-{} 시작", workerId);
         while (running) {
@@ -90,7 +103,7 @@ public class PageWorker {
                 Map<String, Object> taskMap = objectMapper.readValue(task, Map.class);
                 String jobId = (String) taskMap.get("jobId");
                 int pageNo = (int) taskMap.get("pageNo");
-                String gcsPath = (String) taskMap.get("gcsPath");
+                String sourcePath = sourcePathOf(taskMap);
                 String mode = (String) taskMap.get("mode");
                 int totalPages = (int) taskMap.get("totalPages");
 
@@ -111,8 +124,8 @@ public class PageWorker {
                 // Redis 상태 → RUNNING
                 redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "RUNNING");
 
-                // GCS에서 파일 다운로드
-                byte[] fileData = s3Service.downloadFile(gcsPath);
+                // S3에서 원본 조각 다운로드
+                byte[] fileData = s3Service.downloadFile(sourcePath);
 
                 // 원본 미리보기 이미지 렌더 (a·c만 — b는 원본이 텍스트).
                 // AI 요청 '전'에 만들어 둔다: 결과가 나오는 순간(page_done) 사용자가 그 쪽을 열어도
