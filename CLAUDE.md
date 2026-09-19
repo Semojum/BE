@@ -1,297 +1,248 @@
 # 세모점(Semojum) BE 개발 가이드
 
-## 프로젝트 개요
+점역사(전문 점자 번역사)용 AI 점자 변환 플랫폼의 백엔드.
 
-**세모점** — 점역사(전문 점자 번역사)를 위한 AI 기반 점자 변환 플랫폼.
-
-| 모드 | 변환 | 입력 파일 |
+| 모드 | 변환 | 입력 |
 |---|---|---|
-| a | 이미지 → 텍스트 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-08-24) |
-| b | 텍스트 → 점자 | TXT (HWP는 a로 이관) |
-| c | 이미지 → 점자 | PDF, **HWP**(업로드 시 PDF 변환 — 2026-09-03) |
+| a | 이미지 → 텍스트 | PDF, HWP |
+| b | 텍스트 → 점자 | TXT |
+| c | 이미지 → 점자 | PDF, HWP |
+
+> **API 상세(요청·응답·에러)는 노션 `Development / Dev. DB / [V3] API 명세서`가 정본**이다.
+> 이 문서에는 코드만 봐서는 알 수 없는 것 — 설계 제약, 결정의 근거, 지뢰 — 만 적는다.
 
 ## 기술 스택
 
-- Java 21, Spring Boot 3.5.x, Gradle-Groovy, 패키지 베이스 `com.semojum.backend`
-- PostgreSQL 18 (AWS RDS) + **Flyway**(스키마 자동 마이그레이션), Redis (EC2 내 Docker)
-- AWS S3 (`semojum-bucket`, EC2 IAM Role 키리스), gRPC+TLS (AI 서버), SSE (FE 스트리밍)
-- Spring Security + JWT(jjwt), BCrypt, SHA-256
-- Docker Compose + Envoy, GitHub Actions CI/CD, **블루그린 무중단 배포**
+Java 21 · Spring Boot 3.5 · Gradle-Groovy · `com.semojum.backend`
+PostgreSQL 18(RDS) + Flyway · Redis · AWS S3 · gRPC+TLS(AI 서버) · SSE
+Spring Security + JWT(jjwt) · BCrypt · Docker Compose + Envoy · GitHub Actions
 
 ## 인프라 (AWS 서울, 계정 804136008552)
 
-| 구성요소 | 상세 |
+| 구성 | 상세 |
 |---|---|
-| EC2 | `semojum-backend`, t3.medium, 고정 IP `43.200.184.56`, Ubuntu 22.04 + Docker Compose v2 |
-| RDS | `semojum-postgres` (PostgreSQL 18), 엔드포인트 `semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com`. 백업 7일. **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 함 |
-| S3 | 공개 읽기는 `*/thumbnail.png`만. 원본 페이지는 **presigned URL(15분)**. CORS `GET/HEAD`·origin `*` — 제거 시 에디터 원본 렌더링이 깨짐 |
-| AI 서버 | `semojum-ai`(g5.2xlarge), **같은 VPC — 반드시 사설 IP `172.31.47.101:50051`로 접속**. 공인 IP로 가면 AI 보안그룹의 "BE SG 허용" 규칙에 안 걸려 차단됨 |
-| 도메인 | `api.semojum.app` — **Cloudflare DNS only + EC2 직접 TLS**(2026-08-26 전환). 프록시 경유 시 무료 플랜이 미국 엣지로 라우팅해 요청당 +0.5~0.7s 지연(실측) → 프록시 해제. 인증서는 Let's Encrypt(certbot 타이머 자동 갱신, deploy hook이 `~/semojum/tls/` 갱신 + Envoy 재시작 — **인증서 파일은 uid 101 소유 필수**, envoy 컨테이너가 envoy 유저로 강등 실행). 갱신 챌린지는 80 포트 `/.well-known/acme-challenge/` → 호스트 certbot(8888) 라우트. **프록시(주황 구름) 재활성화 금지** — 다시 켜면 지연 회귀. DNS 계정: che274582@gmail.com |
-| Docker Hub | `zxhwan/semojum-backend:latest` |
-| 예산 알람 | 월 $50의 80%·100% → `contact@semo-jum.com` |
+| EC2 | `semojum-backend` t3.medium, 고정 IP `43.200.184.56` |
+| RDS | `semojum-postgres` (PG18). **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 한다. DB 이름은 `postgres` |
+| S3 | `semojum-bucket` (EC2 IAM Role 키리스) |
+| AI 서버 | `semojum-ai`(g5.2xlarge) — **같은 VPC라 반드시 사설 IP `172.31.47.101:50051`**. 공인 IP로 가면 AI 보안그룹의 "BE SG 허용" 규칙에 안 걸려 차단된다 |
+| 도메인 | `api.semojum.app` — **Cloudflare DNS only + EC2 직접 TLS**. 프록시 경유 시 무료 플랜이 미국 엣지로 라우팅해 요청당 +0.5~0.7s(실측) → **프록시(주황 구름) 재활성화 금지**. 인증서는 certbot 자동 갱신, **인증서 파일은 uid 101 소유 필수**(envoy가 envoy 유저로 강등 실행) |
 
-- 보안그룹: EC2는 80/443 공개·**22는 관리자 IP만** / RDS 5432는 EC2 SG+관리자 IP만
-- **22번을 0.0.0.0/0으로 열지 말 것** — CI가 배포 동안만 러너 IP를 추가·회수한다(`if: always()`). 전용 IAM `semojum-github-actions`는 SG 토글 권한만 보유
+- 보안그룹: EC2 80/443 공개 · **22는 관리자 IP만**. **22번을 0.0.0.0/0으로 열지 말 것** — CI가 배포 동안만 러너 IP를 추가·회수한다(`if: always()`)
 - 관리자 IP가 바뀌면 `semojum-ec2-sg`(22)·`semojum-rds-sg`(5432) 두 곳 갱신
-- 로컬 시크릿: `~/semojum/semojum-aws-secrets.txt`(RDS 비번·인스턴스 ID), SSH 키 `~/.ssh/semojum-key.pem`
+- 로컬 시크릿: `~/semojum/semojum-aws-secrets.txt`, SSH 키 `~/.ssh/semojum-key.pem`
 
-## 배포 — 블루그린 무중단 (2026-08-16 전환)
+## 배포 — 블루그린 무중단
 
-- 흐름: `dev` push → GitHub Actions(테스트 게이트) → Docker Hub → EC2에서 `scripts/deploy.sh`
-- deploy.sh: 활성 색 감지 → 새 이미지를 비활성 색(backend-blue/green)으로 기동 → `/api/health` 게이트(최대 120s, **실패 시 구버전 유지·exit 1**) → Envoy 헬스체크(3s×2) 자동 편입 → 구 색 graceful 정지
+**`dev` push = 운영 배포다.** GitHub Actions(테스트 게이트) → Docker Hub → EC2 `scripts/deploy.sh`.
+
+- 활성 색 감지 → 비활성 색으로 기동 → `/api/health` 게이트(120s, **실패 시 구버전 유지·exit 1**) → Envoy 헬스체크 편입 → 구 색 graceful 정지
 - 롤백 = 방금 내린 색 재기동 한 줄
 - ⚠️ 색 서비스는 compose **profiles** — `docker compose up -d`로는 backend가 안 뜬다. 수동 조작 시 `--profile blue|green` 필수
-- Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 `timeout: 0s` 변경 금지**(스트리밍에 필요). `idle_timeout`은 **600s**(2026-09-19, 10800s에서 단축 — 무음 상한이 gRPC deadline 400s로 묶이고 하트비트가 연결 생사를 따로 확인한다). ⚠️ **`envoy.yaml`은 배포 때 복사만 되고 `deploy.sh`가 Envoy를 재시작하지 않는다** — 적용하려면 EC2에서 `docker compose up -d --force-recreate envoy`(1~2초 단절)
-- 안전핀: `-Xmx768m`(JAVA_TOOL_OPTIONS), EC2 스왑 1GB, graceful shutdown 20s(+stop_grace_period 30s)
-- 로그 뷰어: `scripts/semlog.sh` (ERROR 빨강·WARN 노랑·REQ 시안)
-- **로그 아카이브 (2026-09-02)**: Docker json-file 로그는 컨테이너에 딸려 있어 **배포로 컨테이너를 갈아끼우면 함께 사라진다**. deploy.sh가 사라지기 직전(비활성 색 재생성 전)·정지 직후·헬스 실패 시 `docker logs`를 통째로 `~/semojum/logs/backend-{색}-{기동시각}.log`에 뜬다(최근 30개 보관, 파일명이 기동 시각이라 재실행해도 덮어쓰기·중복 없음). 장애 분석은 이 파일 → `page_results.raw_response`·T1-4 순으로 본다
+- ⚠️ **변환 중 배포하면 AI가 처리 중이던 쪽이 유실된다.** 워커 종료는 5초만 기다리는데(`PageWorker.stopWorkers`) 한 쪽 처리는 수십~180초다. 인터럽트되면 `if (running)`이 false라 **재시도 큐에 다시 넣지 않고 버린다.** 큐에서 대기 중이던 쪽은 Redis에 남아 이어진다
+- ⚠️ **`envoy.yaml`은 복사만 되고 적용되지 않는다** — `deploy.sh`가 평상시 Envoy를 재시작하지 않는다. 적용은 EC2에서 `docker compose up -d --force-recreate envoy`(1~2초 단절)
+- Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 `timeout: 0s` 변경 금지**, `idle_timeout` 600s
+- 안전핀: `-Xmx768m`, EC2 스왑 1GB, graceful shutdown 20s
+- 로그 뷰어 `scripts/semlog.sh`. **배포로 컨테이너가 갈리면 로그가 사라지므로** deploy.sh가 `~/semojum/logs/`에 보관(최근 30개)
 
-## 패키지 구조 (요약)
+## 패키지 구조
 
 ```
 com.semojum.backend
 ├── domain
-│   ├── auth      로그인/로그아웃/refresh, User·UserSession (V3 발급형 계정)
-│   ├── admin     운영자 API (ROLE_ADMIN JWT 전용)
-│   ├── org       Organization (기관, 계약 만료일)
-│   ├── user      마이페이지 목록·페이지 조회 (UserService)
-│   ├── folder    폴더 CRUD·트리·contents (FolderService, FolderTouch)
-│   ├── trash     휴지통 목록/복원/완전삭제 + TrashPurgeScheduler(04시)
-│   ├── job       Job 생성·다운로드·취소·SSE, JobManageService(이름변경/이동/삭제)
+│   ├── auth      로그인/로그아웃/refresh, User·UserSession
+│   ├── admin     운영자 API (ROLE_ADMIN 전용)
+│   ├── org       Organization (기관, 계약)
+│   ├── user      마이페이지 목록·페이지 조회
+│   ├── folder    폴더 CRUD·트리·contents (FolderTouch)
+│   ├── trash     휴지통 + TrashPurgeScheduler(04시)
+│   ├── job       Job 생성·다운로드·취소·SSE
 │   │   ├── scheduler   JobDispatcher(공정 큐), StaleJobScheduler
 │   │   └── worker      PageWorker
-│   ├── result    AI 결과 저장(ResultService), 페이지 일괄 저장(PageSaveService)
-│   └── rule      점자 규정 검색 (BrailleRuleRegistry 인메모리 + BrailleRuleSearchService)
-├── global
-│   ├── config    SecurityConfig, RedisConfig, S3Config, SchedulingConfig, SwaggerConfig
-│   ├── jwt       JwtFilter, JwtProvider
-│   ├── exception CustomException, ErrorCode, ApiResponse
-│   ├── grpc      AiServerPool, BrailleGrpcClient
-│   ├── s3 / hwp / thumbnail / health / logging / util
+│   ├── result    AI 결과 저장(ResultService), 페이지 일괄 저장
+│   └── rule      점자 규정 검색 (인메모리)
+├── global        config · jwt · exception · grpc · s3 · hwp · thumbnail · logging
 └── grpc          proto 생성 클래스
 ```
 
-## 공통 응답 구조
+## 공통 응답
 
 ```json
 { "isSuccess": true, "code": "COMMON2000", "message": "성공입니다.", "result": {} }
 ```
 
-### 에러 코드
-| 코드 | HTTP | 설명 |
-|---|---|---|
-| COMMON4000 | 400 | 잘못된 요청 |
-| COMMON4001 | 401 | 인증 필요 |
-| COMMON4003 | 403 | 권한 없음 |
-| COMMON4004 | 404 | 존재하지 않는 경로 |
-| COMMON4005 | 405 | 지원하지 않는 메서드 |
-| COMMON5000 | 500 | 서버 에러 |
-| AUTH4001 | 401 | 아이디/비밀번호 오류 |
-| AUTH4002 | 409 | 이미 사용 중인 로그인 ID |
-| AUTH4003 | 401 | 액세스 토큰 만료/무효 |
-| AUTH4004 | 403 | 비활성화된 계정 |
-| AUTH4005 | 403 | 로그인 채널 위반 — 콘솔(Origin=콘솔 주소)에서 비WEB 계정 / 콘솔 밖에서 WEB 계정 |
-| USER4001 | 404 | 존재하지 않는 회원 |
-| ORG4001 | 404 | 존재하지 않는 기관 |
-| JOB4001 | 404 | 존재하지 않는 작업 |
-| JOB4002 | 400 | 잘못된 파일 형식 |
-| JOB4003 | 400 | 지원하지 않는 모드 |
-| JOB4004 | 404 | 존재하지 않는 요소 |
-| JOB4006 | 400 | 요소 목록 불일치 (일괄 저장 중복 id 등) |
-| JOB4007 | 400 | HWP 파싱 실패 |
-| JOB4008 | 400 | 암호 설정/배포용 HWP |
-| JOB4010 | 409 | 변환 중 조작 불가 |
-| JOB4012 | 400 | 다운로드할 변환 결과 없음 |
-| JOB4013 | 400 | HWP→PDF 변환 실패 (mode a) |
-| FOLDER4001~4 | — | 폴더 관련 (미존재/깊이/중복/상한) |
+에러 코드는 `global/exception/ErrorCode.java`가 정본이다. 자주 쓰는 것:
+`COMMON4000`(잘못된 요청) · `COMMON4003`(권한 없음 — 타인 Job 포함) · `AUTH4005`(로그인 채널 위반) ·
+`JOB4001`(없는 작업) · `JOB4010`(변환 중 조작 불가) · `JOB4013`(HWP→PDF 실패)
 
-## 도메인별 핵심 규칙
+---
 
-### 인증 (V3 발급형)
-- 자체 가입·소셜 없음 — 운영자가 기관별 계정(loginId/PW) 발급, 1인 1계정
-- **역할 3단**: ROLE_ADMIN(운영자) / **ROLE_ORG_ADMIN(기관 관리자 — T2 `/api/org/**` 접근)** / ROLE_USER(점역사)
-- **ROLE_ADMIN 웹/앱 분리 (V28, Origin 채널 판별 — MAC 방식은 2026-08-21 당일 폐기)**: `users.admin_scope` — **WEB**(운영자 콘솔 전용) / **APP**(에디터 앱용, send-to-mypage 수신 대상) / null(스코프 미지정 — 콘솔 로그인 불가, 현재 보유 계정 없음). 로그인 시 브라우저가 자동으로 붙이는 **Origin이 콘솔 주소(`admin.console-origins`, 기본 `http://54.116.113.4,https://admin.semo-jum.com`, env ADMIN_CONSOLE_ORIGINS — ⚠️ compose가 빈 값을 넘기면 yaml 기본값을 덮으므로 compose에도 기본값 있음)면 콘솔 로그인**: WEB 계정만 허용, 아니면 AUTH4005. WEB 계정은 콘솔 밖(앱=Origin null, curl=헤더 없음)에서 로그인 불가. FE 수정·사용자 입력 불필요. APP 관리자 토큰의 `/api/admin/**`는 COMMON4003(validateAdminRole). 로그인 응답에 `adminScope`(WEB/APP/null). **운영 스크립트·curl로 `/api/admin/**`를 부를 때는 WEB 관리자로 로그인하되 `Origin: https://admin.semo-jum.com` 헤더를 붙인다** — 안 붙이면 AUTH4005다(구 스코프 null 계정 verify01이 헤더 없이 호출하던 경로는 그 계정 삭제로 없어졌다, 2026-09-01). ⚠️ adminPage(콘솔 FE)는 FE 영역 — BE가 수정 금지
-- 로그인 시 기존 활성 세션 전부 revoke(중복 로그인 금지), refresh 만료 12시간(자동 로그인 X). 성공 시 `users.last_login_at` 기록
-- `user_sessions`에 SHA-256 해시 저장. 로그아웃은 리프레시만 revoke(액세스는 만료까지 유효 — JWT stateless)
-- JwtFilter PERMIT_URLS: `/api/auth/login·refresh·logout`, `/api/health`, `/api/public/`, swagger 2종 — `/api/admin/`은 JWT 필수
+# 도메인별 핵심 규칙
 
-### 운영자 API (ROLE_ADMIN JWT 전용 — X-Admin-Key는 2026-08-19 폐기)
-- 인증 = 운영자 콘솔(admin.semo-jum.com) 로그인 → Bearer 토큰. SecurityConfig `hasRole(ADMIN)` + AdminController `validateAdminRole()` 이중 방어, 비ADMIN 토큰 403·무토큰 401(JSON)
-- **CORS는 기본 전면 허용(allowedOriginPatterns \*)** — 쿠키 미사용(Bearer)이라 origin 제한이 무의미하고, **허용 목록으로 좁히면 데스크톱 앱(Origin: null)이 "Invalid CORS request" 403으로 깨진다**(2026-08-20 회귀 실측). 좁히려면 앱 origin 포함 필수
-- **기관·계정 관리(T1-6·7)**: 통합 표(`GET /api/admin/orgs?month=` — 기관별 계정+소계) / 기관 상세·수정(`GET·PATCH /api/admin/orgs/{orgId}` — 이름·**계약 유형(V24: 유료 BASIC·STANDARD·PREMIUM / 무료 FREE(체험)·COUPON(쿠폰 제공) — 신규 기본 FREE)**·기간·**할당 크레딧 설정**) / **삭제는 소프트**(`DELETE /api/admin/orgs/{orgId}`=소속 계정 전부 잠금+deleted_at, `DELETE /api/admin/accounts/{loginId}` — 실삭제는 보관 기간 정책 확정 후, V21). 삭제된 기관엔 계정 발급 불가, 삭제 계정은 T2 목록·제어에서 제외
-- 기관 생성(`POST /api/admin/orgs` — **계약 유형 지정 가능(2026-08-20), 미지정 시 FREE**) / 계정 일괄 발급(기관 ID+수량 → `{기관코드}{순번}`, **`{code}00`=기관 관리자(ROLE_ORG_ADMIN) — 없으면 발급 시 자동 생성, 요청 수량은 점역사(01~)만 계산(2026-08-21). 응답에 role 필드**, **초기 PW = 영어 대·소문자+숫자 난수 6자리(2026-08-20, 12자에서 축소)** — 응답에 1회만 노출) / PW 재발급 / 상태(ACTIVE·INACTIVE)·역할 변경 / 단가표(`GET·PUT /api/admin/pricing`) / 공지(`POST·GET /api/admin/notices`) / 문의(`GET /api/admin/inquiries?status=&type=&page=&size=` — **페이지네이션(2026-08-20): page 0부터·size 기본 20/최대 100, 응답 {items, page, size, totalElements, totalPages}. 목록/상세 분리(2026-08-21): 목록은 본문 대신 preview 100자+attachmentCount, 본문 전문·이미지는 `GET .../{id}` 상세 — 인라인 이미지(is_inline)는 presigned URL(15분) 즉시 포함해 바로 렌더, 파일 첨부도 url 포함(2026-08-24 — 구 첨부 다운로드 API는 상세에 통합·폐기, 만료 시 상세 재조회)**, `PATCH .../{id}/status` — OPEN·IN_REVIEW·ANSWERED, 응답은 상세와 동일) / 주문·수납(`POST·GET /api/admin/orders`, `PATCH .../{id}` 입금·계산서 기록) / **모니터링(`GET /api/admin/jobs` — 전 기관 최근 24h 기본·10초 폴링, `GET /api/admin/jobs/{jobId}` — 접속 메타데이터·원가·크레딧·쪽별 결과+사유, `GET .../pages/{pageNo}` — T1-5 미리보기(소유자 검증 없는 페이지 결과+presigned 원본, UserService.getJobPageAsAdmin), `POST .../send-to-mypage` — 사본을 운영자 계정 마이페이지로(AdminCopyService: Job~품질 행 전체+S3 서버사이드 복사, 편집 original/current 보존, page_edit_logs 미복사, 대상은 ROLE_ADMIN만·진행 중 작업 거부. **V28: 웹 관리자(WEB)가 대상 미지정 호출 시 앱 관리자(APP) 활성 계정 전원에 배포, 응답 {copies:[{jobId,targetLoginId,…}], sourceJobId}. 사본은 admin_copy=true+원가 0(원가·원자료 미복사) — 통계·수익성·layout-cost 전 쿼리에서 제외**). 진행 중 작업의 원가는 null(끝나야 확정), 재시도 중복 page_results는 최신만)** / **통계(`GET /api/admin/stats/overview?period=today|week|month` 건수·쪽수·시계열(**각 버킷에 쪽수+건수 동시, 2026-08-20**)+누적 원가, `/stats/workload?unit=daily|weekly|monthly|all` 완료·실패취소 스택+**버킷별 처리 쪽수(pages, 2026-08-20)**, `/stats/layout-cost?month=` 유형별 평균 원가 비싼 순+전월 대비, `/stats/profitability?month=` **기관별 수익성 — 차액=환산 매출(계약분 차감×유형별 단가)−원가. 단가는 pricing_configs.creditPricesByContract(관리 변수, biz 확정 2026-08-18: BASIC 200/STANDARD 150/PREMIUM 120/FREE·COUPON 0), 매출은 조회 시점 환산(확정 회계는 orders 담당)** — 네이티브 date_trunc 집계(AdminStatsRepository))**
-- 구 X-Admin-Key·`ADMIN_API_KEY`(.env)·어드민 키 파일은 폐기 — 운영 스크립트도 로그인 토큰 사용
+## 인증
 
-### Job 생성 (`POST /api/jobs`)
-- multipart: `mode` + `insertPageNumber`(선택, 업로드 시 확정 — 에디터 토글 폐지) + `footerText`(선택, 묵자 최대 200자, 다운로드 때 점역)
-- **조판 옵션 (V30, 2026-09-01)**: 업로드 폼 필드로 함께 받는다 — `cellsPerLine`(32)·`linesPerPage`(26)·`pageNumberLine`(odd|every|none)·`coverPages`(0)·`sourcePageStart`(1)·`braillePageStart`(1)·`showSourcePageNumber`·`showBraillePageNumber`·**`showChangeLine`(true — 원본 쪽이 바뀌는 자리의 변경선, 2026-09-03 추가)**·`footerAlign`(center|right)·`editScope`(all|page)·`advancedAi`. 안 보낸 항목은 기본값(괄호)으로 채워 **`jobs.layout_options`(jsonb) 한 칸**에 저장(기획 확정 전이라 컬럼을 쪼개지 않음). 값 범위 위반은 COMMON4000. **원본 쪽 번호 표기(숫자/로마자)는 미구현**(기획 보류). 응답(Create·페이지 조회)에 `layoutOptions`를 실어 **다음에 열 때 같은 설정으로 복원**. 옵션 없이 만든 기존 작업은 `Job.resolveLayoutOptions()`가 구 `insert_page_number`만 반영한 기본값을 준다
-- `advancedAi`는 스케줄러 태스크 JSON에 실려 `PageWorker`가 gRPC `BrailleRequest.advanced_ai`로 전달
-- **설정 조회 `GET /api/jobs/{jobId}/options`**: 조판 옵션 + 꼬리말 + insertPageNumber를 한 번에. **변환 결과가 없어도 조회 가능**(설정은 업로드 시점 확정 — 변환 중·실패 작업에서도 필요). 타인 작업 403
-- **설정 변경 `PATCH /api/jobs/{jobId}/options` (V32, 2026-09-06)**: 에디터 "이 파일의 조판 설정" 모달용. 종전엔 조회만 있어 모달이 **화면에만** 반영됐다 — 40칸으로 다듬어 놓고 내려받으면 32칸 파일이 나오고 다시 열면 32칸으로 돌아갔다. **보낸 항목만 바뀐다**(`LayoutOptions.merge` — null·미전송은 유지). 꼬리말만 `""`로 지울 수 있다(null과 구분해야 해서 빈 문자열에 그 뜻을 줬다). 응답은 `GET`과 같은 모양. **꼬리말 처리가 핵심**: 묵자가 바뀌면 재점역(AI 1회) / 그대로여도 **판면이 좁아지면 길이만 재검증**(S-9 — 라이브러리가 말없이 뒤에서 자르므로) / 지우면 `footer_braille`도 함께 비움. 가드: 타인 403 · **변환 중 JOB4010**(조판 옵션이 아니라 `advancedAi`가 gRPC 요청에 실려서 — 중간에 바뀌면 쪽마다 다른 설정으로 처리된다) · 값 범위·200자·S-9 위반 COMMON4000. ⚠️ **`advancedAi`는 받아 저장하지만 결과를 바꾸지 않는다**(재변환 경로 없음 — 모달이 보여주므로 거부하지 않고 기록만). ⚠️ **`last_modified_at`을 갱신하지 않는다** — 설정은 내용이 아니라 이름변경·이동과 같은 취급. 마이그레이션 없음(`layout_options` jsonb 그대로)
-- 페이지 분리: a/c는 PDF 페이지별 / **b는 구분선 우선, 없으면 TXT 30줄 청크** → S3 업로드
-- **mode b의 쪽 분리 (2026-09-03 · FE 요청 B-1)**: mode a 다운로드가 원본 쪽 사이에 넣는 **하이픈 정확히 40개 줄**(`JobDownloadService.PAGE_SEPARATOR`)을 경계로 쓴다 — a→b 이관("점역으로 보내기")을 전제한 포맷이라 그 표식을 읽기만 하면 된다. 종전엔 못 알아보고 무조건 30줄로 잘라 ① 하이픈 40개가 본문으로 점역되고 ② **페이지행의 원본 쪽 번호가 실제 원문과 어긋났다**. 구분선 줄 자체는 본문에서 뺀다. **정확히 40개인 줄만** 경계다(유저 확정) — 39·41개나 앞뒤에 글자가 붙으면 본문으로 남겨 밑줄 장식을 오인하지 않는다. 구분선이 없는 보통 TXT는 종전대로 30줄(그 30은 원문 쪽과 무관한 임의값이라 그때의 "원본 쪽 번호"는 청크 번호일 뿐) ⚠️ mode a는 **내용이 전부 빈 쪽에 구분선을 남기지 않으므로** 원문 중간에 빈 쪽이 있었다면 그만큼 번호가 당겨진다 — .txt에 그 쪽이 없어 복원 불가
-- **mode a·c HWP 지원 (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5 — HwpToPdfConverter)**: 업로드 시 HWP→ODT(pyhwp, `scripts/hwp2odt.py` — RelaxNG 검증 우회)→PDF(LibreOffice headless, 호출별 전용 프로필) 변환 후 기존 PDF 파이프라인. 도구는 Dockerfile 내장(pyhwp+libreoffice-writer+fonts-noto-cjk/nanum — 폰트 없으면 □ 렌더). **머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 ODT 본문 시작/끝에 `[머리말]`/`[꼬리말]` 마커로 주입**(유저 확정 스펙 b). 한계(실측): 다단→1단, 쪽나눔·조판 상이 — 표(병합)·이미지·각주·참고문헌은 보존. 암호/배포용 JOB4008·파싱 실패 JOB4007·변환 실패 JOB4013. 유료 변환기(사이냅/한컴)는 보류(유저 결정 — 승인 후 견적)
-- 적재는 JobDispatcher.enqueueJob — **트랜잭션 커밋 후** 실행(커밋 전 적재 시 워커가 not found 재시도)
-- **접속 메타데이터 수집(V19)**: 생성 시 `jobs.client_ip·client_os·client_browser·client_user_agent` 기록(`ClientInfoResolver` — IP는 CF-Connecting-IP > XFF 첫 항목 > remoteAddr, UA는 간이 파싱+원본 보존. **앱은 Tauri — UA(`tauri-plugin-http/x`)에 OS가 없어 브라우저="세모점 앱 (Tauri x)"·OS는 FE의 `X-Client-Os` 헤더가 있으면 그 값**). **위치는 저장 안 함** — T1-4 조회 시점에 `GeoIpResolver`(ip-api.com+Redis 캐시 24h, 실패·사설 IP null, `geoip.enabled`로 차단 가능 — ⚠️ 무료는 비상업 조건·분당 45회, 정식 확장 시 유료/교체)로 `clientLocation` 응답. T1-4 요청 정보의 원천, 사용자 응답에는 안 실림
-- 썸네일 자동 생성(a/c: PDF 첫 장 렌더, b: 텍스트 렌더) — 실패해도 Job 생성은 진행. **PDF 첫 장은 poppler `pdftoppm`(별도 프로세스, Dockerfile 내장) 우선, 미설치·실패 시 PDFBox 폴백(2026-08-27)** — PDFBox는 JPEG 2000(JPXDecode) 스캔본을 백지로 그리고, 순수 Java JPX 디코더(jai-imageio)는 768MB 힙에서도 OOM이라 **JVM 안에서 풀지 말 것**. 설정 `pdf-render.pdftoppm`·`timeout-seconds`(공용, 2026-08-31 키 이동)
+- 자체 가입 없음 — 운영자가 기관별 계정 발급, 1인 1계정. 로그인 시 기존 세션 전부 revoke(중복 로그인 금지)
+- **역할 3단**: ROLE_ADMIN(운영자) / ROLE_ORG_ADMIN(기관 관리자, `/api/org/**`) / ROLE_USER(점역사)
+- **ROLE_ADMIN 웹/앱 분리** (`users.admin_scope` = WEB·APP·null): 로그인 시 브라우저가 붙이는 **Origin이 콘솔 주소면 콘솔 로그인**으로 보고 WEB 계정만 허용, 아니면 AUTH4005. WEB 계정은 콘솔 밖에서 로그인 불가
+  - ⚠️ **curl로 `/api/admin/**`를 부를 때는 `Origin: https://admin.semo-jum.com` 헤더 필수** — 안 붙이면 AUTH4005
+  - `admin.console-origins`(env `ADMIN_CONSOLE_ORIGINS`) — compose가 빈 값을 넘기면 yaml 기본값을 덮으므로 **compose에도 기본값이 있어야 한다**
+- ⚠️ **CORS는 전면 허용(`allowedOriginPatterns *`) 유지** — Bearer라 origin 제한이 무의미하고, **좁히면 데스크톱 앱(Origin: null)이 403으로 깨진다**(2026-08-20 회귀 실측)
+- ⚠️ adminPage(콘솔 FE)·`~/semojum/FE`는 **FE 영역, BE가 수정 금지**
+- ⚠️ 운영자 "마이페이지로 보내기"(`send-to-mypage`) 사본은 **`jobs.admin_copy=true` + 원가 0**이다. **통계·수익성·layout-cost 등 집계 쿼리에서 반드시 제외할 것** — 새 쿼리를 짤 때 빼먹으면 숫자가 조용히 틀린다
 
-### 스케줄링 (JobDispatcher — 공정 큐)
-- 구 단일 `task_queue` 폐기. 작업별 큐(`queue:job:{jobId}`) + **2계층 라운드로빈**: 유저 링 회전 → 그 유저의 작업 링 회전 → 페이지 1장 pop — 유저 간·작업 간 공평
-- 우선순위 FG(보는 중):BG(앱 종료) = 4:1. FG 판정은 리스 키(`sched:job:{id}:fg`, TTL 30s) 존재 — SSE·status 폴링이 갱신, 끊기면 자연 강등
-- 링·큐 상태는 전부 Redis → BE 재시작에도 복구. 선택 연산은 synchronized poll() (BE 단일 인스턴스 전제)
+## Job 생성 (`POST /api/jobs`)
 
-### PageWorker
-- **워커 수 = AI 서버 총 슬롯 수** (`grpc.ai.servers`의 슬롯 합, AiServerPool). 워커 하나가 슬롯 하나를 점유해 블로킹 gRPC
-- S3 다운로드 → gRPC → ResultService.save() → Redis 상태 갱신. 오류 시 큐 **머리** 재삽입(순서 유지) + 2초 대기, 최대 3회 → 초과 시 `markPageBlocked`(DB BLOCKED 후 Redis put은 항상 실행 — SSE 종료 감지 보장)
-- 취소 플래그(`job:{id}:canceled`)를 pop 직후·재시도 직전 검사. `@PreDestroy` graceful shutdown
+- multipart. **조판 옵션 12개**(칸 수·줄 수·페이지행·꼬리말 정렬 등)를 함께 받아 **`jobs.layout_options`(jsonb) 한 칸**에 저장한다 — 기획 확정 전이라 컬럼을 쪼개지 않았다. 항목·기본값은 노션 명세 참조
+- **설정은 업로드 후에도 바꿀 수 있다** — `PATCH /api/jobs/{jobId}/options`(에디터 조판 설정 모달·원본 쪽번호 버튼). 부분 갱신이고, **변환 중이면 JOB4010**(`advancedAi`가 gRPC 요청에 실려서 — 중간에 바뀌면 쪽마다 다른 설정으로 처리된다). ⚠️ `last_modified_at`을 갱신하지 않는다(설정은 내용이 아니다)
+- 페이지 분리: a/c는 PDF 쪽별 / **b는 구분선 우선, 없으면 30줄 청크**
+  - ⚠️ 구분선은 mode a 다운로드가 넣는 **하이픈 정확히 40개 줄**이다. 39·41개나 앞뒤에 글자가 붙으면 본문으로 본다(밑줄 장식 오인 방지). 구분선 없는 TXT의 30줄은 원문 쪽과 무관한 임의값이라 그때의 "원본 쪽 번호"는 청크 번호일 뿐이다
+  - ⚠️ mode a는 **내용이 전부 빈 쪽에 구분선을 남기지 않는다** — 원문 중간에 빈 쪽이 있었다면 그만큼 번호가 당겨지고, .txt에 그 쪽이 없어 **복원할 수 없다**
+- **HWP는 업로드 시 PDF로 변환**(pyhwp→ODT→LibreOffice, Dockerfile 내장) 후 기존 PDF 파이프라인. 머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 마커로 주입한다
+  - ⚠️ **HWPX 미지원** — 확장자가 `.hwp`여도 내용물이 ZIP이면 JOB4007. 최신 한글 저장본에서 흔하다
+- ⚠️ 큐 적재(`JobDispatcher.enqueueJob`)는 **트랜잭션 커밋 후** 실행 — 커밋 전에 적재하면 워커가 not found로 재시도한다
+- ⚠️ **PDF 첫 장 렌더는 poppler `pdftoppm`(별도 프로세스) 우선, 실패 시 PDFBox 폴백** — PDFBox는 JPEG 2000 스캔본을 백지로 그리고, 순수 Java JPX 디코더는 768MB 힙에서도 OOM이다. **JVM 안에서 풀지 말 것**
 
-### ResultService / Job 상태
-- 저장: page_results, text_elements, braille_elements, bounding_boxes, rule_trails, quality_* — drafts는 jsonb `List<Map>` 매핑(응답에 JSON 배열로 직렬화)
-- **rule_trail 출처 상세 (V30, proto 0901)**: `publisher`(문화체육관광부 등)·`version`(2024·2025)·`path`(부·장·절·항·호·목 jsonb, 값 있는 단계만) 추가. proto가 `title`→`rule_name`, `excerpt`→`contents`로 개명했지만 **필드 번호가 같아 값은 동일** — DB 컬럼·API 필드명은 `title`/`excerpt` 그대로 두고 `ResultService`에서만 새 getter로 맞춘다(이미 나가는 응답 필드명을 흔들지 않기 위해)
-- 종료 판정: 전 페이지 terminal 시 성공 0건이면 FAILED, 1건 이상 COMPLETED(부분 성공=완료)
-- `touchJob`/`finishJob` 모두 `WHERE status IN ('PENDING','IN_PROGRESS')` 가드 — **종료된 Job을 페이지 이벤트가 못 되살림. 가드 제거 금지**
-- StaleJobScheduler(5분): IN_PROGRESS 무진행 1h / 고아 PENDING 12h → FAILED (`job.stale.*`로 조정, Instant 기반)
+## 스케줄링 · 워커
 
-### SSE (`GET /api/jobs/{jobId}/events`)
-- `queue_position` → `page_done`(모드별 직렬화 + **`original`**: 페이지 조회 API와 **같은 모양**(`{type:"image", url}`), 같은 record 재사용 — 2026-08-31) → `job_done`. **이미지가 없으면(b·렌더 실패·비활성) `original` 키 자체를 안 보낸다** — 이때 PDF url을 주면 FE가 이미 쥔 로컬 파일 대신 S3에서 굳이 받는 더 느린 길로 간다. 변환 중 폴백은 그 로컬 파일이다 **page_done은 반드시 페이지 순서(1,2,3…)대로 방출** — 뒤 페이지가 먼저 끝나도 보류(커서 방식, 재연결 시 완료분 순서 재전송)
-- **하트비트 (2026-09-19)**: 30초간 아무것도 안 보냈으면 주석 줄(`: ping`)을 내보낸다. 보낼 게 없는 구간(마지막 쪽들이 전부 AI에 들어가 있을 때 — 최대 gRPC deadline 400초)에는 전송이 없어 **클라이언트가 사라져도 알 수 없었다**. 주석 줄은 클라이언트가 무시하는 규격이라 FE 계약 불변. `queue_position`·`page_done`·`job_done`·하트비트 **모든 전송 지점에서 타이머를 초기화**한다
-- **이미 끝난 작업이면 즉시 종료 (2026-09-19)**: `job:{jobId}:pages` Hash는 종료 시 TTL 1시간으로 사라진다(`ResultService`). 그 뒤 붙은 연결은 "아직 기록 전"과 구분이 안 돼 **3시간 매달렸다**(하트비트는 전송이 정상 성공하므로 이 경우를 못 잡는다). Hash가 비면 **DB로 상태를 확인**해 종료(COMPLETED·FAILED)면 `job_done`을 한 번 보내고 끊는다. 두 경로가 **같은 페이로드 모양**을 내야 해 `buildJobDonePayload` 한 곳에서 만든다. Hash가 비었을 때만 조회하므로 정상 연결에는 추가 쿼리 없음
-- 폴링 대체: `GET /api/jobs/{jobId}/status` (Redis Hash)
+- 작업별 큐(`queue:job:{jobId}`) + **2계층 라운드로빈**(유저 링 → 작업 링 → 쪽 1장 pop). 우선순위 FG:BG = 4:1, FG 판정은 리스 키(TTL 30s)를 SSE·status 폴링이 갱신
+- 링·큐는 전부 Redis → BE 재시작에도 복구. 선택 연산은 `synchronized poll()` (**BE 단일 인스턴스 전제**)
+- ⚠️ **워커 수 = AI 서버 총 슬롯 수**(`grpc.ai.servers` 슬롯 합). 워커 하나가 슬롯 하나를 점유해 블로킹 gRPC
+- 오류 시 큐 **머리** 재삽입(순서 유지) + 2초 대기, 최대 3회 → `markPageBlocked`(DB BLOCKED 후 **Redis put은 항상 실행** — SSE 종료 감지 보장)
 
-### 다운로드 (`POST /api/jobs/{jobId}/download`)
-- body `{fileName}`(선택), 응답은 파일 스트림. mode a=`.txt` / b·c=`.brf`
-- a: current를 읽기 순서로 병합 — 요소 간 `\n`, 페이지 간 `-`×40 구분선 1줄, **빈 블록·빈 페이지 스킵**, `<!점역자주>` 마커 유지
-- b·c: **braille-assist 라이브러리에 조판 전체 위임** — `BrailleAssist`는 원 레포(Semojum/braille-assist) 복사본, **수정 금지·규칙 변경은 원 레포에서**. 업로드 조판 옵션(V30)을 `buildPages(sources, footer, braillePageStart, Options)`+`toBrfAscii`로 넘긴다 — `BrailleAssist.Job` 래퍼는 쓰지 않는다(옛 래퍼가 페이지행을 boolean으로만 받아 못 썼고, 지금은 래퍼도 같은 항목을 받지만 이미 Options로 다 넘기고 있어 옮기지 않았다)
-- **원 레포 동기화 (2026-09-02, 원 레포 `6d5f61e`)**: 복사본은 **본체·테스트·벡터 3종을 함께** 갈아끼운다 — `src/main/java/com/semojum/brailleassist/BrailleAssist.java` + `src/test/java/com/semojum/brailleassist/VectorsTest.java` + `src/test/resources/braille-assist/vectors.json`. 본체만 바꾸면 벡터가 어긋나 `VectorsTest`가 깨진다. ⚠️ `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포(`Path.of("..","vectors.json")`)를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지해야 한다
-- 이 동기화로 고쳐진 것: ① **표지 건너뜀(`coverPages`) 판정이 쪽 번호 → 순번**으로 바뀌었다. 종전엔 `head <= coverPages`라 원본 쪽이 1이 아닌 문서(`sourcePageStart`가 `coverPages`보다 큼)에서 표지 지정이 **조용히 무시**됐다(실측: 시작 100·표지 2 → 아무 면도 표지가 아님) ② 원본 쪽 번호를 끄면 번호 없는 `⠤` 줄만 남던 변경선을 함께 끈다 ③ **꼬리말 우측 정렬(`footerAlign`)이 조판에 반영**된다 — 업로드에서 받아 저장만 하던 값을 이제 `Options` 9인자로 넘긴다. `origPageStart`는 BE가 `pageOffset`으로 이미 처리하므로 null. `showChangeLine`은 2026-09-03에 업로드 옵션으로 승격해 이제 사용자가 고른 값을 넘긴다 — **원본 쪽 번호를 켠 채 변경선만 끄는 것**이 가능해졌다(FE 요청 A-1). `showSourcePageNumber=false`면 라이브러리가 변경선을 함께 끄는 결합은 그대로다(번호 없는 `⠤` 줄만 남는 걸 막는다)
-- **꼬리말 점역은 업로드 때 한 번 (V31, 2026-09-03 · FE 요청 S-4)**: `jobs.footer_braille`에 담아 **화면(페이지 조회·SSE)·다운로드가 같은 값**을 쓴다. 종전엔 다운로드 순간에만 점역해 에디터가 페이지행의 꼬리말을 그릴 방법이 없었고(파일엔 정상) 내려받을 때마다 AI를 다시 불렀다. `footer_text`는 업로드 후 수정 경로가 없어 캐시 무효화가 없다. **AI 호출 실패는 삼킨다**(썸네일과 같은 취급) — null이면 조회 시점에 `FooterBrailleService.resolve()`가 채운다. SSE는 저장된 값만 읽는다(방출 경로에서 gRPC 금지). **길이 검증(S-9)**: 점역 결과가 페이지행에 안 들어가면 업로드에서 COMMON4000 — 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문(지침 1장3-4). 남는 자리는 `cellsPerLine − (원본 쪽 번호+2) − (점자 면 번호+2)`를 최악 자릿수로 잡아 계산
-- 다운로드는 항상 DB 최신 편집본으로 즉시 생성. 변환 중 JOB4010, 결과 없음 JOB4012
+## ResultService / Job 상태
 
-### 원본 페이지 삭제 (`DELETE /api/jobs/{jobId}/pages/{pageNo}` · 벌크 `DELETE .../pages?nos=5,6,7,8`, X-1 2026-09-03)
-- **영구 삭제 + 뒤 번호 자동 당김**. 휴지통을 안 거치고 되돌릴 수 없다(유저 확정)
-- **크레딧 환불 없음** — `credit_transactions`는 손대지 않는다. 이미 AI가 처리해 원가가 났고 장부는 일어난 일을 적는 곳이다. **편집 이력(`page_edit_logs`)도 남긴다**(RLHF 자료)
-- ⚠️ 남기는 두 표는 **번호를 당기지 않는다** — 그때의 기록이라 사실이 달라진다. 삭제 뒤 두 표의 page_no는 현재 쪽 번호와 어긋날 수 있다(의도)
-- 지우는 것: rule_trails → text/braille_elements → bounding_boxes → quality_* → page_results → pages (FK NO ACTION이라 자식부터, 휴지통 완전 삭제와 같은 순서) + 그 쪽의 S3 객체 2개(pdf·jpg)
-- **S3 키는 옮기지 않는다** — `pages.pdf_path`·`image_path`가 컬럼이라 읽는 쪽이 그 값을 쓴다. 옮기면 삭제 한 번에 남은 쪽 수만큼 복사+삭제가 난다(205쪽이면 400회). 번호를 당겨도 키는 `page-7.pdf`인 채 `page_no`만 6이 된다
-- `jobs`의 `total_pages`·`failed_pages`·`last_edited_page`를 함께 보정(`applyPageDeleted`) — 에디터가 없는 쪽을 열지 않게
-- **벌크는 큰 번호부터 지운다** — 한 장씩 부르면 지울 때마다 뒤 번호가 당겨져 두 번째 요청부터 엉뚱한 쪽을 지운다(3·5를 지우려다 3을 먼저 지우면 원래 5는 4가 됨). FE는 **지금 화면의 번호 그대로** 보내면 되고 정렬도 필요 없다. 하나라도 없는 쪽이 섞이면 **아무것도 지우지 않는다**(절반만 지워진 상태 방지)
-- 가드: 타인 403 · **변환 중 JOB4010** · 없는 쪽 JOB4001 · **전부 지우려 하면 COMMON4000**(껍데기가 되므로 작업 삭제로 해야 한다) · 빈 목록 COMMON4000. S3 삭제 실패는 삼킨다(고아 객체만 남음)
+- 종료 판정: 전 쪽 terminal 시 성공 0건이면 FAILED, 1건 이상 COMPLETED(**부분 성공 = 완료**)
+- ⚠️ `touchJob`/`finishJob`의 `WHERE status IN ('PENDING','IN_PROGRESS')` 가드 — **종료된 Job을 페이지 이벤트가 못 되살린다. 제거 금지**
+- StaleJobScheduler(5분): IN_PROGRESS 무진행 1h / 고아 PENDING 12h → FAILED
+- rule_trail의 proto 필드가 `title`→`rule_name`, `excerpt`→`contents`로 개명됐지만 **번호가 같아 값은 동일** — DB·API 필드명은 그대로 두고 `ResultService`에서만 매핑한다(나가는 응답을 흔들지 않기 위해)
 
-### 취소 (`POST /api/jobs/{jobId}/cancel`)
-- 즉시가 아닌 **수렴**: 플래그 → 큐 배수 → 인플라이트 마무리 → 확정(완료된 마지막 페이지 뒤는 Page 삭제+total_pages 축소, 사이 구멍은 BLOCKED)
-- 완료 0건이면 전부 BLOCKED+FAILED. 확정 시 `canceled_at`·`original_total_pages` 기록(운영·CS용). 이미 끝난 작업 취소는 멱등
+## SSE (`GET /api/jobs/{jobId}/events`)
 
-### 마이페이지 (목록 3경로 + 페이지 조회)
-- **탐색 vs 검색 분리**: 폴더 진입 화면은 `GET /api/folders/{folderId}/contents`(S2)·`GET /api/folders/contents`(S1 루트) / 전역 나열·검색은 `GET /api/users/jobs` / 파일만 최신순은 `GET /api/users/jobs/recent`(첫 화면 스트립·S9)
-- **세 경로 모두 응답 `{folders, files:{items, nextCursor, hasMore}}` 동일**. 커서 요청(2페이지~)에는 `folders` 빈 배열 — FE 누적 중복 방지
-- 검색은 현재 위치 **서브트리 전체**(탐색기와 동일), 비검색은 한 층만. 상태·모드 필터 시 폴더는 결과에서 제외, 즐겨찾기·정렬은 폴더+파일, 검색어는 파일명+폴더명
-- JobCard: `jobId·mode·status·progress·originalFileName·thumbnailUrl·displayDate·totalPages·lastEditedPage·isFavorite·folderId·folderPath`
-  - `progress`: **변환 중일 때만 0~100**(완료 페이지 비율, Redis), 그 외 null (2026-08-17 복원). 생성 중 카드가 있는 동안 FE 10초 재조회
-  - **`folderId`/`folderPath` 제거 금지** — S9·검색의 위치 표시와 "폴더로 이동"에 사용
-- `jobs.last_modified_at` = **내용이 바뀐 시각**(카드 날짜·정렬·커서·복구 기준) — 페이지 편집(`markContentEdited`)에서만 갱신. 이름변경·이동·복원·즐겨찾기는 갱신 안 함. 변환 진행은 `updated_at`(StaleJobScheduler 전용) — **두 컬럼 섞지 말 것**
-- `folders.last_modified_at`(폴더 정렬 기준) = 직속 항목의 추가·삭제·이름변경만 갱신(윈도우 탐색기 규칙), 내용 편집·즐겨찾기는 제외, 상위 전파 없음. 갱신은 `FolderTouch`에 집약 — 폴더 안 항목을 바꾸는 코드 추가 시 호출할 것. ⚠️ V12 SQL 주석("내용 편집도 포함")은 현재 동작과 다름 — 기준은 이 문서와 `Folder.touchModified()` 주석
-- 페이지 조회(`GET /api/users/jobs/{jobId}/pages/{pageNo}`): 응답 바깥에 `original` — a/c는 presigned URL(15분, **URL 장기 캐시 금지**), b는 텍스트 줄 배열. 타인 Job 403
-- **원본 미리보기 이미지 (V29, 2026-08-31)**: a/c의 원본은 **서버가 미리 렌더한 JPEG**다. `original`은 **URL 하나 + type**으로 구성 — `type="image"`(정상) / `type="pdf"`(렌더 실패·page-image 비활성 폴백) / `type="text"`(b). **FE는 type으로 분기**한다(image=`<img>`, pdf=pdf.js, text=lines). 구 `imageUrl` 필드는 단일화하며 제거. 렌더는 `PageWorker`가 AI 요청 직전에 수행(`PageImageService`, pdftoppm 150 DPI JPEG q85 → `{jobId}/pages/page-{n}.jpg`, `pages.image_path`)해 page_done 시점엔 준비 완료. 실패·비활성 시 imageUrl은 null(=PDF 폴백)이라 화면은 항상 나온다. **이유(실측)**: 같은 화면을 pdf.js로 그리면 스캔본 1,807~2,853ms(JPEG 2000은 브라우저 네이티브 디코더가 없어 WASM 소프트웨어 디코딩) vs `<img>` 6~9ms, 텍스트 쪽도 33ms→3.7ms. 스위치 `page-image.enabled`(env PAGE_IMAGE_ENABLED=false로 즉시 회귀)·`page-image.dpi`
+- `queue_position` → `page_done` → `job_done`
+- ⚠️ **page_done은 반드시 쪽 순서(1,2,3…)대로** 방출 — 뒤 쪽이 먼저 끝나도 보류(커서 방식, 재연결 시 완료분 순서 재전송)
+- ⚠️ **이미지가 없으면 `original` 키 자체를 안 보낸다**(b·렌더 실패·비활성). PDF url을 주면 FE가 이미 쥔 로컬 파일 대신 S3에서 받는 더 느린 길로 간다
+- **하트비트 30초** — 보낼 게 없는 구간(마지막 쪽들이 전부 AI에 들어가 있을 때, 최대 400초)에는 전송이 없어 죽은 연결을 알 수 없었다. 주석 줄(`: ping`)을 내보내 드러나게 한다. 모든 전송 지점에서 타이머를 초기화한다
+- **끝난 작업이면 즉시 종료** — 상태 Hash는 종료 시 TTL 1h로 사라진다. 그 뒤 붙은 연결은 "아직 기록 전"과 구분이 안 돼 3시간 매달렸다(하트비트로는 못 잡는다 — 전송이 정상 성공하므로). Hash가 비면 DB로 상태를 확인한다
+- 폴링 대체: `GET /api/jobs/{jobId}/status`
 
-### 편집 — 페이지 일괄 저장 (`PUT /api/jobs/{jobId}/pages/{pageNo}/elements`)
-- **유일한 편집 경로** (구 요소 단위 API 4종·edit_logs는 V13에서 제거). body = 페이지 최종 상태 전체 순서대로 `[{id|null, contents}]`
-- diff는 서버 판정: id+contents 다름=EDIT / id null=ADD(UUID 발급, original=NULL) / 빠짐=soft-delete / 상대 순서 변화=reorder. 모르는 id 404, 중복 id JOB4006
-- 편집 대상은 mode가 결정: a=text_elements, b·c=braille_elements. `current`만 갱신, **`original` 절대 보존**. reading_order는 서버가 배열 순서로 1..N 재번호
-- 변경 있으면 `markContentEdited(pageNo)`(+`last_edited_page`), 없으면 아무것도 안 건드림
+## 다운로드 (`POST /api/jobs/{jobId}/download`)
 
-### 대체 초안 선택 (`PATCH .../elements/{elementId}/draft`)
-- drafts 중 선택 → `selected_idx` 갱신 + current 교체(포인터+복사 — drafts·original 불변). `selectedIdx=-1` = 원본 복귀
-- 값은 mode가 결정: b·c는 `draft.contents`(점자) / a는 `draft.text`(기존 본문이 `<!점역자주>` 마커면 새 텍스트도 감쌈)
-- page_edit_logs에 `draft_selected` 기록 — RLHF 선호 신호
+- mode a = `.txt`(요소 병합, 쪽 사이 `-`×40 구분선, 빈 블록·빈 쪽 스킵, `<!점역자주>` 마커 유지)
+- mode b·c = `.brf` — **조판 전체를 braille-assist에 위임**한다
+- ⚠️ **`com.semojum.brailleassist`는 원 레포(Semojum/braille-assist) 복사본 — 수정 금지.** 규칙 변경은 원 레포에서
+- ⚠️ **동기화할 때는 본체·테스트·벡터 3종을 함께** 갈아끼운다(`BrailleAssist.java` + `VectorsTest.java` + `vectors.json`). 본체만 바꾸면 `VectorsTest`가 깨진다. 단 `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지한다
+- **꼬리말은 업로드 때 한 번 점역**해 `jobs.footer_braille`에 담고 화면·SSE·다운로드가 같은 값을 쓴다. AI 실패는 삼키고(null이면 조회 시점에 채움), SSE는 저장된 값만 읽는다(**방출 경로에서 gRPC 금지**)
+- ⚠️ **꼬리말 길이 검증** — 점역 결과가 페이지행에 안 들어가면 COMMON4000. 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문이다
 
-### page_edit_logs (RLHF 학습용)
-- **1저장 = 1행**, 페이지 전체 before/after 스냅샷(jsonb, origin ai/user 구분) + `changed`(edited/added/deleted/reordered)
-- 입력 컨텍스트 자기완결: a/c는 source_pdf_path+이미지 크기, b는 source_text. 저장과 같은 트랜잭션
+## 원본 페이지 삭제 (`DELETE .../pages/{pageNo}` · 벌크 `?nos=5,6,7,8`)
 
-### 점자 규정 검색 (`GET /api/rules`, V31 2026-09-01)
-- 데이터는 **DB가 아니라 클래스패스 리소스** `resources/rules/braille-rules.json`(239건·118KB, MCST 184·NLD 42·NISE 13). AI 팀 rule registry와 **같은 파일**이다 — `_meta`에 "모든 emit rule_id ⊆ 이 키 집합" 명시라 어긋나면 에디터 규정 배지가 깨진다. 파일을 코드와 함께 배포해 커밋 단위로 동기화를 보장한다. **규정 개정 = JSON 교체 + 재배포**, 마이그레이션·테이블·시더 없음
-- **DB에 넣지 않은 이유**: ① 로컬·개발·운영이 RDS 하나를 공유해 DB에 두면 배포 색을 롤백해도 규정만 새 버전으로 남음 ② `rule_trails`가 publisher·version·section_path·title·excerpt를 **이미 스냅샷으로** 갖고 있어 조인할 대상이 없음 ③ 순수 읽기 전용이고 법정 고시문이라 운영 중 편집이 오히려 리스크. 폰트(`/fonts/NanumGothic.ttf`)와 같은 결 — 반대로 `pricing_configs`가 DB인 건 운영 중 바뀌고 과거 판 참조가 걸리기 때문. **운영자 무중단 편집이나 규정에 붙는 사용자 데이터(즐겨찾기 등)가 생기면 그때 DB로** — 바꿀 곳은 `BrailleRuleRegistry.load()` 하나
-- 실측(2026-09-01): 기동 로드 17ms / 상주 184KB(힙 768MB의 0.02%) / 검색 1회 **12~41µs**. DB로 했을 때는 왕복 1.66~2.30ms(EC2→RDS 같은 VPC, `SELECT 1` 왕복만 0.71~0.97ms) — 둘 다 충분히 빠르나 인메모리는 커넥션 풀(10개)을 아예 안 건드린다
-- **매칭은 rule_id·조문 경로(부·장·절·항)·규정명·본문 합본에 부분일치** — 어느 요소에 걸려도 결과에 포함. **점수는 결과를 거르지 않고 순서만 정한다**(rule_id 정확 1000 > 부분 300 > 규정명 완전 200 > 시작 140 > 부분 100 > 조문경로 50 > 본문 10+위치가점, 동점은 원문 순서)
-- **공백으로 나눈 여러 단어는 AND**. OR로 하면 "한글 점자 약자"가 208/239건이 된다(실측). 한 단어면 AND·OR 결과가 같아 손해 없음
-- `displayOrder`는 **파일 키 순서를 쓰면 안 된다** — 문자열 정렬이라 `MCST-한글-1.4.10`이 `1.4.8` 앞에 있다. 기관 순위(MCST>NLD>NISE) → MCST 편(기본·한글·수학·과학·외국어) → 조문 번호 **수치** 비교로 재정렬한다
-- 응답 `section`은 **rule_trail의 `section`과 같은 " · " 합본** — 에디터 규정 배지에서 본 문자열이 검색 결과에도 그대로 보인다. `matchedIn`(ruleId/ruleName/section/contents)은 FE 하이라이트 대상 판단용
-- ⚠️ **`contents`는 원문 전문이 아니라 첫 문장 발췌**(`_meta` 명시, 평균 46자). 그래서 본문 뒷부분 단어는 안 걸린다 — "띄어쓰기"가 1건뿐인 이유. 재현율을 올리려면 AI 팀 registry에 전문 필드 추가가 선행돼야 하고, 오면 `contents_full`을 `searchBlob`에 합치는 것으로 끝(API 스펙 불변)
-- 짧은 검색어는 노이즈가 크다(`q="표"` → 102건, "표기·표지·표준"에 다 걸림). 한국어 형태소 분석기 없는 부분일치의 한계 — 기관·편 필터로 좁히는 게 대응이고, pg_bigm 류 도입은 239건에 과잉
+- **영구 삭제 + 뒤 번호 자동 당김.** 휴지통을 안 거치고 되돌릴 수 없다
+- **크레딧 환불 없음**(이미 원가가 났고 장부는 일어난 일을 적는 곳) · **편집 이력 보존**(RLHF 자료)
+- ⚠️ 남기는 두 표는 **번호를 당기지 않는다** — 그때의 기록이라 사실이 달라진다. 삭제 뒤 page_no가 현재 쪽 번호와 어긋날 수 있다(의도)
+- ⚠️ **S3 키는 옮기지 않는다** — 경로가 DB 컬럼이라 읽는 쪽이 그 값을 쓴다. 옮기면 삭제 한 번에 남은 쪽 수만큼 복사+삭제가 난다(205쪽이면 400회)
+- ⚠️ **벌크는 큰 번호부터 지운다** — 단건을 반복 호출하면 지울 때마다 뒤 번호가 당겨져 두 번째부터 엉뚱한 쪽을 지운다. 하나라도 없는 쪽이 섞이면 아무것도 지우지 않는다
 
-### HWP 페이지 분리 (HwpPageExtractor — ⚠️ 2026-08-24 mode b HWP 폐기로 프로덕션 미사용, 클래스는 도구·이력으로 유지)
-- 페이지 경계 = 레이아웃 캐시 LineSeg의 y좌표 **리셋 지점**. 다단 문서는 단 개수 N 추적해 N번째 리셋만 경계로. ⚠️ `isFirstLineAtPage()`는 실파일에서 항상 false — **사용 금지, y 리셋 방식 유지**
-- 표·중첩 표 셀까지 재귀 추출(`[표 시작]`/`[표 끝]`, 행=줄·칸=탭), 머리말·꼬리말·각주·미주 추출(판면 순서: 머리말→본문→각주→꼬리말)
-- 암호/배포용 문서는 JOB4008 거부. **hwplib 1.1.9 필수** — 1.1.1은 일부 파일에서 무한 대기(다운그레이드 금지)
-- 디버그: `HWP_DEBUG_FILE=<경로> ./gradlew test --tests HwpPageExtractorDebugTest --rerun`
+## 취소 (`POST /api/jobs/{jobId}/cancel`)
 
-### 기관 관리 T2 (`/api/org/**`) · 사용량 T3 (`/api/users/usage`)
-- **T2 (ROLE_ORG_ADMIN 전용, 권한 검증은 서비스 403)**: `GET /dashboard`(계약·크레딧 할당/사용/잔여·월별 추이 6개월) / `GET /accounts`(소속 계정 + **계약 시작일 이후 누적** 사용 크레딧 — 월 단위 아님, 기획 확정 2026-08-20) / `PATCH /accounts/{loginId}/alias` / `PATCH /accounts/{loginId}/lock` / `GET /accounts/{loginId}/jobs`(T2-2, 기간 기본 30일)
-- **잠금 = 즉시**: INACTIVE + 세션 전부 revoke + **진행 중 변환 취소(JobCancelService 재사용)** — 쪽 단위 차감이라 "완료된 쪽까지만 차감" 자동 성립. **본인 잠금 불가**(COMMON4000), 타 기관 계정 403
-- **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — 파일 내용·접속 정보 제공 금지 / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
-- **기관 관리자는 점역(에디터) 사용 불가(기획 확정 2026-08-19)**: ROLE_ORG_ADMIN의 Job 생성은 COMMON4003 — JobService.createJob 가드. FE도 T2 화면만 노출
-- T3: `GET /api/users/usage?month=YYYY-MM`(이번 달/지난달) / `GET /api/users/usage/jobs?from&to` — 진행 중 작업의 크레딧은 null(끝나야 확정), donePages는 Redis(JobProgressReader, 장애 시 null)
-- 기관 크레딧 잔여 = `organizations.credit_allocated`(V17, 운영자 설정) − credit_transactions 합. 계약 시작일·계정 별칭도 V17 (계약 유형은 V24에서 5종으로 개편 — 운영자 API 절 참조)
-- **문의 메일 연동 (V20, MailInboxPoller)**: 회사 메일함(Google Workspace)을 5분 주기 IMAP **읽기 전용** 폴링(메일함 읽음 표시 안 건드림, 답장은 메일함에서) → inquiries에 `type=EMAIL·sender_email·subject`로 저장, 기존 상태 관리 공유. 중복 방지 `mail_uid`("UIDVALIDITY:UID") 유니크. **첨부·인라인 이미지(V27·V28)**: 파일당 10MB·메일당 10개까지 S3 `inquiries/{id}/` 저장(초과·실패는 생략하고 본문은 저장), disposition으로 인라인/파일 구분(is_inline). 목록은 attachmentCount만 — 상세 응답에서 인라인·파일 모두 presigned URL 포함(구 첨부 다운로드 API는 2026-08-24 폐기). **자격증명은 EC2 `.env`의 `MAIL_INBOX_USERNAME`/`MAIL_INBOX_PASSWORD`(Workspace 앱 비밀번호)** — 미설정이면 폴러 비활성(fail-safe)
-- **문의·공지·주문 (support 도메인, V18)**: 공지=운영자 작성 → T2 `GET /api/org/notices`(전체+자기 기관, **노출 기간 내만 — 스케줄러 없이 조회 시 판정**) / 주문=운영자 기록 → T2 `GET /api/org/orders`(+증빙 이메일, `PATCH /api/org/receipt-email`) / **T2 요청**(`POST·GET /api/org/requests`, `DELETE .../{id}`) = 크레딧 추가·계정 발급 요청이 inquiries로 접수돼 T1-9 목록에 모임. **접수(POST)는 역할 제한 없음(2026-08-20 — 기관 소속이면 점역사도 가능), 유형은 CREDIT_ADD·ACCOUNT_ISSUE·ERROR_REPORT 3종(오류 신고 추가 2026-08-20), 목록·취소는 ORG_ADMIN 전용 유지**. **취소는 자기 기관+요청 유형+OPEN일 때만**(hard delete)
-- **공개 공지 (`GET /api/public/notices`, 무인증)**: 로그인 전 공지 확인용 — 전체 대상(기관 미지정) 공지만, 노출 기간 내, 최신순. 기관별 공지는 로그인 후 T2 공지가 담당
-- **홈페이지 공개 문의 (`POST /api/public/inquiries`, 무인증)**: 유형 ONBOARDING·ERROR_REPORT·ETC, 미가입 접수(org·user null — T1-9에 이름·이메일 표시). 남용 방어는 서비스 계층 — 허니팟(website 채워지면 성공한 척 폐기) + IP 시간당 5건(Redis, 장애 시 접수 허용)
-- **주문 증빙 파일 (V25)**: 운영자 업로드 `POST /api/admin/orders/{id}/receipt`(multipart, pdf·png·jpg ≤10MB, 재업로드=교체 — S3 `receipts/{orderId}/` 기존 삭제 후 저장) / 내려받기 `GET /api/admin/orders/{id}/receipt`·`GET /api/org/orders/{id}/receipt`(자기 기관만 403, presigned 15분). 주문 목록 응답에 `receiptFileName`(null=미첨부)
-- **앱 버전 체크 (V26)**: 앱 시작 시 `GET /api/public/app-version`(무인증) — `{latestVersion, minSupportedVersion, downloadUrl, releaseNotes}`, minSupportedVersion 미만이면 앱이 강제 업데이트 화면(피그마 V3-05). 등록은 `POST /api/admin/app-version`(새 행=이력, 세 자리 semver 강제·min>latest 거절), 이력 `GET /api/admin/app-versions`. 미등록이면 result null(앱은 검사 생략)
-- 미구현(다음 단계): 점역 기본 설정(AI 스키마 대기), 실삭제(보관 기간 정책 대기)
+즉시가 아닌 **수렴**: 플래그 → 큐 배수 → 인플라이트 마무리 → 확정. 완료 0건이면 전부 BLOCKED+FAILED. 이미 끝난 작업 취소는 멱등.
 
-### 사용량·원가·크레딧 (billing — proto 08.17)
-- **AI는 측정값만 보낸다** (`UsageReport`: layout_type 4종+UNSPECIFIED, 모델별 토큰, gpu_time_ms) — **금액·크레딧은 BE가 계산** (`UsageCostService`, AI팀 노션 "BE 관리 변수" 계산식). BLOCKED 응답에도 실림(→ save() 경로에서 저장; markPageBlocked는 gRPC 실패용이라 응답 자체가 없어 해당 없음)
-- **단가·배율은 `pricing_configs` 테이블** (수정 = 새 행 추가, 과거 판 불변 — `page_results.pricing_config_id`가 계산 근거를 가리킴). 키: modelPrices / gpuUsdPerHour / usdKrw / cardFeeRate / creditMultiplier. **코드에 하드코딩 금지** — V16 시드가 초기값
-- 계산 결과(원가 USD·KRW·크레딧)는 **쪽 처리 시점 값으로 확정 저장** — 단가를 바꿔도 과거 기록 불변. 원자료(토큰·gpu_time)도 함께 저장(감사·재검산용)
-- **단가표에 없는 모델 = 0원으로 삼키지 않고 `cost_uncertain=true`(미계상) 표시** (proto 주석 명시)
-- 크레딧: **성공한 쪽만** 배율 차감(UNSPECIFIED 0 / TEXT 1 / FORMULA 2 / TABLE 3 / VISUAL 5 — biz 확정 2026-08-17), 실패 쪽 무차감. **0 차감도 `credit_transactions`에 기록**(고객 검산용). `(job_id, page_no)` 유니크 — 워커 재시도 재진입에도 이중 차감 불가
-- **쿠폰 우선 차감 (V23, CreditDeductionService)**: 유효 기간 내·전액 들어갈 잔량 있는 쿠폰(오래된 순)이 있으면 `source=COUPON`, 아니면 `CONTRACT`. 쪽 차감은 원자 단위라 잔량 부족 쿠폰은 건너뜀(쪼개 담지 않음). 쿠폰 행 잠금(PESSIMISTIC_WRITE)으로 병렬 워커 초과 소진 방지. **잔여 게이지·수익성 매출은 CONTRACT 차감만** — 쿠폰 차감은 계약 잔여 불변·매출 0(수익성에서 원가만큼 마이너스). 발급·목록: `POST·GET /api/admin/orgs/{orgId}/coupons`
-- 원가 계산 실패는 변환 결과 저장을 막지 않는다(로그만, usage null 저장)
+## 마이페이지
 
-### 로깅
-- 형식: `시각 레벨 [ctx] 로거 : 메시지` — ctx는 요청 `req-xxxxxxxx`(RequestLogFilter, **인증 확인 후 `req-xxxxxxxx|loginId`로 확장** — 2026-08-24) / 워커 `jobId|pN`. `grep <jobId>`·`grep <loginId>`로 전 로그 묶임
-- 액세스 로그 `REQ 메서드 경로 → 상태 (ms) user=loginId` 한 줄(2026-08-24 — UUID 8자에서 교체, AuthUser). 토큰 없는 로그인·refresh·logout도 서비스가 유저 확인 시점에 MDC로 채움(`markRequestUser`). 레벨=결과(4xx WARN·5xx ERROR). **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면. **`/api/` 밖 401(봇 스캔)은 INFO 격하**(실측 72h 401의 대부분 — WARN에 남기면 장애 화면이 봇으로 도배됨)
-- **`show-sql: false` 고정**(stdout 직행 노이즈), SQL 디버깅은 `org.hibernate.SQL=DEBUG`. **`/error`는 permitAll 유지**(빼면 예외 1건이 인가 거부 스택 수백 줄로 증폭)
-- SSE page_done 전문은 `sse.payload` 로거. compose 로그 rotation 10MB×5. 저장 로그에 색·이모지 금지(색칠은 semlog)
+- **탐색 vs 검색 분리**: 폴더 진입은 `/api/folders/{id}/contents`·`/api/folders/contents`(루트) / 전역·검색은 `/api/users/jobs` / 최신순 스트립은 `/api/users/jobs/recent`
+- 세 경로 모두 응답이 `{folders, files:{items, nextCursor, hasMore}}`로 같다. 커서 요청(2페이지~)에는 `folders` 빈 배열(FE 누적 중복 방지)
+- 검색은 현재 위치 **서브트리 전체**, 비검색은 한 층만
+- ⚠️ **`jobs.last_modified_at`(내용이 바뀐 시각)과 `updated_at`(변환 진행, StaleJobScheduler 전용)을 섞지 말 것.** 카드 날짜·정렬·커서 기준은 전자이고 페이지 편집에서만 갱신된다 — 이름변경·이동·복원·즐겨찾기는 갱신하지 않는다
+- ⚠️ `folders.last_modified_at`은 **직속 항목의 추가·삭제·이름변경만** 갱신(윈도우 탐색기 규칙). 상위 전파 없음. 갱신은 `FolderTouch`에 집약 — **폴더 안 항목을 바꾸는 코드를 추가하면 호출할 것**. V12 SQL 주석은 현재 동작과 다르다
+- ⚠️ JobCard의 `folderId`/`folderPath` **제거 금지** — 위치 표시와 "폴더로 이동"에 쓴다
+- **원본 미리보기는 서버가 미리 렌더한 JPEG**다(`PageWorker`가 AI 요청 직전에 생성). `original`은 `{type, url}` 하나로 통일 — `image`(정상) / `pdf`(렌더 실패 폴백) / `text`(b). **FE는 type으로 분기한다.** presigned URL은 15분이라 **장기 캐시 금지**
+  - 근거(실측): pdf.js로 스캔본을 그리면 1,807~2,853ms(JPEG 2000은 브라우저 네이티브 디코더가 없다) vs `<img>` 6~9ms. 스위치 `page-image.enabled`
 
-### gRPC (AI 서버)
-- 설정 `grpc.ai.servers` = `host:port:슬롯수[,…]` (`GRPC_AI_SERVERS`로 교체 가능) — 서버 증설·슬롯 조정은 환경변수+재시작으로 끝
-- deadline 400s (AI 하드 타임아웃 180s × 대기+변환 최악 케이스 360s를 감쌈)
-- TLS: AI 자체 서명 인증서를 EC2 `~/semojum/server.crt`로 볼륨 마운트. `authority: semo-jum.com` — SAN에 IP가 없어도 이 설정으로 검증됨, **제거하면 연결이 깨진다**
-- 인증서 교체: scp로 파일 교체(재빌드 불필요) → `docker compose restart backend` → 지문 3곳(로컬/EC2/컨테이너) 일치 확인. 교체 전 백업
+## 편집
 
-## DB 스키마
+- **유일한 편집 경로는 `PUT /api/jobs/{jobId}/pages/{pageNo}/elements`** — body는 페이지 최종 상태 전체. diff(EDIT/ADD/삭제/reorder)는 서버가 판정한다
+- 편집 대상은 mode가 결정(a=text_elements, b·c=braille_elements). **`current`만 갱신, `original` 절대 보존**
+- 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀
+- `page_edit_logs`: **1저장 = 1행**, 페이지 전체 before/after 스냅샷 + 입력 컨텍스트(자기완결). RLHF 학습용이라 삭제하지 않는다
 
-users / organizations / user_sessions / jobs / pages / page_results / text_elements / braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags / **folders** / **page_edit_logs** / **pricing_configs** / **credit_transactions** / **coupons** / **notices** / **inquiries** / **inquiry_attachments** / **orders** / **app_versions**
+## 점자 규정 검색 (`GET /api/rules`)
 
-- `pages.image_path` = 원본 미리보기 JPEG 경로(V29, null이면 PDF 폴백)
-- `jobs.footer_braille` = 꼬리말 점역 결과(V31, null이면 미점역 → 조회 시점에 채움)
-- 마이그레이션: `src/main/resources/db/migration/V{n}__*.sql` (Flyway, baseline=1). **적용된 파일은 절대 수정 금지**(체크섬) — 정정은 새 V{n}으로
+- 데이터는 **DB가 아니라 클래스패스 리소스** `resources/rules/braille-rules.json`(239건). **AI 팀 rule registry와 같은 파일**이라 어긋나면 에디터 규정 배지가 깨진다. 코드와 함께 배포해 커밋 단위로 동기화를 보장한다 — **개정 = JSON 교체 + 재배포**
+  - DB에 안 넣은 이유: 세 환경이 RDS 하나를 공유해 배포를 롤백해도 규정만 새 버전으로 남고, `rule_trails`가 이미 스냅샷을 갖고 있어 조인할 대상이 없다. 운영 중 편집이나 규정에 붙는 사용자 데이터가 생기면 그때 DB로 — 바꿀 곳은 `BrailleRuleRegistry.load()` 하나
+- 여러 단어는 **AND**(OR로 하면 "한글 점자 약자"가 208/239건이 된다). 점수는 결과를 거르지 않고 순서만 정한다
+- ⚠️ `displayOrder`에 **파일 키 순서를 쓰면 안 된다** — 문자열 정렬이라 `1.4.10`이 `1.4.8` 앞에 온다. 기관 → 편 → 조문 번호 **수치** 비교로 재정렬한다
+- ⚠️ `contents`는 원문 전문이 아니라 **첫 문장 발췌**라 본문 뒷부분 단어는 안 걸린다. 전문 필드가 오면 `searchBlob`에 합치면 끝(API 스펙 불변)
+
+## 기관 관리 T2 · 사용량 T3
+
+- **T2(`/api/org/**`)는 ROLE_ORG_ADMIN 전용**, 권한 검증은 서비스에서 403
+- **계정 잠금 = 즉시**: INACTIVE + 세션 revoke + **진행 중 변환 취소**. 쪽 단위 차감이라 "완료된 쪽까지만 차감"이 자동 성립. 본인 잠금 불가
+- **열람 범위(기획 확정)**: 기관 관리자는 목록·상태·크레딧까지 — **파일 내용·접속 정보 제공 금지** / 점역사(T3)는 내 사용량 + 기관 전체 잔여만 — **타 계정 개별 소모량 제공 금지**
+- ⚠️ **기관 관리자는 에디터 사용 불가** — ROLE_ORG_ADMIN의 Job 생성은 COMMON4003(`JobService.createJob` 가드)
+- 문의는 메일함 IMAP **읽기 전용** 폴링(5분)으로도 들어온다. 자격증명 미설정이면 폴러 비활성(fail-safe)
+
+## 사용량·원가·크레딧
+
+- **AI는 측정값만 보낸다**(토큰·gpu_time·layout_type) — **금액·크레딧은 BE가 계산**한다
+- ⚠️ **단가·배율은 `pricing_configs` 테이블. 코드에 하드코딩 금지.** 수정 = 새 행 추가(과거 판 불변, `page_results.pricing_config_id`가 근거를 가리킴)
+- 계산 결과는 **쪽 처리 시점 값으로 확정 저장** — 단가를 바꿔도 과거 기록은 불변. 원자료도 함께 저장(감사·재검산)
+- ⚠️ **단가표에 없는 모델은 0원으로 삼키지 않고 `cost_uncertain=true`** 로 표시한다
+- 크레딧은 **성공한 쪽만** 차감(UNSPECIFIED 0 / TEXT 1 / FORMULA 2 / TABLE 3 / VISUAL 5), 실패 쪽 무차감. **0 차감도 기록**(고객 검산용). `(job_id, page_no)` 유니크라 워커 재시도에도 이중 차감 불가
+- 쿠폰 우선 차감 — 잔여 게이지·수익성 매출은 **CONTRACT 차감만** 센다
+- 원가 계산 실패가 변환 결과 저장을 막지 않는다
+
+## 로깅
+
+- ctx는 요청 `req-xxxxxxxx|loginId` / 워커 `jobId|pN` — **`grep <jobId>`·`grep <loginId>`로 전 과정이 묶인다**
+- ⚠️ **4xx에 스택 금지** — `grep -E "WARN|ERROR"`가 곧 장애 화면이다. `/api/` 밖 401(봇 스캔)은 INFO로 격하
+- ⚠️ `show-sql: false` 고정(stdout 직행 노이즈). SQL 디버깅은 `org.hibernate.SQL=DEBUG`
+- ⚠️ **`/error`는 permitAll 유지** — 빼면 예외 1건이 인가 거부 스택 수백 줄로 증폭된다
+
+## gRPC (AI 서버)
+
+- `grpc.ai.servers` = `host:port:슬롯수[,…]` — 증설·슬롯 조정은 환경변수 + 재시작으로 끝
+- deadline 400s (AI 하드 타임아웃 180s × 최악 케이스를 감쌈)
+- ⚠️ TLS `authority: semo-jum.com` — SAN에 IP가 없어도 이 설정으로 검증된다. **제거하면 연결이 깨진다**
+
+## HWP 페이지 분리 (HwpPageExtractor — 프로덕션 미사용, 도구·이력으로 유지)
+
+⚠️ **hwplib 1.1.9 필수** — 1.1.1은 일부 파일에서 무한 대기(다운그레이드 금지)
+⚠️ `isFirstLineAtPage()`는 실파일에서 항상 false — **사용 금지**, y 리셋 방식 유지
+
+---
+
+# DB 스키마
+
+users / organizations / user_sessions / jobs / pages / page_results / text_elements /
+braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags /
+folders / page_edit_logs / pricing_configs / credit_transactions / coupons / notices /
+inquiries / inquiry_attachments / orders / app_versions
+
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)
+- ⚠️ 마이그레이션 `db/migration/V{n}__*.sql`(Flyway) — **적용된 파일은 절대 수정 금지**(체크섬). 정정은 새 `V{n}`으로
 
-## Redis 키
+# Redis 키
 
 | 키 | 설명 |
 |---|---|
-| `queue:job:{jobId}` | 작업별 페이지 태스크 큐 |
+| `queue:job:{jobId}` | 작업별 쪽 태스크 큐 |
 | `sched:ring:users` / `sched:user:{userId}:jobs` | 스케줄러 유저 링 / 유저별 작업 링 |
-| `sched:job:{jobId}:fg` | FG 리스 (TTL 30s — SSE·status 폴링이 갱신) |
-| `job:{jobId}:pages` | 페이지별 상태 Hash + total_pages |
+| `sched:job:{jobId}:fg` | FG 리스 (TTL 30s) |
+| `job:{jobId}:pages` | 쪽별 상태 Hash + total_pages (**종료 시 TTL 1h**) |
 | `job:{jobId}:canceled` | 취소 플래그 (TTL 1h) |
 
-## 컨벤션
+# 컨벤션
 
-- 커밋: `feat:` / `fix:` / `chore:`. 브랜치: `dev` 메인 + `feat/{기능명}` → PR 머지. 릴리스는 dev→main 머지 후 main에 annotated 태그
-- 최소 변경 원칙, 기존 주석 유지, 에러는 `ApiResponse.failure(ErrorCode.xxx)`, 엔티티는 `@NoArgsConstructor(PROTECTED)` + `@Builder`
+- 커밋 `feat:`/`fix:`/`chore:`/`docs:`. `dev`에서 직접 작업하지 않고 브랜치를 판다
+- **머지는 사용자 지시가 있을 때만** — `dev` 머지가 곧 운영 배포다
+- 최소 변경 원칙, 기존 주석 유지·보강. 에러는 `ApiResponse.failure(ErrorCode.xxx)`, 엔티티는 `@NoArgsConstructor(PROTECTED)` + `@Builder`
+- 새 테스트는 **수정을 일부러 되돌려 실패하는지 확인**한다(되돌려도 통과하면 아무것도 검증하지 않는 테스트다)
 
-## 주의사항 (지뢰 목록)
+# 주의사항 (지뢰 목록)
 
 - **시간대 KST 3중 고정**: `TimeZone.setDefault` + yaml(jackson·hibernate) + compose TZ — **어느 하나도 제거 금지**. 새 시각 컬럼은 반드시 `timestamptz`
 - `spring.jpa.open-in-view=false` — SSE 장기 연결의 커넥션 고갈 방지. 읽기 서비스는 `@Transactional(readOnly=true)`
 - gRPC deadline(400s) > AI 하드 타임아웃 구조 유지
-- S3 CORS·presigned·공개정책(`*/thumbnail.png`만)은 3종 세트 — 하나라도 건드리면 FE 렌더링·보안에 영향
-- **요소 단위 반복 조회 금지(N+1)** — `PageResultSerializer`가 요소마다 rule_trail을 조회해 요소 95개 페이지 응답이 266ms(콜드 1.4s)였다(2026-08-31). 페이지 단위 배치 조회(`findByElementIdIn`)로 교체했고, 요소별 부가 데이터를 새로 붙일 때도 같은 패턴을 지킬 것
-- `task.md`는 `.gitignore` 등록(커밋 제외)
+- **S3 CORS·presigned·공개정책(`*/thumbnail.png`만)은 3종 세트** — 하나라도 건드리면 FE 렌더링·보안에 영향
+- **요소 단위 반복 조회 금지(N+1)** — 요소마다 rule_trail을 조회해 95개 페이지 응답이 266ms(콜드 1.4s)였다. 페이지 단위 배치 조회로 교체했고, 요소별 부가 데이터를 붙일 때도 같은 패턴을 지킬 것
+- `task.md`는 `.gitignore` 등록
 - UserService·SseService의 result 직렬화 헬퍼 중복 → 추후 공통화 예정
