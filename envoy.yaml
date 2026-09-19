@@ -3,7 +3,11 @@
 # - 꺼져 있는 색은 DNS 미해석·헬스 실패로 자동 제외되고, 새로 뜨면 재조회(5초)로 자동 편입
 # - 재시도는 connect-failure·refused-stream만: 요청이 백엔드에 "도달하기 전" 실패라 재시도해도
 #   중복 실행이 없다 (5xx 재시도는 POST 중복 실행 위험이 있어 넣지 않는다)
-# - SSE: timeout 0s(무제한) + idle_timeout 10800s(=EMITTER_TIMEOUT 3시간) 유지 — 변경 금지
+# - SSE: timeout 0s(무제한) 유지 — 변경 금지. idle_timeout은 600s (2026-09-19, 10800s에서 단축)
+#   우리 스트림의 최대 무음 구간은 쪽 하나의 처리 시간이고 그것은 gRPC deadline 400s로 상한이
+#   묶인다(grpc.ai.deadline-seconds). 600s면 1.5배 여유다. 종전 10800s는 EMITTER_TIMEOUT에
+#   맞춘 값이었는데, 그 탓에 죽은 연결이 최대 3시간 남았다. 서버 하트비트(30s)가 연결 생사를
+#   따로 확인하므로 idle_timeout까지 길게 둘 이유가 없다
 # - 443 TLS 직접 종료 (2026-08-26): Cloudflare 프록시 경유(미국 엣지, 요청당 +0.7s)를 걷어내고
 #   Let's Encrypt 인증서(certbot, 자동 갱신 + deploy hook이 tls/ 갱신·Envoy 재시작)로 직접 서빙.
 #   80은 ACME 챌린지 통로 + 구형 클라이언트용으로 유지
@@ -42,7 +46,7 @@ static_resources:
                           route:
                             cluster: spring_boot
                             timeout: 0s
-                            idle_timeout: 10800s
+                            idle_timeout: 600s
                             retry_policy:
                               retry_on: "connect-failure,refused-stream"
                               num_retries: 2
@@ -79,7 +83,7 @@ static_resources:
                           route:
                             cluster: spring_boot
                             timeout: 0s
-                            idle_timeout: 10800s
+                            idle_timeout: 600s
                             retry_policy:
                               retry_on: "connect-failure,refused-stream"
                               num_retries: 2
