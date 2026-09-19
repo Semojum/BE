@@ -41,7 +41,7 @@
 - deploy.sh: 활성 색 감지 → 새 이미지를 비활성 색(backend-blue/green)으로 기동 → `/api/health` 게이트(최대 120s, **실패 시 구버전 유지·exit 1**) → Envoy 헬스체크(3s×2) 자동 편입 → 구 색 graceful 정지
 - 롤백 = 방금 내린 색 재기동 한 줄
 - ⚠️ 색 서비스는 compose **profiles** — `docker compose up -d`로는 backend가 안 뜬다. 수동 조작 시 `--profile blue|green` 필수
-- Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 timeout 0s·idle_timeout 10800s 변경 금지**
+- Envoy: 액티브 헬스체크(`/api/health`) + 재시도는 connect-failure/refused-stream만(POST 중복 방지). **SSE 라우트 `timeout: 0s` 변경 금지**(스트리밍에 필요). `idle_timeout`은 **600s**(2026-09-19, 10800s에서 단축 — 무음 상한이 gRPC deadline 400s로 묶이고 하트비트가 연결 생사를 따로 확인한다). ⚠️ **`envoy.yaml`은 배포 때 복사만 되고 `deploy.sh`가 Envoy를 재시작하지 않는다** — 적용하려면 EC2에서 `docker compose up -d --force-recreate envoy`(1~2초 단절)
 - 안전핀: `-Xmx768m`(JAVA_TOOL_OPTIONS), EC2 스왑 1GB, graceful shutdown 20s(+stop_grace_period 30s)
 - 로그 뷰어: `scripts/semlog.sh` (ERROR 빨강·WARN 노랑·REQ 시안)
 - **로그 아카이브 (2026-09-02)**: Docker json-file 로그는 컨테이너에 딸려 있어 **배포로 컨테이너를 갈아끼우면 함께 사라진다**. deploy.sh가 사라지기 직전(비활성 색 재생성 전)·정지 직후·헬스 실패 시 `docker logs`를 통째로 `~/semojum/logs/backend-{색}-{기동시각}.log`에 뜬다(최근 30개 보관, 파일명이 기동 시각이라 재실행해도 덮어쓰기·중복 없음). 장애 분석은 이 파일 → `page_results.raw_response`·T1-4 순으로 본다
@@ -154,6 +154,8 @@ com.semojum.backend
 
 ### SSE (`GET /api/jobs/{jobId}/events`)
 - `queue_position` → `page_done`(모드별 직렬화 + **`original`**: 페이지 조회 API와 **같은 모양**(`{type:"image", url}`), 같은 record 재사용 — 2026-08-31) → `job_done`. **이미지가 없으면(b·렌더 실패·비활성) `original` 키 자체를 안 보낸다** — 이때 PDF url을 주면 FE가 이미 쥔 로컬 파일 대신 S3에서 굳이 받는 더 느린 길로 간다. 변환 중 폴백은 그 로컬 파일이다 **page_done은 반드시 페이지 순서(1,2,3…)대로 방출** — 뒤 페이지가 먼저 끝나도 보류(커서 방식, 재연결 시 완료분 순서 재전송)
+- **하트비트 (2026-09-19)**: 30초간 아무것도 안 보냈으면 주석 줄(`: ping`)을 내보낸다. 보낼 게 없는 구간(마지막 쪽들이 전부 AI에 들어가 있을 때 — 최대 gRPC deadline 400초)에는 전송이 없어 **클라이언트가 사라져도 알 수 없었다**. 주석 줄은 클라이언트가 무시하는 규격이라 FE 계약 불변. `queue_position`·`page_done`·`job_done`·하트비트 **모든 전송 지점에서 타이머를 초기화**한다
+- **이미 끝난 작업이면 즉시 종료 (2026-09-19)**: `job:{jobId}:pages` Hash는 종료 시 TTL 1시간으로 사라진다(`ResultService`). 그 뒤 붙은 연결은 "아직 기록 전"과 구분이 안 돼 **3시간 매달렸다**(하트비트는 전송이 정상 성공하므로 이 경우를 못 잡는다). Hash가 비면 **DB로 상태를 확인**해 종료(COMPLETED·FAILED)면 `job_done`을 한 번 보내고 끊는다. 두 경로가 **같은 페이로드 모양**을 내야 해 `buildJobDonePayload` 한 곳에서 만든다. Hash가 비었을 때만 조회하므로 정상 연결에는 추가 쿼리 없음
 - 폴링 대체: `GET /api/jobs/{jobId}/status` (Redis Hash)
 
 ### 다운로드 (`POST /api/jobs/{jobId}/download`)

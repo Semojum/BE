@@ -45,6 +45,17 @@ public class SseService {
 
     private static final long EMITTER_TIMEOUT = 3 * 60 * 60 * 1000L; // 3시간 (대용량 문서 직렬 처리 대비 SSE 최대 수명)
 
+    /**
+     * 하트비트 간격 — 이만큼 아무것도 안 보냈으면 주석 줄(`: ping`)을 한 번 내보낸다.
+     *
+     * <p>보낼 이벤트가 없는 구간(마지막 쪽들이 전부 AI 서버에 들어가 있을 때, 최대 gRPC deadline
+     * 400초)에는 전송이 아예 없어 <b>클라이언트가 사라져도 알 수 없었다</b>. 주기적으로 한 줄이라도
+     * 내보내면 그때 IOException이 나면서 죽은 연결이 드러나 루프가 정리된다.
+     *
+     * <p>SSE 주석 줄은 클라이언트가 무시하는 규격이라 FE 계약에 영향이 없다.
+     */
+    static final long HEARTBEAT_INTERVAL_MS = 30_000L;
+
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
 
     @PreDestroy
@@ -73,6 +84,8 @@ public class SseService {
         // page_done 순서 보장 커서 — 이 번호까지 전송 완료. 병렬 변환이라 뒤 페이지가 먼저 끝날 수 있지만,
         // FE에는 반드시 1, 2, 3… 순서로 내보낸다(앞 페이지가 끝날 때까지 뒤 페이지 이벤트는 보류).
         int emittedUpTo = 0;
+        // 마지막으로 무언가를 내보낸 시각 — 하트비트 판단 기준. 연결 직후를 기준점으로 잡는다.
+        long lastSentAt = System.currentTimeMillis();
 
         while (running.get()) {
             try {
@@ -83,7 +96,22 @@ public class SseService {
                 jobDispatcher.touchForeground(jobId);
 
                 Map<Object, Object> redisData = redisTemplate.opsForHash().entries("job:" + jobId + ":pages");
-                if (redisData.isEmpty()) continue;
+                if (redisData.isEmpty()) {
+                    // Hash가 없다 = "아직 기록 전"이거나 "끝나서 TTL(1h)로 지워졌다". 둘을 Redis만으로는
+                    // 구분할 수 없어 종전엔 끝난 작업에 붙어도 이벤트 없이 3시간 매달렸다(하트비트는
+                    // 전송이 정상 성공하므로 이 경우를 못 잡는다). 작업 상태는 DB에 남아 있으므로 확인한다.
+                    Map<String, Object> jobDoneEvent = terminalJobDonePayload(jobId);
+                    if (jobDoneEvent != null) {
+                        emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
+                        emitter.complete();
+                        running.set(false);
+                        log.info("SSE 종료: jobId={} (이미 끝난 작업 — DB 상태로 job_done 전송)", jobId);
+                        continue;
+                    }
+                    // 아직 진행 중(기록 전)이면 종전대로 기다린다
+                    lastSentAt = maybeHeartbeat(emitter, lastSentAt, System.currentTimeMillis());
+                    continue;
+                }
 
                 String totalPagesStr = (String) redisData.get("total_pages");
                 if (totalPagesStr == null) continue;
@@ -112,7 +140,9 @@ public class SseService {
                     cursor++;
                 }
                 for (int pageNo = emittedUpTo + 1; pageNo <= cursor; pageNo++) {
-                    sendPageDoneEvent(jobId, pageNo, (String) redisData.get("page:" + pageNo), emitter);
+                    if (sendPageDoneEvent(jobId, pageNo, (String) redisData.get("page:" + pageNo), emitter)) {
+                        lastSentAt = System.currentTimeMillis();
+                    }
                 }
                 emittedUpTo = cursor;
 
@@ -124,6 +154,7 @@ public class SseService {
                     // 페이지당 약 30초 가정, 총 슬롯 수만큼 동시 처리되므로 슬롯 수로 나눈다
                     queueEvent.put("estimated_wait_sec", (int) Math.ceil(pendingCount * 30.0 / aiServerPool.getTotalSlots()));
                     emitter.send(SseEmitter.event().name("queue_position").data(objectMapper.writeValueAsString(queueEvent)));
+                    lastSentAt = System.currentTimeMillis();
                 }
 
                 // job_done 이벤트
@@ -131,20 +162,17 @@ public class SseService {
                     Job job = jobRepository.findById(jobId).orElse(null);
                     int[] failedPages = job != null && job.getFailedPages() != null ? job.getFailedPages() : new int[]{};
 
-                    List<Integer> failedPagesList = new ArrayList<>();
-                    for (int fp : failedPages) failedPagesList.add(fp);
-
-                    Map<String, Object> jobDoneEvent = new LinkedHashMap<>();
-                    jobDoneEvent.put("type", "job_done");
-                    jobDoneEvent.put("job_id", jobId);
-                    jobDoneEvent.put("total_pages", totalPages);
-                    jobDoneEvent.put("failed_pages", failedPagesList);
+                    Map<String, Object> jobDoneEvent = buildJobDonePayload(jobId, totalPages, failedPages);
                     emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
                     emitter.complete();
                     running.set(false);
                     log.info("SSE 종료: jobId={} (job_done 전송, totalPages={}, failed={})",
-                            jobId, totalPages, failedPagesList.size());
+                            jobId, totalPages, failedPages.length);
+                    continue;
                 }
+
+                // 보낼 게 없는 구간이 길어지면 주석 줄로 연결 생사를 확인한다 (죽어 있으면 여기서 IOException)
+                lastSentAt = maybeHeartbeat(emitter, lastSentAt, System.currentTimeMillis());
 
             } catch (IOException e) {
                 running.set(false);
@@ -159,12 +187,56 @@ public class SseService {
         }
     }
 
+    /**
+     * job_done 페이로드. 정상 종료와 "이미 끝난 작업" 두 경로가 <b>같은 모양</b>을 내보내야 해서
+     * 한 곳에 모은다 — FE는 둘을 구분하지 않는다.
+     */
+    static Map<String, Object> buildJobDonePayload(String jobId, int totalPages, int[] failedPages) {
+        List<Integer> failedPagesList = new ArrayList<>();
+        if (failedPages != null) for (int fp : failedPages) failedPagesList.add(fp);
+
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", "job_done");
+        event.put("job_id", jobId);
+        event.put("total_pages", totalPages);
+        event.put("failed_pages", failedPagesList);
+        return event;
+    }
+
+    /**
+     * Redis Hash가 비어 있을 때 <b>DB로</b> 종료 여부를 판단한다.
+     *
+     * <p>Hash는 작업 종료 시 TTL 1시간이 걸려 사라진다({@code ResultService}). 그 뒤에 붙은 연결은
+     * "아직 기록 전"과 구분되지 않아 종전엔 무한히 기다렸다. 작업 상태는 {@code jobs}에 남아 있다.
+     *
+     * @return 종료 상태(COMPLETED·FAILED)면 job_done 페이로드, 아직 진행 중이면 null.
+     *         작업이 DB에도 없으면 null (컨트롤러가 소유권을 검증하므로 정상 경로에선 오지 않는다)
+     */
+    Map<String, Object> terminalJobDonePayload(String jobId) {
+        Job job = jobRepository.findById(jobId).orElse(null);
+        if (job == null || job.isInProgress()) return null;
+        return buildJobDonePayload(jobId, job.getTotalPages(), job.getFailedPages());
+    }
+
+    /**
+     * 마지막 전송 후 {@link #HEARTBEAT_INTERVAL_MS}가 지났으면 주석 줄을 보낸다.
+     *
+     * @return 갱신된 "마지막 전송 시각" — 보냈으면 now, 아니면 받은 값 그대로
+     * @throws IOException 연결이 죽어 있으면 여기서 터진다(루프의 catch가 정리한다)
+     */
+    long maybeHeartbeat(SseEmitter emitter, long lastSentAt, long now) throws IOException {
+        if (now - lastSentAt < HEARTBEAT_INTERVAL_MS) return lastSentAt;
+        emitter.send(SseEmitter.event().comment("ping"));
+        return now;
+    }
+
     // 페이지당 변환 결과 JSON 전문 로그 — 대형 작업에선 페이지당 10~30KB라 양이 크다.
     // 전용 로거로 분리해 필요 시 재빌드 없이 끌 수 있다:
     // EC2 .env에 LOGGING_LEVEL_SSE_PAYLOAD=OFF 추가 후 docker compose up -d
     private static final org.slf4j.Logger payloadLog = org.slf4j.LoggerFactory.getLogger("sse.payload");
 
-    private void sendPageDoneEvent(String jobId, int pageNo, String status, SseEmitter emitter) {
+    /** @return 실제로 내보냈으면 true (하트비트 타이머를 그때만 초기화한다) */
+    private boolean sendPageDoneEvent(String jobId, int pageNo, String status, SseEmitter emitter) {
         try {
             Map<String, Object> event = new LinkedHashMap<>();
             event.put("type", "page_done");
@@ -187,8 +259,10 @@ public class SseService {
             emitter.send(SseEmitter.event().name("page_done").data(payload));
             log.info("SSE page_done 방출: jobId={}, pageNo={}, status={}, payload={}B", jobId, pageNo, status, payload.length());
             payloadLog.info("jobId={}, pageNo={} :: {}", jobId, pageNo, payload);
+            return true;
         } catch (Exception e) {
             log.error("page_done 이벤트 전송 실패: jobId={}, pageNo={}, {}", jobId, pageNo, e.getMessage());
+            return false;
         }
     }
 
