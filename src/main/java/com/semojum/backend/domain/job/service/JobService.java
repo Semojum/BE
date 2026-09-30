@@ -52,6 +52,18 @@ public class JobService {
     private static final int LINES_PER_PAGE = 30;
 
     @Transactional
+    /**
+     * 파일 확장자 → 변환 모드. PDF·HWP·HWPX는 c(텍스트+점자), TXT는 b(점자).
+     * HWP·HWPX는 업로드 시 PDF로 바꿔 PDF와 같은 길을 탄다 — 내용물이 HWPX인 .hwp도 변환기가 알아서 가른다.
+     */
+    static String modeForExtension(String ext) {
+        return switch (ext) {
+            case "pdf", "hwp", "hwpx" -> "c";
+            case "txt" -> "b";
+            default -> throw new CustomException(ErrorCode.JOB_INVALID_FILE);
+        };
+    }
+
     public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode,
                                            boolean insertPageNumber, String footerText,
                                            LayoutOptions requestedOptions,
@@ -78,31 +90,18 @@ public class JobService {
             throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
         }
 
-        log.info("Job 생성 시작: mode={}, file={} ({}KB), user={}",
-                mode, file.getOriginalFilename(), file.getSize() / 1024, user.getLoginId());
-
-        // 2. 모드 검증
-        if (!List.of("a", "b", "c").contains(mode)) {
-            throw new CustomException(ErrorCode.JOB_INVALID_MODE);
-        }
-
-        // 3. 파일 타입 검증
+        // 2. 모드는 파일 종류가 정한다 (3패널 통합, 2026-09-30) — 사용자가 고르지 않는다.
+        //    PDF·HWP·HWPX → c(원본 | 텍스트 | 점자 한 번에), TXT → b(원문 | 점자).
+        //    구 클라이언트가 보내는 mode는 받기만 하고 쓰지 않는다 — a를 보내도 c로 만든다(텍스트 결과는 c에 다 들어 있다)
         String originalFilename = file.getOriginalFilename();
         String ext = originalFilename != null && originalFilename.contains(".")
                 ? originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase()
                 : "";
-        // a·c는 HWP도 허용 — 업로드 시 PDF로 변환해 기존 PDF 파이프라인에 태운다
-        // (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5. 변환 경로가 확장자로 갈리므로 같은 코드를 탄다).
-        // mode b는 TXT 전용으로 축소(HWP는 a로 이관 — 텍스트 추출 대신 렌더링 보존 방식)
-        if (mode.equals("a") || mode.equals("c")) {
-            if (!List.of("pdf", "hwp").contains(ext)) {
-                throw new CustomException(ErrorCode.JOB_INVALID_FILE);
-            }
-        } else if (mode.equals("b")) {
-            if (!ext.equals("txt")) {
-                throw new CustomException(ErrorCode.JOB_INVALID_FILE);
-            }
-        }
+        String requestedMode = mode;
+        mode = modeForExtension(ext);
+
+        log.info("Job 생성 시작: mode={}(요청 {}), file={} ({}KB), user={}",
+                mode, requestedMode, file.getOriginalFilename(), file.getSize() / 1024, user.getLoginId());
 
         // 4. job_id 발급
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
@@ -191,7 +190,7 @@ public class JobService {
             // 5. PDF 페이지별 분리 및 S3 업로드.
             // mode a의 HWP는 업로드 시점에 PDF로 변환(2026-08-24) — 이후는 PDF와 완전히 동일하게 처리
             byte[] pdfBytes;
-            if (ext.equals("hwp")) {
+            if (ext.equals("hwp") || ext.equals("hwpx")) {
                 long convertStart = System.currentTimeMillis();
                 pdfBytes = hwpToPdfConverter.convert(file.getBytes());
                 log.info("HWP→PDF 변환 완료: {}KB → {}KB ({}ms)",

@@ -41,6 +41,11 @@ public class PageSaveService {
     private final BoundingBoxRepository boundingBoxRepository;
     private final PageEditLogRepository pageEditLogRepository;
     private final S3Service s3Service;
+    private final BrailleRetranslator brailleRetranslator;
+
+    /** 편집 대상 패널 — mode c(3패널)만 둘 다 편집할 수 있다 */
+    public static final String TARGET_TEXT = "text";
+    public static final String TARGET_BRAILLE = "braille";
 
     // AI가 시각 요소 본문에 붙여 보내는 점역자주 마커 (mode a 초안 선택 시 형태 보존용)
     private static final String TN_OPEN = "<!점역자주>";
@@ -89,19 +94,60 @@ public class PageSaveService {
         public void markDeleted() { el.markDeleted(); }
     }
 
+    /** 편집 대상을 지정하지 않는 구 호출 — mode 기본 대상(a=text, b·c=braille) */
     @Transactional
     public List<Map<String, Object>> savePage(String userId, String jobId, int pageNo,
                                               List<JobRequestDto.SaveElement> requested) {
+        return savePage(userId, jobId, pageNo, null, requested, Map.of());
+    }
+
+    /**
+     * 텍스트 패널 저장이 재점역해야 할 텍스트 본문들 (트랜잭션 밖 AI 호출을 위한 사전 조회).
+     * mode c의 텍스트 저장에서 <b>내용이 바뀐 요소와 새 블록</b>만 — 그 외엔 빈 집합.
+     */
+    @Transactional(readOnly = true)
+    public Set<String> textsToRetranslate(String userId, String jobId, int pageNo, String target,
+                                          List<JobRequestDto.SaveElement> requested) {
+        jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        String mode = pageResult.getMode();
+        if (!syncsBraille(mode, resolveTarget(mode, target))) return Set.of();
+
+        Map<String, List<String>> current = new HashMap<>();
+        for (TextElement el : textElementRepository.findByPageResult(pageResult)) {
+            current.put(el.getElementId(), el.getCurrentContents());
+        }
+        Set<String> texts = new java.util.LinkedHashSet<>();
+        for (JobRequestDto.SaveElement item : requested) {
+            if (item.id() == null || !item.contents().equals(current.get(item.id()))) {
+                texts.add(joined(item.contents()));
+            }
+        }
+        return texts;
+    }
+
+    /**
+     * @param target        편집 패널 — null이면 mode 기본값(a=text, b·c=braille). c만 text·braille 둘 다 받는다
+     * @param brailleBodies mode c 텍스트 저장의 재점역 결과(텍스트 본문 → 점자 본문). 트랜잭션 밖에서 미리 구해 온다
+     */
+    @Transactional
+    public List<Map<String, Object>> savePage(String userId, String jobId, int pageNo, String target,
+                                              List<JobRequestDto.SaveElement> requested,
+                                              Map<String, String> brailleBodies) {
         // 1. 본인 Job 검증 — 타인 소유는 존재를 숨기기 위해 404로 통일 (V3 관리 API 관례)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
         PageResult pageResult = pageResultRepository.findByJobIdAndPageNumber(jobId, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
-        // 2. 편집 대상 목록은 mode가 정한다 — a는 text_list, b·c는 braille_text_list.
-        //    (mode b의 text_list는 원문 대조용이라 편집 대상이 아니다)
+        // 2. 편집 대상 목록 — a는 text_list, b는 braille_text_list(text_list는 원문 대조용이라 편집 불가),
+        //    c(3패널)는 요청이 고른 쪽. 기본은 braille(3패널 이전 c와 같다)
         String mode = pageResult.getMode();
-        boolean isText = "a".equals(mode);
+        String resolved = resolveTarget(mode, target);
+        boolean isText = TARGET_TEXT.equals(resolved);
+        boolean syncBraille = syncsBraille(mode, resolved);
         List<Element> live = loadLive(pageResult, isText);
         Map<String, Element> liveById = new LinkedHashMap<>();
         for (Element el : live) liveById.put(el.elementId(), el);
@@ -152,11 +198,20 @@ public class PageSaveService {
 
         // 6. 변경이 전혀 없으면 로그·카드 날짜를 건드리지 않는다
         if (edited.isEmpty() && added.isEmpty() && deleted.isEmpty() && !reordered) {
-            return respond(finalOrder);
+            return syncBraille ? respond(finalOrder, currentBraille(pageResult)) : respond(finalOrder);
         }
 
         // 7. 살아있는 블록 전체 reading_order = 1..N 재번호 (순서는 서버가 소유)
         for (int i = 0; i < finalOrder.size(); i++) finalOrder.get(i).updateReadingOrder(i + 1);
+
+        // 7-1. mode c 텍스트 저장 → 같은 id 점자 요소를 따라 맞춘다(재점역·추가·삭제·순서)
+        Map<String, Object> brailleSynced = null;
+        Map<String, List<String>> brailleById = null;
+        if (syncBraille) {
+            brailleSynced = new LinkedHashMap<>();
+            brailleById = syncBraille(pageResult, finalOrder, edited, added, deleted,
+                    brailleBodies == null ? Map.of() : brailleBodies, brailleSynced);
+        }
 
         // 내용이 바뀌었으므로 카드 날짜·복구 지점 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
@@ -167,12 +222,130 @@ public class PageSaveService {
         changed.put("added", added);
         changed.put("deleted", deleted);
         changed.put("reordered", reordered);
+        if (brailleSynced != null) changed.put("braille_synced", brailleSynced);
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
                 before, snapshot(finalOrder, bboxById), changed);
 
-        log.info("페이지 일괄 저장: jobId={}, pageNo={}, edited={}, added={}, deleted={}, reordered={}",
-                jobId, pageNo, edited.size(), added.size(), deleted.size(), reordered);
-        return respond(finalOrder);
+        log.info("페이지 일괄 저장: jobId={}, pageNo={}, target={}, edited={}, added={}, deleted={}, reordered={}{}",
+                jobId, pageNo, resolved, edited.size(), added.size(), deleted.size(), reordered,
+                brailleSynced == null ? "" : ", 점자 동기화=" + brailleSynced);
+        return brailleById == null ? respond(finalOrder) : respond(finalOrder, brailleById);
+    }
+
+    /**
+     * 편집 패널 결정. 지정이 없으면 mode 기본값, 모드가 그 패널을 편집할 수 없으면 COMMON4000.
+     * a는 결과물이 텍스트뿐, b의 텍스트는 원문 대조용이라 편집 불가. c는 둘 다(3패널).
+     */
+    static String resolveTarget(String mode, String target) {
+        if (target == null || target.isBlank()) {
+            return "a".equals(mode) ? TARGET_TEXT : TARGET_BRAILLE;
+        }
+        boolean ok = switch (target) {
+            case TARGET_TEXT -> "a".equals(mode) || "c".equals(mode);
+            case TARGET_BRAILLE -> !"a".equals(mode);
+            default -> false;
+        };
+        if (!ok) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        return target;
+    }
+
+    /** 텍스트를 고치면 점자가 따라가는 경우 — 3패널(c)의 텍스트 저장뿐 */
+    private static boolean syncsBraille(String mode, String resolvedTarget) {
+        return "c".equals(mode) && TARGET_TEXT.equals(resolvedTarget);
+    }
+
+    private static String joined(List<String> contents) {
+        return contents == null ? "" : String.join("\n", contents);
+    }
+
+    /**
+     * 텍스트 최종 상태에 맞춰 점자 요소를 고친다 (mode c, 같은 id 1:1).
+     * <ul>
+     *   <li>바뀐·새 텍스트 → 재점역해 같은 id 점자의 current 교체(없으면 같은 id로 새로 만든다). original은 보존</li>
+     *   <li>지운 텍스트 → 같은 id 점자도 soft-delete</li>
+     *   <li>순서 → 짝 있는 점자는 텍스트 순서를 따르고, 점자 패널에서만 추가한 블록(짝 없음)은
+     *       원래 바로 앞에 있던 짝 있는 블록 뒤에 그대로 붙는다</li>
+     * </ul>
+     * @return 점자 요소 id → 최종 current (응답의 brailleContents)
+     */
+    private Map<String, List<String>> syncBraille(PageResult pageResult, List<Element> textFinal,
+                                                  List<String> edited, List<String> added, List<String> deleted,
+                                                  Map<String, String> bodies, Map<String, Object> summary) {
+        List<BrailleElement> brailleLive = brailleElementRepository.findByPageResult(pageResult);
+        Map<String, BrailleElement> byId = new LinkedHashMap<>();
+        for (BrailleElement b : brailleLive) byId.putIfAbsent(b.getElementId(), b);
+
+        List<String> bEdited = new ArrayList<>();
+        List<String> bAdded = new ArrayList<>();
+        List<String> bDeleted = new ArrayList<>();
+
+        for (String id : deleted) {
+            BrailleElement b = byId.remove(id);
+            if (b != null) {
+                b.markDeleted();
+                bDeleted.add(id);
+            }
+        }
+
+        Map<String, Element> textById = new HashMap<>();
+        for (Element t : textFinal) textById.put(t.elementId(), t);
+        List<String> changedIds = new ArrayList<>(edited);
+        changedIds.addAll(added);
+        for (String id : changedIds) {
+            Element t = textById.get(id);
+            String text = joined(t.contents());
+            String body = bodies.get(text);
+            if (body == null) {
+                // 사전 조회와 저장 사이에 내용이 바뀐 경우(동시 저장) — 여기서 한 번 더 부른다
+                body = brailleRetranslator.translateBodies(List.of(text)).get(text);
+            }
+            BrailleElement b = byId.get(id);
+            if (b != null) {
+                b.updateCurrentContent(BrailleRetranslator.format(body, b.getCurrentContent()));
+                bEdited.add(id);
+            } else {
+                BrailleElement neo = BrailleElement.builder()
+                        .pageResult(pageResult).elementId(id)
+                        .type(t.type()).headingLevel(t.headingLevel())
+                        .content(BrailleRetranslator.format(body, null)).isBlocked(false).build();
+                neo.markUserAuthored();
+                byId.put(id, brailleElementRepository.save(neo));
+                bAdded.add(id);
+            }
+        }
+
+        // 순서: 짝 없는 점자 블록은 원래 바로 앞의 "살아남은 짝 있는 블록"에 매달아 둔다("" = 맨 앞)
+        Set<String> textIds = textById.keySet();
+        Map<String, List<BrailleElement>> anchored = new HashMap<>();
+        String anchor = "";
+        for (BrailleElement b : brailleLive) {
+            if (bDeleted.contains(b.getElementId()) && !byId.containsKey(b.getElementId())) continue;
+            if (textIds.contains(b.getElementId())) anchor = b.getElementId();
+            else anchored.computeIfAbsent(anchor, k -> new ArrayList<>()).add(b);
+        }
+        List<BrailleElement> order = new ArrayList<>(anchored.getOrDefault("", List.of()));
+        for (Element t : textFinal) {
+            BrailleElement b = byId.get(t.elementId());
+            if (b != null) order.add(b);
+            order.addAll(anchored.getOrDefault(t.elementId(), List.of()));
+        }
+        for (int i = 0; i < order.size(); i++) order.get(i).updateReadingOrder(i + 1);
+
+        summary.put("edited", bEdited);
+        summary.put("added", bAdded);
+        summary.put("deleted", bDeleted);
+
+        Map<String, List<String>> out = new HashMap<>();
+        for (BrailleElement b : order) out.put(b.getElementId(), b.getCurrentContent());
+        return out;
+    }
+
+    private Map<String, List<String>> currentBraille(PageResult pageResult) {
+        Map<String, List<String>> out = new HashMap<>();
+        for (BrailleElement b : brailleElementRepository.findByPageResult(pageResult)) {
+            out.putIfAbsent(b.getElementId(), b.getCurrentContent());
+        }
+        return out;
     }
 
     /**
@@ -219,6 +392,22 @@ public class PageSaveService {
         el.updateContents(newContents);
         el.updateSelectedIdx(selectedIdx);
 
+        // mode c(3패널): 텍스트 패널의 같은 id 요소도 같은 초안으로 맞춘다 — 피커가 보여 준 묵자가 곧
+        // 그 초안의 텍스트다(drafts[i].text). 재점역은 필요 없다(초안이 점자를 이미 들고 있다)
+        List<String> textContents = null;
+        if ("c".equals(mode)) {
+            TextElement textEl = textElementRepository.findByPageResult(pageResult).stream()
+                    .filter(t -> t.getElementId().equals(elementId))
+                    .findFirst().orElse(null);
+            if (textEl != null) {
+                textContents = selectedIdx < 0
+                        ? (textEl.getOriginalContents() == null ? List.of() : textEl.getOriginalContents())
+                        : draftText(drafts.get(selectedIdx), textEl.getCurrentContents());
+                textEl.updateCurrentContents(textContents);
+                textEl.updateSelectedIdx(selectedIdx);
+            }
+        }
+
         // 본문이 바뀌었으므로 카드 날짜·복구 지점 갱신 (일괄 저장과 동일)
         job.markContentEdited(pageNo);
 
@@ -230,6 +419,7 @@ public class PageSaveService {
         selection.put("label", selectedIdx < 0 ? null : drafts.get(selectedIdx).get("label"));
         Map<String, Object> changed = new LinkedHashMap<>();
         changed.put("draft_selected", List.of(selection));
+        if (textContents != null) changed.put("text_synced", List.of(elementId));
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
                 before, snapshot(live, bboxById), changed);
 
@@ -240,6 +430,8 @@ public class PageSaveService {
         result.put("id", elementId);
         result.put("selectedIdx", selectedIdx);
         result.put("contents", newContents);
+        // mode c만 — 텍스트 패널에 반영할 값(짝 텍스트가 없으면 null)
+        if ("c".equals(mode)) result.put("textContents", textContents);
         return result;
     }
 
@@ -249,6 +441,11 @@ public class PageSaveService {
         if (raw instanceof List<?> list && !list.isEmpty()) {
             return list.stream().map(String::valueOf).toList();
         }
+        return draftText(draft, currentContents);
+    }
+
+    /** 초안의 묵자(text) — 기존 본문이 점역자주 마커로 감싸여 있었으면 같은 마커로 감싼다 */
+    private List<String> draftText(Map<String, Object> draft, List<String> currentContents) {
         String text = draft.get("text") == null ? "" : String.valueOf(draft.get("text"));
         String prev = (currentContents == null || currentContents.isEmpty()) ? "" : currentContents.get(0);
         if (prev.contains(TN_OPEN) && prev.contains(TN_CLOSE)) {
@@ -353,11 +550,18 @@ public class PageSaveService {
     // FE 응답 — 최종 배열(요청과 같은 순서). 새 블록은 서버 발급 id가 채워져 FE가 임시 항목을 교체한다.
     // type 등 나머지 요소 정보는 페이지 조회(buildResult)가 담당 — 저장 응답은 id 매핑에 필요한 최소만
     private List<Map<String, Object>> respond(List<Element> finalOrder) {
+        return respond(finalOrder, null);
+    }
+
+    // mode c 텍스트 저장은 따라 바뀐 점자도 함께 준다 — 점자 패널을 다시 불러오지 않고 갱신하도록.
+    // 짝 점자가 없는 텍스트(AI가 점자를 안 준 요소)는 null
+    private List<Map<String, Object>> respond(List<Element> finalOrder, Map<String, List<String>> brailleById) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (Element el : finalOrder) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", el.elementId());
             m.put("contents", el.contents());
+            if (brailleById != null) m.put("brailleContents", brailleById.get(el.elementId()));
             list.add(m);
         }
         return list;

@@ -79,19 +79,35 @@ class PageResultSerializerTest {
         assertEquals(List.of(), box.get("flags"), "flags는 빈 배열");
     }
 
-    /** mode c는 좌측이 PDF 이미지라 원문 텍스트가 화면에 안 쓰임 — AI가 줘도 응답에서 뺀다 */
+    /**
+     * mode c는 3패널(원본 | 텍스트 | 점자, 2026-09-30) — 텍스트도 결과물이라 a와 같은 전체 필드로 싣는다.
+     * 종전엔 "화면에 안 쓰인다"며 뺐다. 세 목록은 같은 id로 1:1 매칭된다
+     */
     @Test
-    void mode_c는_원문_text_list를_내보내지_않는다() {
+    void mode_c는_텍스트와_점자를_모두_전체_필드로_싣는다() {
         when(textRepo.findByPageResult(any())).thenReturn(List.of(
-                TextElement.builder().elementId("el-1").contents(List.of("중간 산물 원문")).build()));
+                TextElement.builder().elementId("el-1").type("text").readingOrder(1)
+                        .contents(List.of("원문")).build()));
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(
-                BrailleElement.builder().elementId("el-1").content(List.of("⠚⠒")).build()));
+                BrailleElement.builder().elementId("el-1").type("text").readingOrder(1)
+                        .content(List.of("⠚⠒")).build()));
 
         Map<String, Object> result = serializer.buildResult(pageResult("c"));
 
-        assertFalse(result.containsKey("text_list"), "mode c엔 text_list 없음");
-        assertTrue(result.containsKey("braille_text_list"));
+        Map<?, ?> text = ((List<Map<?, ?>>) result.get("text_list")).get(0);
+        Map<?, ?> braille = ((List<Map<?, ?>>) result.get("braille_text_list")).get(0);
+        assertEquals("el-1", text.get("id"));
+        assertEquals(List.of("원문"), text.get("contents"));
+        assertTrue(text.containsKey("rule_trail") && text.containsKey("drafts"), "a와 같은 전체 필드(대조용 축약 아님)");
+        assertEquals(text.get("id"), braille.get("id"), "같은 id로 1:1");
         assertTrue(result.containsKey("bounding_box_list"), "좌측 이미지 대조용 bbox는 필요");
+        assertTrue(result.containsKey("image_resolution"));
+    }
+
+    /** mode a엔 점자가 없다 — braille_text_list 키 자체를 안 낸다 */
+    @Test
+    void mode_a는_점자_목록을_내보내지_않는다() {
+        assertFalse(serializer.buildResult(pageResult("a")).containsKey("braille_text_list"));
     }
 
     /** 화면에 쓰지 않는 지표는 빼고, 점역사에게 보여줄 항목만 남긴다 */
