@@ -4,9 +4,12 @@
 
 | 모드 | 변환 | 입력 |
 |---|---|---|
-| a | 이미지 → 텍스트 | PDF, HWP |
+| a | 이미지 → 텍스트 | (신규 생성 없음 — 2026-09-30 이전 작업만) |
 | b | 텍스트 → 점자 | TXT |
-| c | 이미지 → 점자 | PDF, HWP |
+| c | 이미지 → 텍스트 + 점자 (3패널) | PDF, HWP, HWPX |
+
+- **모드는 사용자가 고르지 않는다(3패널 통합, 2026-09-30)** — 파일 종류가 정한다(`JobService.modeForExtension`). 구 클라이언트의 `mode`는 받기만 하고 무시(a를 보내도 c)
+- c는 원본 | 텍스트(`text_list`, a와 같은 전체 필드) | 점자(`braille_text_list`)를 한 번에 준다. AI는 원래 c에도 text_list를 줬고 DB에도 있었다 — 응답에서만 빼던 것
 
 > **API 상세(요청·응답·에러)는 노션 `Development / Dev. DB / [V3] API 명세서`가 정본**이다.
 > 이 문서에는 코드만 봐서는 알 수 없는 것 — 설계 제약, 결정의 근거, 지뢰 — 만 적는다.
@@ -72,7 +75,7 @@ com.semojum.backend
 
 에러 코드는 `global/exception/ErrorCode.java`가 정본이다. 자주 쓰는 것:
 `COMMON4000`(잘못된 요청) · `COMMON4003`(권한 없음 — 타인 Job 포함) · `AUTH4005`(로그인 채널 위반) ·
-`JOB4001`(없는 작업) · `JOB4010`(변환 중 조작 불가) · `JOB4013`(HWP→PDF 실패)
+`JOB4001`(없는 작업) · `JOB4010`(변환 중 조작 불가) · `JOB4013`(HWP→PDF 실패) · `JOB5030`(텍스트 저장의 재점역 실패)
 
 ---
 
@@ -128,6 +131,7 @@ com.semojum.backend
 
 - mode a = `.txt`(요소 병합, 쪽 사이 `-`×40 구분선, 빈 블록·빈 쪽 스킵, `<!점역자주>` 마커 유지)
 - mode b·c = `.brf` — **조판 전체를 braille-assist에 위임**한다
+- **c는 body `format`으로 `.txt`/`.brf` 선택**(기본 `.brf`). a의 brf·b의 txt는 COMMON4000 — a엔 점자가 없고 b의 텍스트는 사용자가 올린 원문이다
 - ⚠️ **`com.semojum.brailleassist`는 원 레포(Semojum/braille-assist) 복사본 — 수정 금지.** 규칙 변경은 원 레포에서
 - ⚠️ **동기화할 때는 본체·테스트·벡터 3종을 함께** 갈아끼운다(`BrailleAssist.java` + `VectorsTest.java` + `vectors.json`). 본체만 바꾸면 `VectorsTest`가 깨진다. 단 `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지한다
 - **꼬리말은 업로드 때 한 번 점역**해 `jobs.footer_braille`에 담고 화면·SSE·다운로드가 같은 값을 쓴다. AI 실패는 삼키고(null이면 조회 시점에 채움), SSE는 저장된 값만 읽는다(**방출 경로에서 gRPC 금지**)
@@ -159,8 +163,12 @@ com.semojum.backend
 ## 편집
 
 - **유일한 편집 경로는 `PUT /api/jobs/{jobId}/pages/{pageNo}/elements`** — body는 페이지 최종 상태 전체. diff(EDIT/ADD/삭제/reorder)는 서버가 판정한다
-- 편집 대상은 mode가 결정(a=text_elements, b·c=braille_elements). **`current`만 갱신, `original` 절대 보존**
-- 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀
+- 편집 대상은 body `target`(`text`|`braille`) — 생략하면 mode 기본(a=text, b·c=braille). **c만 둘 다** 받는다. **`current`만 갱신, `original` 절대 보존**
+- **c의 텍스트 저장은 같은 id 점자를 끌고 간다** — 바뀐·새 텍스트는 AI `TranslateText`로 재점역(이전 점자의 앞뒤 여백을 입힘), 지운 텍스트는 짝 점자도 삭제, 순서도 따라간다. 점자 패널에서만 추가한 블록은 원래 앞 블록 뒤에 붙어 다닌다
+  - ⚠️ **재점역은 트랜잭션 밖**(`PageSaveFacade`) — AI 슬롯을 변환 워커와 같이 써서 수십 초 기다릴 수 있다. 커넥션을 쥔 채 기다리면 풀이 마른다. 슬롯 대기 20초 초과·AI 오류면 **JOB5030, 아무것도 저장 안 함**(텍스트만 저장돼 점자와 어긋나는 것을 막는다)
+  - ⚠️ TranslateText는 **200자 상한** — 줄 단위 + 띄어쓰기에서 끊고 점자 빈칸(⠀)으로 잇는다. 띄어쓰기 없는 200자 초과 덩어리만 강제로 자른다(빈칸 없이)
+  - 점자 저장은 텍스트를 건드리지 않는다(점자만 손보는 경우)
+- 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀. **c는 같은 id 텍스트도 그 초안의 `text`로 맞춘다**(응답 `textContents`)
 - `page_edit_logs`: **1저장 = 1행**, 페이지 전체 before/after 스냅샷 + 입력 컨텍스트(자기완결). RLHF 학습용이라 삭제하지 않는다
 
 ## 점자 규정 검색 (`GET /api/rules`)

@@ -30,7 +30,7 @@ public enum ErrorCode {
 
     // ========== 작업 (JOB) ==========
     JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4001", "존재하지 않는 작업입니다."),
-    JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "mode a·c는 PDF/HWP, mode b는 TXT 파일만 업로드 가능합니다."),
+    JOB_INVALID_FILE(HttpStatus.BAD_REQUEST, "JOB4002", "PDF·HWP·HWPX·TXT 파일만 업로드 가능합니다."),
     JOB_INVALID_MODE(HttpStatus.BAD_REQUEST, "JOB4003", "지원하지 않는 모드입니다."),
     ELEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "JOB4004", "존재하지 않는 요소입니다."),
     // JOB4005(elementType 검증)는 페이지 일괄 저장 도입으로 폐기 — 편집 대상 테이블은 mode가 정한다
@@ -42,6 +42,8 @@ public enum ErrorCode {
     JOB_BRAILLE_EXISTS(HttpStatus.CONFLICT, "JOB4011", "이미 연결된 점역 문서가 있습니다. 덮어쓰기 여부를 확인해 주세요."),
     JOB_NO_RESULT(HttpStatus.BAD_REQUEST, "JOB4012", "다운로드할 변환 결과가 없습니다."),
     JOB_HWP_CONVERT_FAILED(HttpStatus.BAD_REQUEST, "JOB4013", "HWP를 PDF로 변환하지 못했습니다. 파일을 확인해 주세요."),
+    // 텍스트 패널 저장 시 점자 재점역 실패(AI 혼잡·오류) — 아무것도 저장하지 않는다(텍스트·점자가 어긋나지 않게)
+    JOB_RETRANSLATE_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "JOB5030", "점자 변환 서버가 바빠 저장하지 못했습니다. 잠시 후 다시 저장해 주세요."),
 
     // ========== 폴더 (FOLDER) ==========
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER4001", "존재하지 않는 폴더입니다."),

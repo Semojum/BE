@@ -13,9 +13,12 @@ public class JobRequestDto {
             @NotBlank String mode
     ) {}
 
-    // 페이지 일괄 저장 — 페이지 최종 상태 전체를 순서대로. 편집 대상은 mode가 정한다(a=text, b·c=braille)
+    // 페이지 일괄 저장 — 페이지 최종 상태 전체를 순서대로.
+    // target: 편집 패널 "text" | "braille" (선택). 생략하면 mode 기본값(a=text, b·c=braille).
+    // mode c(3패널)만 둘 다 받는다 — "text"로 저장하면 같은 id 점자가 재점역돼 따라간다
     public record SavePage(
-            @NotNull List<@Valid SaveElement> elements
+            @NotNull List<@Valid SaveElement> elements,
+            String target
     ) {}
 
     // id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐)
@@ -29,9 +32,11 @@ public class JobRequestDto {
             @NotNull Integer selectedIdx
     ) {}
 
-    // 다운로드: 파일명 지정(선택, 확장자는 모드가 결정 — a=.txt, b·c=.brf)
+    // 다운로드: 파일명 지정(선택). format: "txt" | "brf" (선택) — 생략하면 mode 기본값(a=txt, b·c=brf).
+    // mode c(3패널)만 둘 다 받는다(텍스트 결과 .txt / 점자 결과 .brf)
     public record Download(
-            String fileName
+            String fileName,
+            String format
     ) {}
 
     /**

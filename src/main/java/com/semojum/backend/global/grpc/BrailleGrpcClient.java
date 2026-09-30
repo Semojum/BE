@@ -61,4 +61,41 @@ public class BrailleGrpcClient {
             pool.release(server);
         }
     }
+    /**
+     * 여러 문장을 슬롯 하나로 연달아 점역한다 — 편집 저장의 재점역용(3패널, 2026-09-30).
+     * 문장마다 슬롯을 잡으면 변환이 몰릴 때 문장 수만큼 대기가 쌓인다.
+     *
+     * @param maxWaitMs 슬롯 대기 상한. 넘기면 {@link AiBusyException}
+     * @return 입력과 같은 순서의 점자
+     */
+    public java.util.List<String> translateTexts(java.util.List<String> texts, long maxWaitMs) {
+        if (texts.isEmpty()) return java.util.List.of();
+        AiServerPool.AiServer server;
+        try {
+            server = pool.tryAcquire(maxWaitMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("AI 서버 슬롯 대기 중 인터럽트", e);
+        }
+        if (server == null) throw new AiBusyException();
+        try {
+            java.util.List<String> out = new java.util.ArrayList<>(texts.size());
+            for (String text : texts) {
+                TranslateTextReply reply = server.getStub()
+                        .withDeadlineAfter(10, TimeUnit.SECONDS)
+                        .translateText(TranslateTextRequest.newBuilder().setText(text).build());
+                out.add(reply.getBraille());
+            }
+            return out;
+        } finally {
+            pool.release(server);
+        }
+    }
+
+    /** AI 슬롯이 전부 변환에 쓰이고 있어 제한 시간 안에 못 잡음 */
+    public static class AiBusyException extends RuntimeException {
+        public AiBusyException() {
+            super("AI 서버 슬롯 대기 시간 초과");
+        }
+    }
 }

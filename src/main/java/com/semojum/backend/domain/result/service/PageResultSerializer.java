@@ -40,8 +40,10 @@ public class PageResultSerializer {
      * 모드별 result 구성 — 에디터(V3-03) 화면이 실제로 쓰는 값만 담는다.
      * - a: 이미지→텍스트 · 결과물은 text_list. 좌측 원본은 PDF 이미지로 보여준다
      * - b: 텍스트→점자   · 결과물은 braille_text_list. text_list는 좌측 원문 대조용(같은 id로 1:1 매칭)
-     * - c: 이미지→점자   · 결과물은 braille_text_list. 좌측이 PDF 이미지라 원문 텍스트는 필요 없음
-     *      (AI는 mode c에도 text_list를 주고 DB에도 저장되지만, 화면에 쓰이지 않아 응답에서 제외)
+     * - c: 이미지→텍스트+점자 (3패널, 2026-09-30) · PDF/HWP 업로드는 전부 c다.
+     *      원본 이미지 | 텍스트(text_list, a와 같은 전체 필드) | 점자(braille_text_list) 를 한 번에 준다.
+     *      AI는 종전에도 c에 text_list를 줬고 DB에도 저장돼 있었다 — 응답에서만 빼던 것을 싣는다.
+     *      세 목록은 같은 id로 1:1 매칭된다
      * 이미지 정보(image_resolution·bounding_box_list)는 원본이 PDF인 mode a·c에만 넣는다.
      */
     @Transactional(readOnly = true)
@@ -66,14 +68,14 @@ public class PageResultSerializer {
             result.put("bounding_box_list", buildBoundingBoxList(boundingBoxes));
         }
 
-        if ("a".equals(mode)) {
-            // 결과물이므로 전체 필드
+        if ("a".equals(mode) || "c".equals(mode)) {
+            // 결과물이므로 전체 필드 (c는 텍스트 패널도 편집 대상이다)
             result.put("text_list", buildTextListFull(textElements, loadRuleTrails(ids(textElements, TextElement::getId))));
         } else {
-            if ("b".equals(mode)) {
-                // 좌측 패널에 원문을 띄우고 점자와 나란히 대조한다 — id + contents만
-                result.put("text_list", buildTextListSimple(textElements));
-            }
+            // b: 좌측 패널에 원문을 띄우고 점자와 나란히 대조한다 — id + contents만
+            result.put("text_list", buildTextListSimple(textElements));
+        }
+        if (!"a".equals(mode)) {
             result.put("braille_text_list",
                     buildBrailleListFull(brailleElements, loadRuleTrails(ids(brailleElements, BrailleElement::getId))));
         }

@@ -137,6 +137,30 @@ public class AiServerPool {
         }
     }
 
+    /**
+     * {@link #acquire()}의 시간 제한판 — 사용자가 응답을 기다리는 요청(편집 저장의 재점역)용.
+     * 슬롯이 전부 페이지 변환에 물려 있으면 한 쪽이 끝날 때(수십 초)까지 비지 않으므로,
+     * 무한정 붙잡지 않고 null을 돌려 호출부가 "잠시 후 다시" 로 끊게 한다.
+     */
+    public AiServer tryAcquire(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (true) {
+            AiServer best = null;
+            for (AiServer server : servers) {
+                if (server.semaphore.availablePermits() > 0
+                        && (best == null || server.inflight.get() < best.inflight.get())) {
+                    best = server;
+                }
+            }
+            if (best != null && best.semaphore.tryAcquire()) {
+                best.inflight.incrementAndGet();
+                return best;
+            }
+            if (System.currentTimeMillis() >= deadline) return null;
+            Thread.sleep(50);
+        }
+    }
+
     public void release(AiServer server) {
         server.inflight.decrementAndGet();
         server.semaphore.release();

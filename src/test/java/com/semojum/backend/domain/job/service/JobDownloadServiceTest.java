@@ -199,4 +199,36 @@ class JobDownloadServiceTest {
         assertEquals("내 이름_지정.txt",
                 service.download(USER, "job1", "내 이름/지정.pdf").fileName(), "요청값 우선 + 경로 문자 치환 + 확장자 교체");
     }
+    // ===== 3패널(mode c) — 텍스트·점자 둘 다 결과물 (2026-09-30) =====
+
+    /** c는 format으로 .txt(텍스트 패널)와 .brf(점자 패널)를 고른다. 생략하면 종전처럼 .brf */
+    @Test
+    void mode_c는_txt와_brf를_모두_내려받을_수_있다() {
+        givenJob("c", false, null);
+        PageResult p1 = pr(1, "c");
+        when(pageResultRepo.findByJobIdOrderByPageNumber("job1")).thenReturn(List.of(p1));
+        when(textRepo.findByPageResult(p1)).thenReturn(List.of(
+                TextElement.builder().elementId("e1").contents(List.of("텍스트 결과")).build()));
+        when(brailleRepo.findByPageResult(p1)).thenReturn(List.of(
+                BrailleElement.builder().elementId("e1").content(List.of("⠁⠃")).build()));
+
+        JobDownloadService.DownloadFile txt = service.download(USER, "job1", null, "txt");
+        assertEquals("원본문서.txt", txt.fileName());
+        assertEquals("텍스트 결과", new String(txt.content(), StandardCharsets.UTF_8));
+
+        assertEquals("원본문서.brf", service.download(USER, "job1", null, "brf").fileName());
+        assertEquals("원본문서.brf", service.download(USER, "job1", null, null).fileName(), "기본은 점자");
+    }
+
+    /** a엔 점자가 없고, b의 텍스트는 사용자가 올린 원문이라 결과물이 아니다 — 모르는 형식도 400 */
+    @Test
+    void 모드에_없는_형식은_400() {
+        assertTrue(JobDownloadService.isTxt("a", null));
+        assertFalse(JobDownloadService.isTxt("b", null));
+        assertFalse(JobDownloadService.isTxt("c", null));
+        for (String[] bad : new String[][]{{"a", "brf"}, {"b", "txt"}, {"c", "pdf"}}) {
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
+                    () -> JobDownloadService.isTxt(bad[0], bad[1])).getErrorCode(), bad[0] + "/" + bad[1]);
+        }
+    }
 }
