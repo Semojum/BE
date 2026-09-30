@@ -27,6 +27,7 @@ import java.util.UUID;
  * 결과 다운로드 파일 생성.
  *
  * <p>mode a → .txt: text_elements의 편집 최종본(current)을 페이지·읽기 순서대로 병합 (BE 자체 구현).
+ * mode c(3패널)는 텍스트·점자가 모두 결과물이라 요청의 format으로 .txt·.brf 중 고른다(기본 .brf).
  * mode b·c → .brf: braille_elements를 braille-assist(공용 조판 라이브러리)의 조립 JSON으로 넘겨
  * 32칸 줄바꿈·변경선·26줄 면 나눔·페이지행·BRF-ASCII 변환까지 위임. 조판 규칙은 이 서비스에 없다 —
  * 규칙은 전부 braille-assist 레포가 소유한다(3개 언어 동일 출력, vectors.json 검증).
@@ -49,8 +50,17 @@ public class JobDownloadService {
     /** 생성된 파일 — 내용과 파일명(확장자 포함) */
     public record DownloadFile(byte[] content, String fileName, String contentType) {}
 
-    @Transactional(readOnly = true)
+    /** 형식 지정 없는 구 호출 — mode 기본 형식 */
     public DownloadFile download(String userId, String jobId, String requestedName) {
+        return download(userId, jobId, requestedName, null);
+    }
+
+    /**
+     * @param format "txt" | "brf" | null(mode 기본: a=txt, b·c=brf). c(3패널)만 둘 다 된다 —
+     *               a엔 점자가 없고, b의 텍스트는 사용자가 올린 원문이라 내려줄 결과물이 아니다
+     */
+    @Transactional(readOnly = true)
+    public DownloadFile download(String userId, String jobId, String requestedName, String format) {
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
         if (job.isInProgress()) {
@@ -66,12 +76,27 @@ public class JobDownloadService {
             throw new CustomException(ErrorCode.JOB_NO_RESULT);
         }
 
-        boolean isTxt = "a".equals(job.getMode());
+        boolean isTxt = isTxt(job.getMode(), format);
         String body = isTxt ? buildTxt(pageResults) : buildBrf(job, pageResults);
         String fileName = resolveFileName(requestedName, job.getOriginalFileName(), isTxt ? "txt" : "brf");
         // brf는 BRF-ASCII(순수 ASCII)지만 미해석 셀 마커(⟨XXXX⟩)가 섞일 수 있어 UTF-8로 기록
         return new DownloadFile(body.getBytes(StandardCharsets.UTF_8), fileName,
                 "text/plain; charset=UTF-8");
+    }
+
+    static boolean isTxt(String mode, String format) {
+        if (format == null || format.isBlank()) return "a".equals(mode);
+        return switch (format) {
+            case "txt" -> {
+                if ("b".equals(mode)) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+                yield true;
+            }
+            case "brf" -> {
+                if ("a".equals(mode)) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+                yield false;
+            }
+            default -> throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        };
     }
 
     // mode a 페이지 구분선 — 빈 줄은 문단 간격과 구분이 안 돼 하이픈 줄로 표시 (팀 결정 2026-08-10)

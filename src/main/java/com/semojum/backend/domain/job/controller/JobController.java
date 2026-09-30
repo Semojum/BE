@@ -34,6 +34,7 @@ public class JobController {
     private final SseService sseService;
     private final JobRepository jobRepository;
     private final PageSaveService pageSaveService;
+    private final com.semojum.backend.domain.result.service.PageSaveFacade pageSaveFacade;
     private final com.semojum.backend.domain.job.service.PageDeleteService pageDeleteService;
     private final com.semojum.backend.domain.job.service.JobManageService jobManageService;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
@@ -93,7 +94,8 @@ public class JobController {
     public ApiResponse<JobResponseDto.Create> createJob(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestPart("file") MultipartFile file,
-            @RequestParam("mode") String mode,
+            // 선택 — 서버가 파일 종류로 정한다(PDF·HWP·HWPX=c, TXT=b). 구 클라이언트 호환으로 받기만 한다
+            @RequestParam(value = "mode", required = false) String mode,
             // 점자 판면 마지막 줄에 쪽번호를 넣을지 — 업로드 시 선택 (미전송 시 false)
             @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber,
             // 꼬리말(묵자, 최대 200자) — 다운로드(brf) 때 점역해 페이지행 가운데 배치. 미전송 시 없음
@@ -179,8 +181,8 @@ public class JobController {
             @RequestBody @Valid JobRequestDto.SavePage request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ApiResponse.success(pageSaveService.savePage(
-                userDetails.getUsername(), jobId, pageNo, request.elements()));
+        return ApiResponse.success(pageSaveFacade.save(
+                userDetails.getUsername(), jobId, pageNo, request.target(), request.elements()));
     }
 
     /**
@@ -216,7 +218,7 @@ public class JobController {
         return ApiResponse.success(Map.of("jobId", jobId, "deletedPageNo", pageNo, "totalPages", remaining));
     }
 
-    // 결과 다운로드 — mode a는 .txt(텍스트 병합), b·c는 .brf(braille-assist 조판).
+    // 결과 다운로드 — mode a는 .txt(텍스트 병합), b는 .brf(braille-assist 조판), c는 format으로 둘 중 선택(기본 .brf).
     // 응답은 JSON 래핑 없이 파일 스트림(Content-Disposition). body는 선택(파일명 지정).
     @PostMapping("/{jobId}/download")
     public org.springframework.http.ResponseEntity<byte[]> downloadJob(
@@ -224,8 +226,8 @@ public class JobController {
             @RequestBody(required = false) JobRequestDto.Download request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        var file = jobDownloadService.download(
-                userDetails.getUsername(), jobId, request == null ? null : request.fileName());
+        var file = jobDownloadService.download(userDetails.getUsername(), jobId,
+                request == null ? null : request.fileName(), request == null ? null : request.format());
         String encoded = java.net.URLEncoder.encode(file.fileName(), java.nio.charset.StandardCharsets.UTF_8)
                 .replace("+", "%20");
         return org.springframework.http.ResponseEntity.ok()

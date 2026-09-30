@@ -36,6 +36,7 @@ class PageSaveServiceTest {
     BoundingBoxRepository boxRepo;
     PageEditLogRepository logRepo;
     S3Service s3;
+    BrailleRetranslator retranslator;
     PageSaveService service;
 
     final String USER_ID = UUID.randomUUID().toString();
@@ -52,8 +53,9 @@ class PageSaveServiceTest {
         boxRepo = Mockito.mock(BoundingBoxRepository.class);
         logRepo = Mockito.mock(PageEditLogRepository.class);
         s3 = Mockito.mock(S3Service.class);
+        retranslator = Mockito.mock(BrailleRetranslator.class);
         service = new PageSaveService(jobRepo, pageRepo, pageResultRepo, textRepo, brailleRepo,
-                boxRepo, logRepo, s3);
+                boxRepo, logRepo, s3, retranslator);
 
         when(textRepo.findByPageResult(any())).thenReturn(List.of());
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of());
@@ -319,5 +321,170 @@ class PageSaveServiceTest {
         Map<?, ?> bbox = (Map<?, ?>) log.getBeforeElements().get(0).get("bounding_box");
         assertEquals(1, bbox.get("x"));
         assertEquals(4, bbox.get("y2"));
+    }
+    // ===== 3패널(mode c) — 텍스트 편집이 점자를 끌고 간다 (2026-09-30) =====
+
+    private BrailleElement brailleEl(String elementId, int order, String contents) {
+        return BrailleElement.builder().pageResult(pageResult).elementId(elementId)
+                .type("text").readingOrder(order).content(List.of(contents)).isBlocked(false).build();
+    }
+
+    private List<Map<String, Object>> saveText(List<JobRequestDto.SaveElement> items, Map<String, String> bodies) {
+        return service.savePage(USER_ID, "job1", 1, "text", items, bodies);
+    }
+
+    /** 바뀐 텍스트만 재점역해 같은 id 점자의 current를 바꾸고, 이전 점자의 앞뒤 여백을 그대로 입힌다 */
+    @Test
+    void mode_c_텍스트_수정은_같은_id_점자를_재점역하고_여백을_보존한다() {
+        givenJob("c");
+        TextElement t1 = textEl("e1", "원본");
+        TextElement t2 = textEl("e2", "그대로");
+        BrailleElement b1 = brailleEl("e1", 1, "⠀⠀⠏⠒⠃⠷\n");
+        BrailleElement b2 = brailleEl("e2", 2, "⠀⠀⠈⠪⠊⠗⠐⠥\n");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1, t2));
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1, b2));
+
+        List<Map<String, Object>> result = saveText(
+                List.of(item("e1", "수정"), item("e2", "그대로")), Map.of("수정", "⠠⠍⠨⠎⠶"));
+
+        assertEquals(List.of("수정"), t1.getCurrentContents());
+        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), b1.getCurrentContent(), "표식 없는 줄은 이전 점자 같은 줄의 들여쓰기(⠀⠀)");
+        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), b1.getOriginalContent(), "AI 원본 보존");
+        assertEquals(List.of("⠀⠀⠈⠪⠊⠗⠐⠥\n"), b2.getCurrentContent(), "안 바뀐 텍스트의 점자는 그대로");
+        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), result.get(0).get("brailleContents"), "응답에 바뀐 점자");
+        verify(retranslator, never()).translateLines(any()); // 미리 구해 온 값을 쓴다
+
+        PageEditLog log = savedLog();
+        assertEquals("TEXT", log.getElementType());
+        Map<?, ?> synced = (Map<?, ?>) ((Map<?, ?>) log.getChanged()).get("braille_synced");
+        assertEquals(List.of("e1"), synced.get("edited"));
+    }
+
+    /** 새 텍스트 블록은 같은 id로 점자 블록을 만들고, 지운 텍스트는 짝 점자도 지운다 */
+    @Test
+    void mode_c_텍스트_추가_삭제는_짝_점자에도_반영된다() {
+        givenJob("c");
+        TextElement t1 = textEl("e1", "남김");
+        TextElement t2 = textEl("e2", "지움");
+        BrailleElement b1 = brailleEl("e1", 1, "  ⠁\n");
+        BrailleElement b2 = brailleEl("e2", 2, "  ⠃\n");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1, t2));
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1, b2));
+
+        List<Map<String, Object>> result = saveText(
+                List.of(item("e1", "남김"), item(null, "<!2칸>새 문단")), Map.of("<!2칸>새 문단", "⠀⠀⠠⠗⠀⠑⠛⠊⠒"));
+
+        String newId = (String) result.get(1).get("id");
+        ArgumentCaptor<BrailleElement> captor = ArgumentCaptor.forClass(BrailleElement.class);
+        verify(brailleRepo).save(captor.capture());
+        BrailleElement created = captor.getValue();
+        assertEquals(newId, created.getElementId(), "텍스트와 같은 id — 1:1 매칭 유지");
+        assertEquals(List.of("⠀⠀⠠⠗⠀⠑⠛⠊⠒\n"), created.getCurrentContent(), "새 블록: 표식 들여쓰기 + 뒤 줄바꿈");
+        assertNull(created.getOriginalContent(), "사용자 작성 표식");
+        assertTrue(b2.isDeleted(), "지운 텍스트의 점자도 삭제");
+        assertFalse(b1.isDeleted());
+        assertEquals(2, created.getReadingOrder());
+    }
+
+    /** 순서: 짝 점자는 텍스트 순서를 따르고, 점자 패널에서만 추가한 블록은 원래 앞 블록 뒤에 붙어 다닌다 */
+    @Test
+    void mode_c_텍스트_순서변경은_점자_순서를_끌고_가고_점자_전용_블록은_제자리를_지킨다() {
+        givenJob("c");
+        TextElement t1 = textEl("e1", "가");
+        TextElement t2 = textEl("e2", "나");
+        BrailleElement b1 = brailleEl("e1", 1, "⠁");
+        BrailleElement only = brailleEl("u1", 2, "⠿"); // 점자 패널에서 추가한 블록(짝 텍스트 없음)
+        BrailleElement b2 = brailleEl("e2", 3, "⠃");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1, t2));
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1, only, b2));
+
+        saveText(List.of(item("e2", "나"), item("e1", "가")), Map.of());
+
+        assertEquals(1, b2.getReadingOrder());
+        assertEquals(2, b1.getReadingOrder());
+        assertEquals(3, only.getReadingOrder(), "e1 뒤에 붙어 이동");
+        verifyNoInteractions(retranslator);
+    }
+
+    /** 미리 구한 번역이 없으면(사전 조회 뒤 내용이 또 바뀐 경우) 저장 중에 한 번 더 부른다 */
+    @Test
+    void mode_c_사전_번역이_없으면_저장_중에_재점역한다() {
+        givenJob("c");
+        TextElement t1 = textEl("e1", "원본");
+        BrailleElement b1 = brailleEl("e1", 1, "⠁");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1));
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
+        when(retranslator.translateLines(any())).thenReturn(Map.of("다른 값", "⠙"));
+
+        saveText(List.of(item("e1", "다른 값")), Map.of());
+
+        assertEquals(List.of("⠙"), b1.getCurrentContent(), "이전 점자에 뒤 줄바꿈이 없었으니 없음");
+        verify(retranslator).translateLines(List.of("다른 값"));
+    }
+
+    /** 대상을 안 주면 c의 기본은 점자 — 3패널 이전 클라이언트와 같은 동작이고 텍스트는 건드리지 않는다 */
+    @Test
+    void mode_c_대상_생략은_점자_편집이고_텍스트와_무관하다() {
+        givenJob("c");
+        BrailleElement b1 = brailleEl("e1", 1, "⠁");
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
+
+        List<Map<String, Object>> result = service.savePage(USER_ID, "job1", 1, List.of(item("e1", "⠁⠃")));
+
+        assertEquals(List.of("⠁⠃"), b1.getCurrentContent());
+        assertFalse(result.get(0).containsKey("brailleContents"), "점자 저장엔 동기화 필드 없음");
+        assertEquals("BRAILLE", savedLog().getElementType());
+        verify(textRepo, never()).findByPageResult(any());
+    }
+
+    /** 편집할 수 없는 패널 — a의 점자(없음), b의 텍스트(원문 대조용), 모르는 값은 400 */
+    @Test
+    void 모드가_편집할_수_없는_패널은_400() {
+        assertEquals("text", PageSaveService.resolveTarget("a", null));
+        assertEquals("braille", PageSaveService.resolveTarget("b", null));
+        assertEquals("braille", PageSaveService.resolveTarget("c", null));
+        assertEquals("text", PageSaveService.resolveTarget("c", "text"));
+        for (String[] bad : new String[][]{{"a", "braille"}, {"b", "text"}, {"c", "both"}}) {
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
+                    () -> PageSaveService.resolveTarget(bad[0], bad[1])).getErrorCode(), bad[0] + "/" + bad[1]);
+        }
+    }
+
+    /** 사전 조회는 바뀐 텍스트와 새 블록만 — 그대로인 요소는 AI에 보내지 않는다 */
+    @Test
+    void 재점역_대상은_바뀐_텍스트와_새_블록뿐이다() {
+        givenJob("c");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "그대로"), textEl("e2", "원본")));
+
+        var texts = service.textsToRetranslate(USER_ID, "job1", 1, "text",
+                List.of(item("e1", "그대로"), item("e2", "수정"), item(null, "새 블록")));
+
+        assertEquals(java.util.Set.of("수정", "새 블록"), texts);
+        assertTrue(service.textsToRetranslate(USER_ID, "job1", 1, "braille",
+                List.of(item("e1", "바뀜"))).isEmpty(), "점자 저장은 재점역 없음");
+    }
+
+    /** c의 초안 선택은 점자 본문 + 같은 id 텍스트를 함께 바꾼다(피커가 보여 준 묵자 = 초안 text) */
+    @Test
+    void mode_c_초안_선택은_텍스트_패널도_같은_초안으로_맞춘다() {
+        givenJob("c");
+        BrailleElement b = BrailleElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(1).content(List.of("⠠⠄기존⠠⠄")).selectedIdx(1)
+                .drafts(List.of(draft("생략", "그래프 생략", List.of("⠠⠄생략⠠⠄")),
+                                draft("개조식 설명", "그래프: 기존", List.of("⠠⠄기존⠠⠄"))))
+                .isBlocked(false).build();
+        TextElement t = TextElement.builder().pageResult(pageResult).elementId("v1")
+                .type("chart_graph").readingOrder(1).contents(List.of("<!점역자주>그래프: 기존<!/점역자주>"))
+                .selectedIdx(1).isBlocked(false).build();
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b));
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t));
+
+        Map<String, Object> result = service.selectDraft(USER_ID, "job1", 1, "v1", 0);
+
+        assertEquals(List.of("⠠⠄생략⠠⠄"), b.getCurrentContent());
+        assertEquals(List.of("<!점역자주>그래프 생략<!/점역자주>"), t.getCurrentContents(), "마커 형태 보존");
+        assertEquals(0, t.getSelectedIdx());
+        assertEquals(t.getCurrentContents(), result.get("textContents"));
+        assertEquals(List.of("v1"), ((Map<?, ?>) savedLog().getChanged()).get("text_synced"));
     }
 }
