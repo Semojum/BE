@@ -130,12 +130,12 @@ public class PageSaveService {
 
     /**
      * @param target        편집 패널 — null이면 mode 기본값(a=text, b·c=braille). c만 text·braille 둘 다 받는다
-     * @param brailleBodies mode c 텍스트 저장의 재점역 결과(텍스트 본문 → 점자 본문). 트랜잭션 밖에서 미리 구해 온다
+     * @param lineBraille   mode c 텍스트 저장의 재점역 결과(텍스트 줄 → 점자 줄). 트랜잭션 밖에서 미리 구해 온다
      */
     @Transactional
     public List<Map<String, Object>> savePage(String userId, String jobId, int pageNo, String target,
                                               List<JobRequestDto.SaveElement> requested,
-                                              Map<String, String> brailleBodies) {
+                                              Map<String, String> lineBraille) {
         // 1. 본인 Job 검증 — 타인 소유는 존재를 숨기기 위해 404로 통일 (V3 관리 API 관례)
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
@@ -159,6 +159,10 @@ public class PageSaveService {
             if (!liveById.containsKey(item.id())) throw new CustomException(ErrorCode.ELEMENT_NOT_FOUND);
             if (!requestedIds.add(item.id())) throw new CustomException(ErrorCode.ELEMENT_LIST_MISMATCH);
         }
+
+        // 바꾸기 전 텍스트 — 점자 동기화가 안 바뀐 줄을 찾아 AI 원래 점자를 재사용하는 데 쓴다
+        Map<String, List<String>> prevContents = new HashMap<>();
+        for (Element el : live) prevContents.put(el.elementId(), el.contents());
 
         // 4. before 스냅샷 (적용 전 상태, 읽기 순서대로)
         Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
@@ -209,8 +213,8 @@ public class PageSaveService {
         Map<String, List<String>> brailleById = null;
         if (syncBraille) {
             brailleSynced = new LinkedHashMap<>();
-            brailleById = syncBraille(pageResult, finalOrder, edited, added, deleted,
-                    brailleBodies == null ? Map.of() : brailleBodies, brailleSynced);
+            brailleById = syncBraille(pageResult, finalOrder, prevContents, edited, added, deleted,
+                    lineBraille == null ? Map.of() : lineBraille, brailleSynced);
         }
 
         // 내용이 바뀌었으므로 카드 날짜·복구 지점 갱신 (같은 트랜잭션이라 별도 저장 불필요)
@@ -261,7 +265,8 @@ public class PageSaveService {
     /**
      * 텍스트 최종 상태에 맞춰 점자 요소를 고친다 (mode c, 같은 id 1:1).
      * <ul>
-     *   <li>바뀐·새 텍스트 → 재점역해 같은 id 점자의 current 교체(없으면 같은 id로 새로 만든다). original은 보존</li>
+     *   <li>바뀐·새 텍스트 → 같은 id 점자의 current 교체(없으면 같은 id로 새로 만든다). 안 바뀐 줄은 AI 원래
+     *       점자를 쓰고 바뀐 줄만 재점역한다({@link BrailleRetranslator#compose}). original은 보존</li>
      *   <li>지운 텍스트 → 같은 id 점자도 soft-delete</li>
      *   <li>순서 → 짝 있는 점자는 텍스트 순서를 따르고, 점자 패널에서만 추가한 블록(짝 없음)은
      *       원래 바로 앞에 있던 짝 있는 블록 뒤에 그대로 붙는다</li>
@@ -269,8 +274,9 @@ public class PageSaveService {
      * @return 점자 요소 id → 최종 current (응답의 brailleContents)
      */
     private Map<String, List<String>> syncBraille(PageResult pageResult, List<Element> textFinal,
+                                                  Map<String, List<String>> prevContents,
                                                   List<String> edited, List<String> added, List<String> deleted,
-                                                  Map<String, String> bodies, Map<String, Object> summary) {
+                                                  Map<String, String> lineBraille, Map<String, Object> summary) {
         List<BrailleElement> brailleLive = brailleElementRepository.findByPageResult(pageResult);
         Map<String, BrailleElement> byId = new LinkedHashMap<>();
         for (BrailleElement b : brailleLive) byId.putIfAbsent(b.getElementId(), b);
@@ -294,20 +300,22 @@ public class PageSaveService {
         for (String id : changedIds) {
             Element t = textById.get(id);
             String text = joined(t.contents());
-            String body = bodies.get(text);
-            if (body == null) {
+            String prevText = prevContents.containsKey(id) ? joined(prevContents.get(id)) : null;
+            Map<String, String> lines = lineBraille;
+            if (BrailleRetranslator.hasUntranslated(text, lineBraille)) {
                 // 사전 조회와 저장 사이에 내용이 바뀐 경우(동시 저장) — 여기서 한 번 더 부른다
-                body = brailleRetranslator.translateBodies(List.of(text)).get(text);
+                lines = new HashMap<>(lineBraille);
+                lines.putAll(brailleRetranslator.translateLines(List.of(text)));
             }
             BrailleElement b = byId.get(id);
             if (b != null) {
-                b.updateCurrentContent(BrailleRetranslator.format(body, b.getCurrentContent()));
+                b.updateCurrentContent(BrailleRetranslator.compose(text, prevText, b.getCurrentContent(), lines));
                 bEdited.add(id);
             } else {
                 BrailleElement neo = BrailleElement.builder()
                         .pageResult(pageResult).elementId(id)
                         .type(t.type()).headingLevel(t.headingLevel())
-                        .content(BrailleRetranslator.format(body, null)).isBlocked(false).build();
+                        .content(BrailleRetranslator.compose(text, null, null, lines)).isBlocked(false).build();
                 neo.markUserAuthored();
                 byId.put(id, brailleElementRepository.save(neo));
                 bAdded.add(id);

@@ -26,7 +26,7 @@ public class PageSaveFacade {
     public List<Map<String, Object>> save(String userId, String jobId, int pageNo, String target,
                                           List<JobRequestDto.SaveElement> elements) {
         Set<String> texts = pageSaveService.textsToRetranslate(userId, jobId, pageNo, target, elements);
-        Map<String, String> bodies = texts.isEmpty() ? Map.of() : brailleRetranslator.translateBodies(texts);
-        return pageSaveService.savePage(userId, jobId, pageNo, target, elements, bodies);
+        Map<String, String> lineBraille = texts.isEmpty() ? Map.of() : brailleRetranslator.translateLines(texts);
+        return pageSaveService.savePage(userId, jobId, pageNo, target, elements, lineBraille);
     }
 }

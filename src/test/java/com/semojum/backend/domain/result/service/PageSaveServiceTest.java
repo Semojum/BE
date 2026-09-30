@@ -339,8 +339,8 @@ class PageSaveServiceTest {
         givenJob("c");
         TextElement t1 = textEl("e1", "원본");
         TextElement t2 = textEl("e2", "그대로");
-        BrailleElement b1 = brailleEl("e1", 1, "  ⠏⠒⠃⠷\n");
-        BrailleElement b2 = brailleEl("e2", 2, "  ⠈⠪⠊⠗⠐⠥\n");
+        BrailleElement b1 = brailleEl("e1", 1, "⠀⠀⠏⠒⠃⠷\n");
+        BrailleElement b2 = brailleEl("e2", 2, "⠀⠀⠈⠪⠊⠗⠐⠥\n");
         when(textRepo.findByPageResult(any())).thenReturn(List.of(t1, t2));
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1, b2));
 
@@ -348,11 +348,11 @@ class PageSaveServiceTest {
                 List.of(item("e1", "수정"), item("e2", "그대로")), Map.of("수정", "⠠⠍⠨⠎⠶"));
 
         assertEquals(List.of("수정"), t1.getCurrentContents());
-        assertEquals(List.of("  ⠠⠍⠨⠎⠶\n"), b1.getCurrentContent(), "들여쓰기·줄바꿈은 이전 점자 모양");
-        assertEquals(List.of("  ⠏⠒⠃⠷\n"), b1.getOriginalContent(), "AI 원본 보존");
-        assertEquals(List.of("  ⠈⠪⠊⠗⠐⠥\n"), b2.getCurrentContent(), "안 바뀐 텍스트의 점자는 그대로");
-        assertEquals(List.of("  ⠠⠍⠨⠎⠶\n"), result.get(0).get("brailleContents"), "응답에 바뀐 점자");
-        verify(retranslator, never()).translateBodies(any()); // 미리 구해 온 값을 쓴다
+        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), b1.getCurrentContent(), "표식 없는 줄은 이전 점자 같은 줄의 들여쓰기(⠀⠀)");
+        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), b1.getOriginalContent(), "AI 원본 보존");
+        assertEquals(List.of("⠀⠀⠈⠪⠊⠗⠐⠥\n"), b2.getCurrentContent(), "안 바뀐 텍스트의 점자는 그대로");
+        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), result.get(0).get("brailleContents"), "응답에 바뀐 점자");
+        verify(retranslator, never()).translateLines(any()); // 미리 구해 온 값을 쓴다
 
         PageEditLog log = savedLog();
         assertEquals("TEXT", log.getElementType());
@@ -372,14 +372,14 @@ class PageSaveServiceTest {
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1, b2));
 
         List<Map<String, Object>> result = saveText(
-                List.of(item("e1", "남김"), item(null, "새 문단")), Map.of("새 문단", "⠠⠗⠀⠑⠛⠊⠒"));
+                List.of(item("e1", "남김"), item(null, "<!2칸>새 문단")), Map.of("<!2칸>새 문단", "⠀⠀⠠⠗⠀⠑⠛⠊⠒"));
 
         String newId = (String) result.get(1).get("id");
         ArgumentCaptor<BrailleElement> captor = ArgumentCaptor.forClass(BrailleElement.class);
         verify(brailleRepo).save(captor.capture());
         BrailleElement created = captor.getValue();
         assertEquals(newId, created.getElementId(), "텍스트와 같은 id — 1:1 매칭 유지");
-        assertEquals(List.of("  ⠠⠗⠀⠑⠛⠊⠒\n"), created.getCurrentContent(), "새 블록은 본문 문단 모양");
+        assertEquals(List.of("⠀⠀⠠⠗⠀⠑⠛⠊⠒\n"), created.getCurrentContent(), "새 블록: 표식 들여쓰기 + 뒤 줄바꿈");
         assertNull(created.getOriginalContent(), "사용자 작성 표식");
         assertTrue(b2.isDeleted(), "지운 텍스트의 점자도 삭제");
         assertFalse(b1.isDeleted());
@@ -414,11 +414,12 @@ class PageSaveServiceTest {
         BrailleElement b1 = brailleEl("e1", 1, "⠁");
         when(textRepo.findByPageResult(any())).thenReturn(List.of(t1));
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
-        when(retranslator.translateBodies(any())).thenReturn(Map.of("다른 값", "⠙"));
+        when(retranslator.translateLines(any())).thenReturn(Map.of("다른 값", "⠙"));
 
         saveText(List.of(item("e1", "다른 값")), Map.of());
 
-        assertEquals(List.of("⠙"), b1.getCurrentContent());
+        assertEquals(List.of("⠙"), b1.getCurrentContent(), "이전 점자에 뒤 줄바꿈이 없었으니 없음");
+        verify(retranslator).translateLines(List.of("다른 값"));
     }
 
     /** 대상을 안 주면 c의 기본은 점자 — 3패널 이전 클라이언트와 같은 동작이고 텍스트는 건드리지 않는다 */
