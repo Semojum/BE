@@ -97,7 +97,7 @@ com.semojum.backend
   - ⚠️ 구분선은 mode a 다운로드가 넣는 **하이픈 정확히 40개 줄**이다. 39·41개나 앞뒤에 글자가 붙으면 본문으로 본다(밑줄 장식 오인 방지). 구분선 없는 TXT의 30줄은 원문 쪽과 무관한 임의값이라 그때의 "원본 쪽 번호"는 청크 번호일 뿐이다
   - ⚠️ mode a는 **내용이 전부 빈 쪽에 구분선을 남기지 않는다** — 원문 중간에 빈 쪽이 있었다면 그만큼 번호가 당겨지고, .txt에 그 쪽이 없어 **복원할 수 없다**
 - **HWP는 업로드 시 PDF로 변환**(pyhwp→ODT→LibreOffice, Dockerfile 내장) 후 기존 PDF 파이프라인. 머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 마커로 주입한다
-  - ⚠️ **HWPX 미지원** — 확장자가 `.hwp`여도 내용물이 ZIP이면 JOB4007. 최신 한글 저장본에서 흔하다
+  - **HWPX(.hwpx, 또는 내용물이 ZIP인 .hwp)** 는 LibreOffice가 못 연다(26.2 실측) → `HwpxToHtml`이 본문 XML을 HTML로 풀고 LibreOffice(Writer 필터)로 PDF. 확장자가 아니라 **내용물(ZIP 시그니처)로 가른다**. 표 테두리는 CSS가 아닌 `border` 속성이어야 LibreOffice가 그린다
 - ⚠️ 큐 적재(`JobDispatcher.enqueueJob`)는 **트랜잭션 커밋 후** 실행 — 커밋 전에 적재하면 워커가 not found로 재시도한다
 - ⚠️ **PDF 첫 장 렌더는 poppler `pdftoppm`(별도 프로세스) 우선, 실패 시 PDFBox 폴백** — PDFBox는 JPEG 2000 스캔본을 백지로 그리고, 순수 Java JPX 디코더는 768MB 힙에서도 OOM이다. **JVM 안에서 풀지 말 것**
 

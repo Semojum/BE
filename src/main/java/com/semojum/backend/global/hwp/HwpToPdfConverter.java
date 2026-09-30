@@ -45,8 +45,8 @@ import java.util.zip.ZipOutputStream;
 @Component
 public class HwpToPdfConverter {
 
-    private static final String HEADER_MARK = "[머리말]";
-    private static final String FOOTER_MARK = "[꼬리말]";
+    static final String HEADER_MARK = "[머리말]";
+    static final String FOOTER_MARK = "[꼬리말]";
 
     @Value("${hwp2pdf.python:python3}")
     private String python;
@@ -61,6 +61,10 @@ public class HwpToPdfConverter {
     private long timeoutSeconds;
 
     public byte[] convert(byte[] hwpBytes) {
+        // HWPX(ZIP)는 확장자와 무관하게 내용물로 가른다 — 최신 한글은 .hwp로도 HWPX를 저장한다
+        if (HwpxToHtml.isZip(hwpBytes)) {
+            return convertHwpx(hwpBytes);
+        }
         // 파싱 가능 여부·암호/배포용 검사 + 머리말·꼬리말 수집 (mode b와 동일한 에러 계약)
         HWPFile hwp = readAndValidate(hwpBytes);
         List<String> headers = collectNotes(hwp, true);
@@ -93,6 +97,41 @@ public class HwpToPdfConverter {
             throw e;
         } catch (Exception e) {
             log.warn("HWP→PDF 변환 실패: {}", e.getMessage());
+            throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
+        } finally {
+            cleanup(dir);
+        }
+    }
+
+    /**
+     * HWPX → HTML(HwpxToHtml) → PDF(LibreOffice) (2026-09-30).
+     * HTML은 Writer 필터로 열어야 @page 용지 크기가 적용된다(기본인 Writer/Web은 쪽 개념이 없다).
+     */
+    private byte[] convertHwpx(byte[] hwpxBytes) {
+        HwpxToHtml.Result html = HwpxToHtml.convert(hwpxBytes);
+        Path dir = null;
+        try {
+            dir = Files.createTempDirectory("hwpx2pdf");
+            Path htmlPath = dir.resolve("in.html");
+            Files.writeString(htmlPath, html.html(), StandardCharsets.UTF_8);
+            for (var img : html.images().entrySet()) {
+                Files.write(dir.resolve(img.getKey()), img.getValue());
+            }
+
+            run(dir, soffice, "--headless",
+                    "-env:UserInstallation=file://" + dir.resolve("lo-profile"),
+                    "--infilter=HTML (StarWriter)",
+                    "--convert-to", "pdf:writer_pdf_Export", "--outdir", dir.toString(), htmlPath.toString());
+
+            Path pdfPath = dir.resolve("in.pdf");
+            if (!Files.exists(pdfPath) || Files.size(pdfPath) == 0) {
+                throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
+            }
+            return Files.readAllBytes(pdfPath);
+        } catch (CustomException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("HWPX→PDF 변환 실패: {}", e.getMessage());
             throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
         } finally {
             cleanup(dir);

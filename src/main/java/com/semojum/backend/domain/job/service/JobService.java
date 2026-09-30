@@ -95,7 +95,8 @@ public class JobService {
         // (a는 2026-08-24, c는 2026-09-03 · FE 요청 S-5. 변환 경로가 확장자로 갈리므로 같은 코드를 탄다).
         // mode b는 TXT 전용으로 축소(HWP는 a로 이관 — 텍스트 추출 대신 렌더링 보존 방식)
         if (mode.equals("a") || mode.equals("c")) {
-            if (!List.of("pdf", "hwp").contains(ext)) {
+            // HWPX(.hwpx)도 허용 (2026-09-30) — HwpToPdfConverter가 내용물(ZIP)로 갈라 처리한다
+            if (!List.of("pdf", "hwp", "hwpx").contains(ext)) {
                 throw new CustomException(ErrorCode.JOB_INVALID_FILE);
             }
         } else if (mode.equals("b")) {
@@ -191,7 +192,7 @@ public class JobService {
             // 5. PDF 페이지별 분리 및 S3 업로드.
             // mode a의 HWP는 업로드 시점에 PDF로 변환(2026-08-24) — 이후는 PDF와 완전히 동일하게 처리
             byte[] pdfBytes;
-            if (ext.equals("hwp")) {
+            if (ext.equals("hwp") || ext.equals("hwpx")) {
                 long convertStart = System.currentTimeMillis();
                 pdfBytes = hwpToPdfConverter.convert(file.getBytes());
                 log.info("HWP→PDF 변환 완료: {}KB → {}KB ({}ms)",
