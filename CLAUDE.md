@@ -170,7 +170,9 @@ com.semojum.backend
   - ⚠️ **재점역은 줄 단위다**(운영 실측 2026-09-30). c의 텍스트에는 AI 조판 표식이 있고(`<!2칸>` 들여쓰기, 표 틀 `┌`·`└`, 표 열 간격 두 칸 공백), 점자 들여쓰기는 **일반 공백이 아니라 점자 빈칸 U+2800**이다. TranslateText는 표식을 버린다. 그래서 텍스트 줄 ↔ 점자 줄 1:1 대응을 이용해 **안 바뀐 줄은 AI 원래 점자를 재사용**하고, 바뀐 줄만 점역해 표식을 점자 빈칸으로 바꾼다. 표식 없는 줄은 이전 점자 같은 줄의 들여쓰기를 빌린다(표 행). 줄 수가 안 맞으면 대응을 믿지 않는다
   - 점자 저장은 텍스트를 건드리지 않는다(점자만 손보는 경우)
 - 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀. **c는 같은 id 텍스트도 그 초안의 `text`로 맞춘다**(응답 `textContents`)
-- `page_edit_logs`: **1저장 = 1행**, 페이지 전체 before/after 스냅샷 + 입력 컨텍스트(자기완결). RLHF 학습용이라 삭제하지 않는다
+- `page_edit_logs`: **1저장 = 1행**, **쪽의 텍스트·점자 두 패널** before/after 스냅샷(`before_text`·`after_text`·`before_braille`·`after_braille`, 블록마다 `ai_original`) + `edited_panel`(직접 고친 쪽) + 입력 컨텍스트(자기완결). RLHF 학습용이라 삭제하지 않는다
+  - V32(2026-10-04): 3패널은 텍스트 저장 때 점자가 따라 바뀌어 한 패널만 담던 구조로는 점자 변화가 사라졌다. 그 모드에 없는 패널은 null(TXT 텍스트는 `source_text`, 구 mode a엔 점자 없음)
+  - ⚠️ 구 컬럼(`element_type`·`before/after_elements`)은 블루그린 공존·공유 RDS 때문에 V32에선 NOT NULL만 풀고 남겼다. **`edited_panel IS NULL`이면 구 구조 행**. 삭제는 후속 마이그레이션
 
 ## 점자 규정 검색 (`GET /api/rules`)
 
