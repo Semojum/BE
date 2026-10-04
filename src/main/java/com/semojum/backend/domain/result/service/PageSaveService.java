@@ -27,7 +27,7 @@ import java.util.UUID;
 
 // 페이지 일괄 저장: FE가 보낸 페이지 최종 상태 전체를 DB 현재 상태와 diff해 수정/추가/삭제/순서변경을 판정·적용한다.
 // FE는 최종 상태만 보내고 "무엇이 바뀌었는지"는 서버가 판정 — FE 표시에 의존하면 FE 버그가 그대로 데이터 오염이 된다.
-// 변경이 있으면 page_edit_logs에 페이지 전체 before/after 스냅샷 1행을 기록(RLHF용).
+// 변경이 있으면 page_edit_logs에 쪽의 텍스트·점자 두 패널 before/after 스냅샷 1행을 기록(RLHF용, V32).
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -164,9 +164,12 @@ public class PageSaveService {
         Map<String, List<String>> prevContents = new HashMap<>();
         for (Element el : live) prevContents.put(el.elementId(), el.contents());
 
-        // 4. before 스냅샷 (적용 전 상태, 읽기 순서대로)
+        // 4. before 스냅샷 (적용 전 상태, 읽기 순서대로) — 편집 패널 + 다른 패널(그 모드에 있으면).
+        //    3패널은 텍스트 저장 때 점자가 따라 바뀌므로 이력에 두 패널을 다 담는다(V32)
         Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
         List<Map<String, Object>> before = snapshot(live, bboxById);
+        List<Element> other = loadOtherPanel(pageResult, mode, isText);
+        List<Map<String, Object>> otherBefore = other == null ? null : snapshot(other, bboxById);
 
         // 5. diff 적용 — 배열 순서가 곧 최종 순서
         List<String> edited = new ArrayList<>();
@@ -211,10 +214,15 @@ public class PageSaveService {
         // 7-1. mode c 텍스트 저장 → 같은 id 점자 요소를 따라 맞춘다(재점역·추가·삭제·순서)
         Map<String, Object> brailleSynced = null;
         Map<String, List<String>> brailleById = null;
+        List<Map<String, Object>> otherAfter = otherBefore;   // 따라 바뀌지 않으면 다른 패널은 그대로
         if (syncBraille) {
             brailleSynced = new LinkedHashMap<>();
-            brailleById = syncBraille(pageResult, finalOrder, prevContents, edited, added, deleted,
-                    lineBraille == null ? Map.of() : lineBraille, brailleSynced);
+            List<BrailleElement> brailleLive = other.stream().map(e -> ((BrailleView) e).el()).toList();
+            List<BrailleElement> brailleOrder = syncBraille(pageResult, brailleLive, finalOrder, prevContents,
+                    edited, added, deleted, lineBraille == null ? Map.of() : lineBraille, brailleSynced);
+            brailleById = new HashMap<>();
+            for (BrailleElement b : brailleOrder) brailleById.put(b.getElementId(), b.getCurrentContent());
+            otherAfter = snapshot(brailleOrder.stream().map(b -> (Element) new BrailleView(b)).toList(), bboxById);
         }
 
         // 내용이 바뀌었으므로 카드 날짜·복구 지점 갱신 (같은 트랜잭션이라 별도 저장 불필요)
@@ -228,7 +236,7 @@ public class PageSaveService {
         changed.put("reordered", reordered);
         if (brailleSynced != null) changed.put("braille_synced", brailleSynced);
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                before, snapshot(finalOrder, bboxById), changed);
+                before, snapshot(finalOrder, bboxById), otherBefore, otherAfter, changed);
 
         log.info("페이지 일괄 저장: jobId={}, pageNo={}, target={}, edited={}, added={}, deleted={}, reordered={}{}",
                 jobId, pageNo, resolved, edited.size(), added.size(), deleted.size(), reordered,
@@ -271,13 +279,13 @@ public class PageSaveService {
      *   <li>순서 → 짝 있는 점자는 텍스트 순서를 따르고, 점자 패널에서만 추가한 블록(짝 없음)은
      *       원래 바로 앞에 있던 짝 있는 블록 뒤에 그대로 붙는다</li>
      * </ul>
-     * @return 점자 요소 id → 최종 current (응답의 brailleContents)
+     * @param brailleLive 바꾸기 전 살아 있는 점자 요소(읽기 순서) — 이력 before 스냅샷과 같은 목록
+     * @return 동기화 후 살아 있는 점자 요소(최종 읽기 순서) — 응답의 brailleContents와 이력 after 스냅샷 원천
      */
-    private Map<String, List<String>> syncBraille(PageResult pageResult, List<Element> textFinal,
-                                                  Map<String, List<String>> prevContents,
-                                                  List<String> edited, List<String> added, List<String> deleted,
-                                                  Map<String, String> lineBraille, Map<String, Object> summary) {
-        List<BrailleElement> brailleLive = brailleElementRepository.findByPageResult(pageResult);
+    private List<BrailleElement> syncBraille(PageResult pageResult, List<BrailleElement> brailleLive,
+                                             List<Element> textFinal, Map<String, List<String>> prevContents,
+                                             List<String> edited, List<String> added, List<String> deleted,
+                                             Map<String, String> lineBraille, Map<String, Object> summary) {
         Map<String, BrailleElement> byId = new LinkedHashMap<>();
         for (BrailleElement b : brailleLive) byId.putIfAbsent(b.getElementId(), b);
 
@@ -342,10 +350,7 @@ public class PageSaveService {
         summary.put("edited", bEdited);
         summary.put("added", bAdded);
         summary.put("deleted", bDeleted);
-
-        Map<String, List<String>> out = new HashMap<>();
-        for (BrailleElement b : order) out.put(b.getElementId(), b.getCurrentContent());
-        return out;
+        return order;
     }
 
     private Map<String, List<String>> currentBraille(PageResult pageResult) {
@@ -392,6 +397,8 @@ public class PageSaveService {
 
         Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
         List<Map<String, Object>> before = snapshot(live, bboxById);
+        List<Element> other = loadOtherPanel(pageResult, mode, isText);
+        List<Map<String, Object>> otherBefore = other == null ? null : snapshot(other, bboxById);
         Integer prevIdx = el.selectedIdx();
 
         List<String> newContents = selectedIdx < 0
@@ -404,7 +411,8 @@ public class PageSaveService {
         // 그 초안의 텍스트다(drafts[i].text). 재점역은 필요 없다(초안이 점자를 이미 들고 있다)
         List<String> textContents = null;
         if ("c".equals(mode)) {
-            TextElement textEl = textElementRepository.findByPageResult(pageResult).stream()
+            TextElement textEl = other.stream()
+                    .map(e -> ((TextView) e).el())
                     .filter(t -> t.getElementId().equals(elementId))
                     .findFirst().orElse(null);
             if (textEl != null) {
@@ -429,7 +437,8 @@ public class PageSaveService {
         changed.put("draft_selected", List.of(selection));
         if (textContents != null) changed.put("text_synced", List.of(elementId));
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                before, snapshot(live, bboxById), changed);
+                before, snapshot(live, bboxById),
+                otherBefore, other == null ? null : snapshot(other, bboxById), changed);
 
         log.info("초안 선택: jobId={}, pageNo={}, elementId={}, selectedIdx {} → {}",
                 jobId, pageNo, elementId, prevIdx, selectedIdx);
@@ -460,6 +469,15 @@ public class PageSaveService {
             text = TN_OPEN + text + TN_CLOSE;
         }
         return List.of(text);
+    }
+
+    /**
+     * 편집하지 않은 쪽 패널 — 이력 스냅샷용. 그 모드에 없는 패널이면 null.
+     * 텍스트를 고치면 점자(c만), 점자를 고치면 텍스트(c만 — b의 텍스트는 원문이라 sourceText로 남긴다).
+     */
+    private List<Element> loadOtherPanel(PageResult pageResult, String mode, boolean isText) {
+        if (!"c".equals(mode)) return null;
+        return loadLive(pageResult, !isText);
     }
 
     /** 편집 대상 요소 목록 — mode가 테이블을 정한다(a=text, b·c=braille). 삭제분은 리포지토리가 걸러낸다 */
@@ -519,9 +537,15 @@ public class PageSaveService {
         return list;
     }
 
+    /**
+     * 이력 1행 (V32) — 편집 패널과 다른 패널의 전·후를 텍스트·점자 칸에 나눠 담는다.
+     * 그 모드에 없는 패널은 null(TXT의 텍스트는 원문이라 sourceText에, 구 mode a엔 점자가 없다).
+     */
     private void saveLog(Job job, PageResult pageResult, String userId, String jobId, int pageNo,
-                         String mode, boolean isText, List<Map<String, Object>> before,
-                         List<Map<String, Object>> after, Map<String, Object> changed) {
+                         String mode, boolean isText,
+                         List<Map<String, Object>> before, List<Map<String, Object>> after,
+                         List<Map<String, Object>> otherBefore, List<Map<String, Object>> otherAfter,
+                         Map<String, Object> changed) {
         Page page = pageRepository.findByJobAndPageNo(job, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
@@ -544,9 +568,11 @@ public class PageSaveService {
                 .jobId(jobId)
                 .pageNo(pageNo)
                 .mode(mode)
-                .elementType(isText ? "TEXT" : "BRAILLE")
-                .beforeElements(before)
-                .afterElements(after)
+                .editedPanel(isText ? TARGET_TEXT : TARGET_BRAILLE)
+                .beforeText(isText ? before : otherBefore)
+                .afterText(isText ? after : otherAfter)
+                .beforeBraille(isText ? otherBefore : before)
+                .afterBraille(isText ? otherAfter : after)
                 .changed(changed)
                 .sourcePdfPath(sourcePdfPath)
                 .imageWidth(imageWidth)
