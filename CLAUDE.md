@@ -170,9 +170,12 @@ com.semojum.backend
   - ⚠️ **재점역은 줄 단위다**(운영 실측 2026-09-30). c의 텍스트에는 AI 조판 표식이 있고(`<!2칸>` 들여쓰기, 표 틀 `┌`·`└`, 표 열 간격 두 칸 공백), 점자 들여쓰기는 **일반 공백이 아니라 점자 빈칸 U+2800**이다. TranslateText는 표식을 버린다. 그래서 텍스트 줄 ↔ 점자 줄 1:1 대응을 이용해 **안 바뀐 줄은 AI 원래 점자를 재사용**하고, 바뀐 줄만 점역해 표식을 점자 빈칸으로 바꾼다. 표식 없는 줄은 이전 점자 같은 줄의 들여쓰기를 빌린다(표 행). 줄 수가 안 맞으면 대응을 믿지 않는다
   - 점자 저장은 텍스트를 건드리지 않는다(점자만 손보는 경우)
 - 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀. **c는 같은 id 텍스트도 그 초안의 `text`로 맞춘다**(응답 `textContents`)
-- `page_edit_logs`: **1저장 = 1행**, **쪽의 텍스트·점자 두 패널** before/after 스냅샷(`before_text`·`after_text`·`before_braille`·`after_braille`, 블록마다 `ai_original`) + `edited_panel`(직접 고친 쪽) + 입력 컨텍스트(자기완결). RLHF 학습용이라 삭제하지 않는다
-  - V32(2026-10-04): 3패널은 텍스트 저장 때 점자가 따라 바뀌어 한 패널만 담던 구조로는 점자 변화가 사라졌다. 그 모드에 없는 패널은 null(TXT 텍스트는 `source_text`, 구 mode a엔 점자 없음)
-  - ⚠️ 구 컬럼(`element_type`·`before/after_elements`)은 블루그린 공존·공유 RDS 때문에 V32에선 NOT NULL만 풀고 남겼다. **`edited_panel IS NULL`이면 구 구조 행**. 삭제는 후속 마이그레이션
+- **수정 이력 `page_edit_histories`(V33, 2026-10-08): 쪽당 1행** — 원본 쪽(PDF 경로·이미지 크기 / b는 `source_text`) · AI 초안(`ai_text`·`ai_braille`) · 이전 수정(`prev_*`) · 최근 수정(`latest_*`), 각 칸은 텍스트·점자 두 패널 스냅샷(블록마다 `ai_original`). 저장하면 최근 → 이전, 새 상태 → 최근. **첫 수정의 이전 = AI 초안**(기획 확정). RLHF 학습용이라 삭제하지 않는다
+  - ⚠️ **행 키는 `pages.id`, 쪽 번호가 아니다** — 원본 쪽 삭제가 뒤 번호를 당겨서 page_no로 찾으면 다른 쪽 행을 덮는다. FK도 없다(쪽을 지워도 이력은 남긴다)
+  - AI 초안은 행을 만들 때 `findAiDraft`(AI가 준 블록 전부 — 사용자가 지운 것 포함)의 AI 원본으로 고정한다. 현재 내용이 아니다 — V33 이전에 고친 쪽도 초안이 맞게 들어간다. 단 순서는 reading_order라 그 전에 블록 순서를 바꾼 쪽은 AI 원래 순서와 다를 수 있다
+  - 중간 수정은 남지 않는다(직전 · 최근 한 쌍만) — 기획 결정
+  - 그 모드에 없는 패널은 null(TXT 텍스트는 `source_text`, 구 mode a엔 점자 없음)
+- `page_edit_logs`(저장 1번 = 1행, V13·V32)는 **V33부터 쓰지 않는다.** 블루그린 공존·공유 RDS 때문에 테이블은 남겼다. 구 행 정리·테이블 삭제는 후속
 
 ## 점자 규정 검색 (`GET /api/rules`)
 
@@ -224,7 +227,7 @@ com.semojum.backend
 
 users / organizations / user_sessions / jobs / pages / page_results / text_elements /
 braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags /
-folders / page_edit_logs / pricing_configs / credit_transactions / coupons / notices /
+folders / page_edit_histories / page_edit_logs(V33부터 미사용) / pricing_configs / credit_transactions / coupons / notices /
 inquiries / inquiry_attachments / orders / app_versions
 
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
