@@ -34,7 +34,7 @@ class PageSaveServiceTest {
     TextElementRepository textRepo;
     BrailleElementRepository brailleRepo;
     BoundingBoxRepository boxRepo;
-    PageEditLogRepository logRepo;
+    PageEditHistoryRepository logRepo;
     S3Service s3;
     BrailleRetranslator retranslator;
     PageSaveService service;
@@ -51,7 +51,7 @@ class PageSaveServiceTest {
         textRepo = Mockito.mock(TextElementRepository.class);
         brailleRepo = Mockito.mock(BrailleElementRepository.class);
         boxRepo = Mockito.mock(BoundingBoxRepository.class);
-        logRepo = Mockito.mock(PageEditLogRepository.class);
+        logRepo = Mockito.mock(PageEditHistoryRepository.class);
         s3 = Mockito.mock(S3Service.class);
         retranslator = Mockito.mock(BrailleRetranslator.class);
         service = new PageSaveService(jobRepo, pageRepo, pageResultRepo, textRepo, brailleRepo,
@@ -59,6 +59,9 @@ class PageSaveServiceTest {
 
         when(textRepo.findByPageResult(any())).thenReturn(List.of());
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of());
+        // AI 초안 = 테스트가 깔아 둔 요소들의 AI 원본 (첫 수정의 이전 칸)
+        when(textRepo.findAiDraft(any())).thenAnswer(inv -> textRepo.findByPageResult(inv.getArgument(0)));
+        when(brailleRepo.findAiDraft(any())).thenAnswer(inv -> brailleRepo.findByPageResult(inv.getArgument(0)));
         when(boxRepo.findByPageResult(any())).thenReturn(List.of());
         when(textRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(brailleRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -86,8 +89,8 @@ class PageSaveServiceTest {
         return new JobRequestDto.SaveElement(id, List.of(contents));
     }
 
-    private PageEditLog savedLog() {
-        ArgumentCaptor<PageEditLog> captor = ArgumentCaptor.forClass(PageEditLog.class);
+    private PageEditHistory savedLog() {
+        ArgumentCaptor<PageEditHistory> captor = ArgumentCaptor.forClass(PageEditHistory.class);
         verify(logRepo).save(captor.capture());
         return captor.getValue();
     }
@@ -101,11 +104,11 @@ class PageSaveServiceTest {
         List<Map<String, Object>> result = service.savePage(USER_ID, "job1", 1,
                 List.of(item("e1", "수정1"), item("e2", "원본2")));
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals(List.of("e1"), ((Map<?, ?>) log.getChanged()).get("edited"));
         assertEquals(List.of(), ((Map<?, ?>) log.getChanged()).get("added"));
-        assertEquals(List.of("원본1"), log.getBeforeText().get(0).get("contents"));
-        assertEquals(List.of("수정1"), log.getAfterText().get(0).get("contents"));
+        assertEquals(List.of("원본1"), log.getPrevText().get(0).get("contents"));
+        assertEquals(List.of("수정1"), log.getLatestText().get(0).get("contents"));
         assertEquals(List.of("수정1"), result.get(0).get("contents"));
         assertTrue(job.isEdited(), "내용이 바뀌었으므로 카드 날짜 갱신");
     }
@@ -121,10 +124,10 @@ class PageSaveServiceTest {
 
         String newId = (String) result.get(1).get("id");
         assertNotNull(newId, "새 블록엔 발급된 id");
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals(List.of(newId), ((Map<?, ?>) log.getChanged()).get("added"));
-        assertEquals(1, log.getBeforeText().size(), "before엔 추가 블록 없음");
-        Map<String, Object> addedSnap = log.getAfterText().get(1);
+        assertEquals(1, log.getPrevText().size(), "before엔 추가 블록 없음");
+        Map<String, Object> addedSnap = log.getLatestText().get(1);
         assertEquals("user", addedSnap.get("origin"));
         assertNull(addedSnap.get("ai_original"));
         assertEquals("text", addedSnap.get("type"), "사용자 블록은 항상 text");
@@ -198,11 +201,11 @@ class PageSaveServiceTest {
 
         service.savePage(USER_ID, "job1", 1, List.of(item("b1", "⠁⠝⠞")));
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals("braille", log.getEditedPanel());
         assertEquals("원본 한글", log.getSourceText());
-        assertNull(log.getBeforeText(), "TXT의 텍스트는 원문이라 sourceText로 — 텍스트 칸은 비운다");
-        assertEquals(List.of("⠁⠝⠞"), log.getAfterBraille().get(0).get("contents"));
+        assertNull(log.getPrevText(), "TXT의 텍스트는 원문이라 sourceText로 — 텍스트 칸은 비운다");
+        assertEquals(List.of("⠁⠝⠞"), log.getLatestBraille().get(0).get("contents"));
         assertNull(log.getSourcePdfPath(), "mode b엔 PDF 경로 없음");
         assertEquals(List.of("⠁⠝⠞"), b1.getCurrentContent());
         verify(textRepo, never()).findByPageResult(any());
@@ -318,9 +321,9 @@ class PageSaveServiceTest {
 
         service.savePage(USER_ID, "job1", 1, List.of(item("e1", "수정")));
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals(1224, log.getImageWidth());
-        Map<?, ?> bbox = (Map<?, ?>) log.getBeforeText().get(0).get("bounding_box");
+        Map<?, ?> bbox = (Map<?, ?>) log.getPrevText().get(0).get("bounding_box");
         assertEquals(1, bbox.get("x"));
         assertEquals(4, bbox.get("y2"));
     }
@@ -356,7 +359,7 @@ class PageSaveServiceTest {
         assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), result.get(0).get("brailleContents"), "응답에 바뀐 점자");
         verify(retranslator, never()).translateLines(any()); // 미리 구해 온 값을 쓴다
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals("text", log.getEditedPanel());
         Map<?, ?> synced = (Map<?, ?>) ((Map<?, ?>) log.getChanged()).get("braille_synced");
         assertEquals(List.of("e1"), synced.get("edited"));
@@ -501,14 +504,14 @@ class PageSaveServiceTest {
 
         saveText(List.of(item("e1", "수정")), Map.of("수정", "⠠⠍⠨⠎⠶"));
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals("text", log.getEditedPanel());
-        assertEquals(List.of("원본"), log.getBeforeText().get(0).get("contents"));
-        assertEquals(List.of("수정"), log.getAfterText().get(0).get("contents"));
-        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getBeforeBraille().get(0).get("contents"), "점자 before = 재점역 전");
-        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), log.getAfterBraille().get(0).get("contents"), "점자 after = 재점역 결과");
-        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getAfterBraille().get(0).get("ai_original"), "블록마다 AI 원본");
-        assertEquals(List.of("원본"), log.getAfterText().get(0).get("ai_original"));
+        assertEquals(List.of("원본"), log.getPrevText().get(0).get("contents"));
+        assertEquals(List.of("수정"), log.getLatestText().get(0).get("contents"));
+        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getPrevBraille().get(0).get("contents"), "점자 before = 재점역 전");
+        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), log.getLatestBraille().get(0).get("contents"), "점자 after = 재점역 결과");
+        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getLatestBraille().get(0).get("ai_original"), "블록마다 AI 원본");
+        assertEquals(List.of("원본"), log.getLatestText().get(0).get("ai_original"));
     }
 
     /** 3패널 점자 저장 — 텍스트는 안 바뀌지만 맥락으로 같이 남긴다(before == after) */
@@ -520,11 +523,11 @@ class PageSaveServiceTest {
 
         service.savePage(USER_ID, "job1", 1, "braille", List.of(item("e1", "⠁⠃")), Map.of());
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals("braille", log.getEditedPanel());
-        assertEquals(List.of("⠁⠃"), log.getAfterBraille().get(0).get("contents"));
-        assertEquals(List.of("원문"), log.getBeforeText().get(0).get("contents"));
-        assertEquals(log.getBeforeText(), log.getAfterText(), "텍스트는 그대로");
+        assertEquals(List.of("⠁⠃"), log.getLatestBraille().get(0).get("contents"));
+        assertEquals(List.of("원문"), log.getPrevText().get(0).get("contents"));
+        assertEquals(log.getPrevText(), log.getLatestText(), "텍스트는 그대로");
     }
 
     /** 구 mode a엔 점자 패널이 없다 — 점자 칸은 null */
@@ -535,9 +538,9 @@ class PageSaveServiceTest {
 
         service.savePage(USER_ID, "job1", 1, List.of(item("e1", "나")));
 
-        PageEditLog log = savedLog();
-        assertNull(log.getBeforeBraille());
-        assertNull(log.getAfterBraille());
+        PageEditHistory log = savedLog();
+        assertNull(log.getPrevBraille());
+        assertNull(log.getLatestBraille());
         verify(brailleRepo, never()).findByPageResult(any());
     }
 
@@ -558,10 +561,62 @@ class PageSaveServiceTest {
 
         service.selectDraft(USER_ID, "job1", 1, "v1", 0);
 
-        PageEditLog log = savedLog();
+        PageEditHistory log = savedLog();
         assertEquals("braille", log.getEditedPanel());
-        assertEquals(List.of("그래프: 기존"), log.getBeforeText().get(0).get("contents"));
-        assertEquals(List.of("그래프 생략"), log.getAfterText().get(0).get("contents"));
-        assertEquals(List.of("⠠⠄생략⠠⠄"), log.getAfterBraille().get(0).get("contents"));
+        assertEquals(List.of("그래프: 기존"), log.getPrevText().get(0).get("contents"));
+        assertEquals(List.of("그래프 생략"), log.getLatestText().get(0).get("contents"));
+        assertEquals(List.of("⠠⠄생략⠠⠄"), log.getLatestBraille().get(0).get("contents"));
+    }
+
+    // ── 수정 이력: 쪽당 1행 (V33) ──
+
+    /** 첫 수정 — AI 초안을 고정하고 이전 = AI 초안. V33 이전에 고친 쪽이어도 이전 칸은 현재 내용이 아니라 AI 원본 */
+    @Test
+    void 첫_수정은_AI_초안을_고정하고_이전_칸에도_AI_초안을_넣는다() {
+        givenJob("a");
+        TextElement e1 = textEl("e1", "AI 원본");
+        e1.updateCurrentContents(List.of("예전에 고친 값"));
+        TextElement gone = textEl("e2", "지운 블록");
+        gone.markDeleted();
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(e1));
+        doReturn(List.of(e1, gone)).when(textRepo).findAiDraft(any());
+
+        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "새로 고침")));
+
+        PageEditHistory h = savedLog();
+        assertEquals(List.of("AI 원본"), h.getAiText().get(0).get("contents"));
+        assertEquals(List.of("지운 블록"), h.getAiText().get(1).get("contents"), "사용자가 지운 AI 블록도 초안에 포함");
+        assertEquals(h.getAiText(), h.getPrevText(), "첫 수정의 이전 = AI 초안");
+        assertEquals(List.of("새로 고침"), h.getLatestText().get(0).get("contents"));
+        assertNull(h.getAiBraille(), "mode a엔 점자 없음");
+        assertEquals(1, h.getEditCount());
+        assertEquals("s3/page-1.pdf", h.getSourcePdfPath());
+    }
+
+    /** 두 번째 수정 — 최근 → 이전으로 밀고 새 상태를 최근에. AI 초안·행은 그대로(새 행 없음) */
+    @Test
+    void 다시_수정하면_최근이_이전으로_밀리고_같은_행을_갱신한다() {
+        givenJob("a");
+        UUID pageId = UUID.randomUUID();
+        Page page = Page.builder().job(job).pageNo(1).pdfPath("s3/page-1.pdf").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(page, "id", pageId);
+        when(pageRepo.findByJobAndPageNo(any(), anyInt())).thenReturn(java.util.Optional.of(page));
+
+        List<Map<String, Object>> ai = List.of(Map.of("id", "e1", "contents", List.of("AI 원본")));
+        List<Map<String, Object>> first = List.of(Map.of("id", "e1", "contents", List.of("1차")));
+        PageEditHistory existing = PageEditHistory.builder().pageId(pageId).jobId("job1").mode("a").aiText(ai).build();
+        existing.record(UUID.fromString(USER_ID), 1, "text", first, null, Map.of());
+        when(logRepo.findByPageId(pageId)).thenReturn(java.util.Optional.of(existing));
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "1차")));
+
+        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "2차")));
+
+        PageEditHistory h = savedLog();
+        assertSame(existing, h, "쪽 id로 찾은 기존 행을 갱신");
+        assertEquals(ai, h.getAiText(), "AI 초안 불변");
+        assertEquals(first, h.getPrevText(), "직전 최근 수정 → 이전");
+        assertEquals(List.of("2차"), h.getLatestText().get(0).get("contents"));
+        assertEquals(2, h.getEditCount());
+        verify(textRepo, never()).findAiDraft(any());
     }
 }

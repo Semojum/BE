@@ -25,7 +25,7 @@ import java.util.UUID;
  *   <li><b>영구 삭제</b> — 휴지통을 거치지 않고 되돌릴 수 없다</li>
  *   <li><b>크레딧 환불 없음</b> — {@code credit_transactions}는 손대지 않는다. 이미 AI가 처리한
  *       쪽이라 원가가 발생했고, 장부는 일어난 일을 적는 곳이다</li>
- *   <li><b>편집 이력 보존</b> — {@code page_edit_logs}는 남긴다(RLHF 학습 자료)</li>
+ *   <li><b>편집 이력 보존</b> — {@code page_edit_histories}·{@code page_edit_logs}는 남긴다(RLHF 학습 자료)</li>
  * </ul>
  *
  * <p>남기는 두 표는 <b>번호를 당기지 않는다.</b> 그때의 기록이라 뒤늦게 번호를 바꾸면 사실과

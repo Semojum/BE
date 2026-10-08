@@ -145,6 +145,7 @@ public class TrashService {
         purgeRepository.deletePageResults(jobIds);
         purgeRepository.deletePages(jobIds);
         purgeRepository.deleteEditLogs(jobIds);
+        purgeRepository.deleteEditHistories(jobIds);
         purgeRepository.deleteJobs(jobIds);
         for (String jobId : jobIds) {
             try {
