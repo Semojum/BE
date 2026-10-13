@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "기본 점역 양식 5종 — 기획서 5장 「점역 양식」. 사용자가 수정·삭제할 수 없다.",
+    "",
+    "DB가 아니라 클래스패스 리소스인 이유: 세 환경이 RDS 하나를 공유해서 DB에 넣으면 배포를",
+    "되돌려도 양식만 새 버전으로 남는다. 코드와 함께 배포해 커밋 단위로 동기화한다(점자 규정과 같다).",
+    "",
+    "⚠️ 유형별 값은 아직 기획에 없다. 확인된 것은 「중·고 교과서」 하나뿐이고(피그마 D7 읽기 전용",
+    "요약: 32칸 × 26줄 · 약자(2급) · 음절 단위 · 홀수 쪽), 나머지 넷은 이름만 정해져 있다.",
+    "그래서 지금은 다섯이 모두 같은 값(기본값)이다 — 추정으로 채우면 사용자가 고른 양식이",
+    "엉뚱하게 동작하고, 틀렸다는 사실조차 드러나지 않는다. 값이 정해지면 이 파일만 고치면 된다.",
+    "",
+    "빠진 항목은 읽는 쪽에서 기본값으로 채워진다(LayoutOptions·BrailleOptions.withDefaults)."
+  ],
+  "forms": [
+    {
+      "formId": "builtin:ELEMENTARY_TEXTBOOK",
+      "name": "초등 교과서",
+      "layoutOptions": {},
+      "brailleOptions": {}
+    },
+    {
+      "formId": "builtin:MIDHIGH_TEXTBOOK",
+      "name": "중·고 교과서",
+      "layoutOptions": { "cellsPerLine": 32, "linesPerPage": 26, "pageNumberLine": "odd" },
+      "brailleOptions": { "hangulGrade": "grade2", "lineBreakUnit": "syllable" }
+    },
+    {
+      "formId": "builtin:WORKBOOK",
+      "name": "자습서",
+      "layoutOptions": {},
+      "brailleOptions": {}
+    },
+    {
+      "formId": "builtin:EXAM",
+      "name": "시험지",
+      "layoutOptions": {},
+      "brailleOptions": {}
+    },
+    {
+      "formId": "builtin:GENERAL_BOOK",
+      "name": "일반 도서",
+      "layoutOptions": {},
+      "brailleOptions": {}
+    }
+  ]
+}
