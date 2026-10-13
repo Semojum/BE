@@ -98,6 +98,13 @@ public class Job {
     @Column(name = "layout_options", columnDefinition = "jsonb")
     private com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions;
 
+    // 그 작업에 적용된 점역 옵션 (V37) — 업로드 때 계정 기본값이나 고른 양식에서 복사해 넣는다.
+    // 사본인 이유: 기본값·양식을 나중에 고쳐도 이미 만든 작업은 그대로여야 한다.
+    // null = V3.1 이전 작업 → resolveBrailleOptions가 공장 기본값으로 채운다
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "braille_options", columnDefinition = "jsonb")
+    private com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions;
+
     // 접속 메타데이터 (V19, T1-4 요청 정보) — 생성 시 1회 기록. 위치는 표시 시점에 IP로 GeoIP 조회
     @Column(name = "client_ip", length = 45)
     private String clientIp;
@@ -122,7 +129,8 @@ public class Job {
     @Builder
     public Job(String id, User user, String mode, int totalPages, String originalFileName,
                String thumbnailUrl, boolean insertPageNumber, String footerText, boolean adminCopy,
-               com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions) {
+               com.semojum.backend.domain.job.dto.LayoutOptions layoutOptions,
+               com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions) {
         this.id = id;
         this.user = user;
         this.mode = mode;
@@ -132,6 +140,7 @@ public class Job {
         this.insertPageNumber = insertPageNumber;
         this.footerText = footerText;
         this.layoutOptions = layoutOptions;
+        this.brailleOptions = brailleOptions;
         this.adminCopy = adminCopy;
         this.isFavorite = false;
         this.status = "PENDING";
@@ -216,6 +225,18 @@ public class Job {
         return layoutOptions != null
                 ? layoutOptions.withDefaults()
                 : com.semojum.backend.domain.job.dto.LayoutOptions.legacy(insertPageNumber);
+    }
+
+    /** 점역에 쓸 옵션 — 없으면(V3.1 이전 작업) 공장 기본값을 준다 */
+    public com.semojum.backend.domain.job.dto.BrailleOptions resolveBrailleOptions() {
+        return brailleOptions != null
+                ? brailleOptions.withDefaults()
+                : com.semojum.backend.domain.job.dto.BrailleOptions.defaults();
+    }
+
+    /** 최종 저장이 보낸 값으로 갱신 — 에디터에서 점역 설정을 바꾼 채 저장한 경우 */
+    public void updateBrailleOptions(com.semojum.backend.domain.job.dto.BrailleOptions options) {
+        this.brailleOptions = options;
     }
 
     public void updateStatus(String status) {
