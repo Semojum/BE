@@ -1,7 +1,9 @@
 package com.semojum.backend.domain.user.controller;
 
 import com.semojum.backend.domain.job.dto.JobResponseDto;
+import com.semojum.backend.domain.user.dto.BrailleFormDto;
 import com.semojum.backend.domain.user.service.UserService;
+import jakarta.validation.Valid;
 import com.semojum.backend.global.exception.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,6 +28,7 @@ public class UserController {
 
     private final UserService userService;
     private final com.semojum.backend.domain.user.service.BrailleOptionsService brailleOptionsService;
+    private final com.semojum.backend.domain.user.service.BrailleFormService brailleFormService;
 
     /**
      * 내 기본 점역 옵션 조회 — 설정 › 기본 점역 옵션 설정(D6, Alt+G)이 창을 열 때.
@@ -37,6 +40,53 @@ public class UserController {
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         return ApiResponse.success(brailleOptionsService.get(userDetails.getUsername()));
+    }
+
+    /**
+     * 점역 양식 목록 — 기본 양식 5종 + 내가 만든 양식을 한 목록에.
+     *
+     * <p>D6의 「점역 양식」 드롭다운 · D7 「양식 고르기」 · D7-2의 「바탕 양식」이 모두 이 하나를 쓴다.
+     * <b>값 전체를 담아 보낸다</b> — D7의 읽기 전용 요약과 D7-2의 「바탕 값으로」가 추가 호출 없이
+     * 동작해야 한다. 양식 수가 열 개 안팎이라 응답이 작다.
+     */
+    @GetMapping("/braille-forms")
+    public ApiResponse<BrailleFormDto.FormList> listBrailleForms(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(brailleFormService.list(userDetails.getUsername()));
+    }
+
+    /** 새 양식 저장 — D7 「새 양식 저장」. 같은 이름이 있으면 COMMON4009 */
+    @PostMapping("/braille-forms")
+    public ApiResponse<BrailleFormDto.Form> createBrailleForm(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody BrailleFormDto.SaveForm request
+    ) {
+        return ApiResponse.success(brailleFormService.create(userDetails.getUsername(), request));
+    }
+
+    /**
+     * 양식 수정 — D7-2 「저장」. 통째로 덮어쓴다.
+     *
+     * <p>기본 양식(builtin:)은 COMMON4003 — 되돌릴 길이 없어 손대지 못하게 한다.
+     */
+    @PatchMapping("/braille-forms/{formId}")
+    public ApiResponse<BrailleFormDto.Form> updateBrailleForm(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable String formId,
+            @Valid @RequestBody BrailleFormDto.SaveForm request
+    ) {
+        return ApiResponse.success(brailleFormService.update(userDetails.getUsername(), formId, request));
+    }
+
+    /** 양식 삭제 — D7-2 「사용자 양식 지우기」. 이미 만든 작업은 값을 복사해 갔으므로 영향이 없다 */
+    @DeleteMapping("/braille-forms/{formId}")
+    public ApiResponse<Void> deleteBrailleForm(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable String formId
+    ) {
+        brailleFormService.delete(userDetails.getUsername(), formId);
+        return ApiResponse.success(null);
     }
 
     /**
