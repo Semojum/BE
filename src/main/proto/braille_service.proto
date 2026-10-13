@@ -19,6 +19,10 @@ message BrailleRequest {
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
   bool   advanced_ai = 7;   // 고급 점역 사용 여부 (업로드 옵션)
+  // [추가 1013] 이미지 업로드 (V3.1). mode c의 입력이 pdf_data 또는 image_data 둘 중 하나가 된다 —
+  // 이미지는 PDF로 바꾸지 않고 올라온 바이트를 그대로 보낸다. 한 장이 한 쪽이라 쪽 분리도 없다.
+  bytes  image_data  = 8;   // 원본 이미지 바이트. pdf_data와 동시에 채우지 않는다
+  string image_mime  = 9;   // "image/jpeg" | "image/png". image_data가 있을 때만
 }
 
 message TranslateTextRequest {
