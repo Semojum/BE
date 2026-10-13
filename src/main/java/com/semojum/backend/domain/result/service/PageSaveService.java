@@ -2,20 +2,16 @@ package com.semojum.backend.domain.result.service;
 
 import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.entity.Job;
-import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
-import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,13 +30,9 @@ import java.util.UUID;
 public class PageSaveService {
 
     private final JobRepository jobRepository;
-    private final PageRepository pageRepository;
     private final PageResultRepository pageResultRepository;
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
-    private final BoundingBoxRepository boundingBoxRepository;
-    private final PageEditHistoryRepository pageEditHistoryRepository;
-    private final S3Service s3Service;
     private final BrailleRetranslator brailleRetranslator;
 
     /** 편집 대상 패널 — mode c(3패널)만 둘 다 편집할 수 있다 */
@@ -164,10 +156,8 @@ public class PageSaveService {
         Map<String, List<String>> prevContents = new HashMap<>();
         for (Element el : live) prevContents.put(el.elementId(), el.contents());
 
-        // 4. 다른 패널 스냅샷(그 모드에 있으면) — 이력엔 두 패널을 다 담는다. 3패널은 텍스트 저장 때 점자가 따라 바뀐다
-        Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
+        // 4. 다른 패널 — 3패널은 텍스트 저장 때 점자가 따라 바뀐다
         List<Element> other = loadOtherPanel(pageResult, mode, isText);
-        List<Map<String, Object>> otherBefore = other == null ? null : snapshot(other, bboxById);
 
         // 5. diff 적용 — 배열 순서가 곧 최종 순서
         List<String> edited = new ArrayList<>();
@@ -212,7 +202,6 @@ public class PageSaveService {
         // 7-1. mode c 텍스트 저장 → 같은 id 점자 요소를 따라 맞춘다(재점역·추가·삭제·순서)
         Map<String, Object> brailleSynced = null;
         Map<String, List<String>> brailleById = null;
-        List<Map<String, Object>> otherAfter = otherBefore;   // 따라 바뀌지 않으면 다른 패널은 그대로
         if (syncBraille) {
             brailleSynced = new LinkedHashMap<>();
             List<BrailleElement> brailleLive = other.stream().map(e -> ((BrailleView) e).el()).toList();
@@ -220,21 +209,10 @@ public class PageSaveService {
                     edited, added, deleted, lineBraille == null ? Map.of() : lineBraille, brailleSynced);
             brailleById = new HashMap<>();
             for (BrailleElement b : brailleOrder) brailleById.put(b.getElementId(), b.getCurrentContent());
-            otherAfter = snapshot(brailleOrder.stream().map(b -> (Element) new BrailleView(b)).toList(), bboxById);
         }
 
         // 내용이 바뀌었으므로 카드 날짜·복구 지점 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
-
-        // 8. 수정 이력 기록 — 쪽당 1행 (저장과 같은 트랜잭션)
-        Map<String, Object> changed = new LinkedHashMap<>();
-        changed.put("edited", edited);
-        changed.put("added", added);
-        changed.put("deleted", deleted);
-        changed.put("reordered", reordered);
-        if (brailleSynced != null) changed.put("braille_synced", brailleSynced);
-        saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                snapshot(finalOrder, bboxById), otherAfter, changed, bboxById);
 
         log.info("페이지 일괄 저장: jobId={}, pageNo={}, target={}, edited={}, added={}, deleted={}, reordered={}{}",
                 jobId, pageNo, resolved, edited.size(), added.size(), deleted.size(), reordered,
@@ -393,7 +371,6 @@ public class PageSaveService {
             throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         }
 
-        Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
         List<Element> other = loadOtherPanel(pageResult, mode, isText);
         Integer prevIdx = el.selectedIdx();
 
@@ -422,18 +399,6 @@ public class PageSaveService {
 
         // 본문이 바뀌었으므로 카드 날짜·복구 지점 갱신 (일괄 저장과 동일)
         job.markContentEdited(pageNo);
-
-        // 어느 초안을 골랐는지는 그 자체로 RLHF 학습 신호 — 페이지 스냅샷과 함께 남긴다
-        Map<String, Object> selection = new LinkedHashMap<>();
-        selection.put("element_id", elementId);
-        selection.put("from", prevIdx);
-        selection.put("to", selectedIdx);
-        selection.put("label", selectedIdx < 0 ? null : drafts.get(selectedIdx).get("label"));
-        Map<String, Object> changed = new LinkedHashMap<>();
-        changed.put("draft_selected", List.of(selection));
-        if (textContents != null) changed.put("text_synced", List.of(elementId));
-        saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                snapshot(live, bboxById), other == null ? null : snapshot(other, bboxById), changed, bboxById);
 
         log.info("초안 선택: jobId={}, pageNo={}, elementId={}, selectedIdx {} → {}",
                 jobId, pageNo, elementId, prevIdx, selectedIdx);
@@ -498,99 +463,6 @@ public class PageSaveService {
                 .content(item.contents()).isBlocked(false).build();
         neo.markUserAuthored();
         return new BrailleView(brailleElementRepository.save(neo));
-    }
-
-    private Map<String, Map<String, Object>> loadBoundingBoxes(PageResult pageResult, String mode) {
-        if ("b".equals(mode)) return Map.of();
-        Map<String, Map<String, Object>> map = new HashMap<>();
-        for (BoundingBox b : boundingBoxRepository.findByPageResult(pageResult)) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("x", b.getX());
-            m.put("y", b.getY());
-            m.put("x2", b.getX2());
-            m.put("y2", b.getY2());
-            m.put("type", b.getType());
-            map.put(b.getElementId(), m);
-        }
-        return map;
-    }
-
-    // 페이지 상태 스냅샷 — 요소마다 AI 원본까지 담아 이 행만으로 학습 페어(AI 출력 → 인간 최종본)를 만들 수 있게 한다
-    private List<Map<String, Object>> snapshot(List<Element> elements, Map<String, Map<String, Object>> bboxById) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (Element el : elements) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", el.elementId());
-            m.put("type", el.type());
-            m.put("heading_level", el.headingLevel());
-            m.put("contents", el.contents());
-            m.put("origin", el.aiOriginal() == null ? "user" : "ai");
-            m.put("ai_original", el.aiOriginal());
-            m.put("bounding_box", bboxById.get(el.elementId()));
-            list.add(m);
-        }
-        return list;
-    }
-
-    /**
-     * 수정 이력 (V33) — 그 쪽의 행을 찾아 최근 → 이전으로 밀고 이번 저장 결과를 최근에 넣는다.
-     * 행이 없으면(첫 수정) 원본 쪽 정보와 AI 초안을 고정해 만든다 — 이전 수정 = AI 초안.
-     * 편집 패널과 다른 패널을 텍스트·점자 칸에 나눠 담고, 그 모드에 없는 패널은 null.
-     */
-    private void saveLog(Job job, PageResult pageResult, String userId, String jobId, int pageNo,
-                         String mode, boolean isText,
-                         List<Map<String, Object>> after, List<Map<String, Object>> otherAfter,
-                         Map<String, Object> changed, Map<String, Map<String, Object>> bboxById) {
-        Page page = pageRepository.findByJobAndPageNo(job, pageNo)
-                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
-
-        PageEditHistory history = pageEditHistoryRepository.findByPageId(page.getId())
-                .orElseGet(() -> newHistory(page, pageResult, jobId, mode, bboxById));
-        history.record(UUID.fromString(userId), pageNo, isText ? TARGET_TEXT : TARGET_BRAILLE,
-                isText ? after : otherAfter, isText ? otherAfter : after, changed);
-        pageEditHistoryRepository.save(history);
-    }
-
-    private PageEditHistory newHistory(Page page, PageResult pageResult, String jobId, String mode,
-                                       Map<String, Map<String, Object>> bboxById) {
-        String sourcePdfPath = null;
-        Integer imageWidth = null;
-        Integer imageHeight = null;
-        String sourceText = null;
-        if ("b".equals(mode)) {
-            // 변환에 사용한 원본 한글 텍스트 (S3 .txt)
-            sourceText = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
-        } else {
-            // mode a, c: 원본 페이지 파일 경로 + 이미지 크기 (요소별 bbox는 스냅샷 안에 포함)
-            sourcePdfPath = page.getPdfPath();
-            imageWidth = pageResult.getImageWidth();
-            imageHeight = pageResult.getImageHeight();
-        }
-        // 그 모드에 있는 패널만 — a는 텍스트, b는 점자(텍스트는 원문), c는 둘 다
-        List<Map<String, Object>> aiText = "b".equals(mode) ? null : aiSnapshot(
-                textElementRepository.findAiDraft(pageResult).stream().map(el -> (Element) new TextView(el)).toList(), bboxById);
-        List<Map<String, Object>> aiBraille = "a".equals(mode) ? null : aiSnapshot(
-                brailleElementRepository.findAiDraft(pageResult).stream().map(el -> (Element) new BrailleView(el)).toList(), bboxById);
-
-        return PageEditHistory.builder()
-                .pageId(page.getId())
-                .jobId(jobId)
-                .mode(mode)
-                .sourcePdfPath(sourcePdfPath)
-                .imageWidth(imageWidth)
-                .imageHeight(imageHeight)
-                .sourceText(sourceText)
-                .aiText(aiText)
-                .aiBraille(aiBraille)
-                .build();
-    }
-
-    // AI 초안 스냅샷 — 현재 내용이 아니라 AI 원본으로. 사용자가 지운 블록도 AI가 준 것이므로 포함한다.
-    // 순서는 reading_order — 이 행이 생기기 전(V33 이전)에 블록 순서를 바꾼 쪽은 AI 원래 순서와 다를 수 있다
-    private List<Map<String, Object>> aiSnapshot(List<Element> elements, Map<String, Map<String, Object>> bboxById) {
-        List<Map<String, Object>> list = snapshot(elements, bboxById);
-        for (int i = 0; i < list.size(); i++) list.get(i).put("contents", elements.get(i).aiOriginal());
-        return list;
     }
 
     // FE 응답 — 최종 배열(요청과 같은 순서). 새 블록은 서버 발급 id가 채워져 FE가 임시 항목을 교체한다.
