@@ -41,7 +41,7 @@ import java.util.UUID;
  * 미리보기 창은 확인용이므로(기획), 자세히 보려면 사본을 앱 에디터에서 연다.
  *
  * <p>사본 = Job·Page·PageResult·요소·bbox·규정·품질 행 전체 + S3 객체(원본 페이지·썸네일) 복사.
- * 편집 이력은 original/current를 그대로 보존해 옮긴다. page_edit_logs(RLHF 원천)는 복사하지 않는다.
+ * 편집 이력은 original/current를 그대로 보존해 옮긴다. page_edit_histories·page_edit_logs(RLHF 원천)는 복사하지 않는다.
  * 대상 계정은 ROLE_ADMIN만 — 고객 계정에 사본을 밀어 넣는 실수를 막는다.
  *
  * <p>V28: 웹 관리자(admin_scope=WEB)가 대상 미지정으로 호출하면 앱 관리자(admin_scope=APP) 전원에게

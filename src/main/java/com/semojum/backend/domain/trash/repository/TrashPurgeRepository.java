@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 // 휴지통 완전 삭제 전용 — FK 순서대로 자식 테이블부터 제거한다.
-// 순서: rule_trails → text/braille_elements → bounding_boxes → quality_* → page_results → pages → page_edit_logs → jobs
+// 순서: rule_trails → text/braille_elements → bounding_boxes → quality_* → page_results → pages → page_edit_logs · page_edit_histories → jobs
 public interface TrashPurgeRepository extends Repository<Job, String> {
 
     @Modifying
@@ -53,6 +53,10 @@ public interface TrashPurgeRepository extends Repository<Job, String> {
     @Modifying
     @Query(value = "DELETE FROM page_edit_logs WHERE job_id IN :jobIds", nativeQuery = true)
     void deleteEditLogs(@Param("jobIds") List<String> jobIds);
+
+    @Modifying
+    @Query(value = "DELETE FROM page_edit_histories WHERE job_id IN :jobIds", nativeQuery = true)
+    void deleteEditHistories(@Param("jobIds") List<String> jobIds);
 
     @Modifying
     @Query(value = "DELETE FROM jobs WHERE id IN :jobIds", nativeQuery = true)

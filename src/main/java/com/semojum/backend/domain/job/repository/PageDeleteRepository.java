@@ -13,7 +13,7 @@ import org.springframework.data.repository.query.Param;
  * ({@code TrashPurgeRepository})와 같다: rule_trails → text/braille_elements →
  * bounding_boxes → quality_* → page_results → pages.
  *
- * <p><b>남기는 것</b>: {@code credit_transactions}(환불 없음)와 {@code page_edit_logs}(RLHF 학습 자료).
+ * <p><b>남기는 것</b>: {@code credit_transactions}(환불 없음)와 {@code page_edit_histories}·{@code page_edit_logs}(RLHF 학습 자료).
  * 유저 확정 사항이다. 둘 다 page_no를 들고 있지만 <b>번호를 당기지 않는다</b> — 이미 일어난 일을
  * 적어 둔 장부라 뒤늦게 번호를 바꾸면 그때의 기록이 아니게 된다. 그래서 삭제 뒤에는 이 두 표의
  * page_no가 현재 쪽 번호와 어긋날 수 있다.

@@ -27,7 +27,7 @@ import java.util.UUID;
 
 // 페이지 일괄 저장: FE가 보낸 페이지 최종 상태 전체를 DB 현재 상태와 diff해 수정/추가/삭제/순서변경을 판정·적용한다.
 // FE는 최종 상태만 보내고 "무엇이 바뀌었는지"는 서버가 판정 — FE 표시에 의존하면 FE 버그가 그대로 데이터 오염이 된다.
-// 변경이 있으면 page_edit_logs에 쪽의 텍스트·점자 두 패널 before/after 스냅샷 1행을 기록(RLHF용, V32).
+// 변경이 있으면 page_edit_histories의 그 쪽 행(쪽당 1행)에 텍스트·점자 두 패널을 기록 — 최근 → 이전, 새 상태 → 최근(RLHF용, V33).
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,7 +39,7 @@ public class PageSaveService {
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
     private final BoundingBoxRepository boundingBoxRepository;
-    private final PageEditLogRepository pageEditLogRepository;
+    private final PageEditHistoryRepository pageEditHistoryRepository;
     private final S3Service s3Service;
     private final BrailleRetranslator brailleRetranslator;
 
@@ -164,10 +164,8 @@ public class PageSaveService {
         Map<String, List<String>> prevContents = new HashMap<>();
         for (Element el : live) prevContents.put(el.elementId(), el.contents());
 
-        // 4. before 스냅샷 (적용 전 상태, 읽기 순서대로) — 편집 패널 + 다른 패널(그 모드에 있으면).
-        //    3패널은 텍스트 저장 때 점자가 따라 바뀌므로 이력에 두 패널을 다 담는다(V32)
+        // 4. 다른 패널 스냅샷(그 모드에 있으면) — 이력엔 두 패널을 다 담는다. 3패널은 텍스트 저장 때 점자가 따라 바뀐다
         Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
-        List<Map<String, Object>> before = snapshot(live, bboxById);
         List<Element> other = loadOtherPanel(pageResult, mode, isText);
         List<Map<String, Object>> otherBefore = other == null ? null : snapshot(other, bboxById);
 
@@ -228,7 +226,7 @@ public class PageSaveService {
         // 내용이 바뀌었으므로 카드 날짜·복구 지점 갱신 (같은 트랜잭션이라 별도 저장 불필요)
         job.markContentEdited(pageNo);
 
-        // 8. page_edit_logs 스냅샷 1행 기록 (저장과 같은 트랜잭션)
+        // 8. 수정 이력 기록 — 쪽당 1행 (저장과 같은 트랜잭션)
         Map<String, Object> changed = new LinkedHashMap<>();
         changed.put("edited", edited);
         changed.put("added", added);
@@ -236,7 +234,7 @@ public class PageSaveService {
         changed.put("reordered", reordered);
         if (brailleSynced != null) changed.put("braille_synced", brailleSynced);
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                before, snapshot(finalOrder, bboxById), otherBefore, otherAfter, changed);
+                snapshot(finalOrder, bboxById), otherAfter, changed, bboxById);
 
         log.info("페이지 일괄 저장: jobId={}, pageNo={}, target={}, edited={}, added={}, deleted={}, reordered={}{}",
                 jobId, pageNo, resolved, edited.size(), added.size(), deleted.size(), reordered,
@@ -279,7 +277,7 @@ public class PageSaveService {
      *   <li>순서 → 짝 있는 점자는 텍스트 순서를 따르고, 점자 패널에서만 추가한 블록(짝 없음)은
      *       원래 바로 앞에 있던 짝 있는 블록 뒤에 그대로 붙는다</li>
      * </ul>
-     * @param brailleLive 바꾸기 전 살아 있는 점자 요소(읽기 순서) — 이력 before 스냅샷과 같은 목록
+     * @param brailleLive 바꾸기 전 살아 있는 점자 요소(읽기 순서) — 이력 스냅샷의 이전 상태와 같은 목록
      * @return 동기화 후 살아 있는 점자 요소(최종 읽기 순서) — 응답의 brailleContents와 이력 after 스냅샷 원천
      */
     private List<BrailleElement> syncBraille(PageResult pageResult, List<BrailleElement> brailleLive,
@@ -396,9 +394,7 @@ public class PageSaveService {
         }
 
         Map<String, Map<String, Object>> bboxById = loadBoundingBoxes(pageResult, mode);
-        List<Map<String, Object>> before = snapshot(live, bboxById);
         List<Element> other = loadOtherPanel(pageResult, mode, isText);
-        List<Map<String, Object>> otherBefore = other == null ? null : snapshot(other, bboxById);
         Integer prevIdx = el.selectedIdx();
 
         List<String> newContents = selectedIdx < 0
@@ -437,8 +433,7 @@ public class PageSaveService {
         changed.put("draft_selected", List.of(selection));
         if (textContents != null) changed.put("text_synced", List.of(elementId));
         saveLog(job, pageResult, userId, jobId, pageNo, mode, isText,
-                before, snapshot(live, bboxById),
-                otherBefore, other == null ? null : snapshot(other, bboxById), changed);
+                snapshot(live, bboxById), other == null ? null : snapshot(other, bboxById), changed, bboxById);
 
         log.info("초안 선택: jobId={}, pageNo={}, elementId={}, selectedIdx {} → {}",
                 jobId, pageNo, elementId, prevIdx, selectedIdx);
@@ -538,17 +533,26 @@ public class PageSaveService {
     }
 
     /**
-     * 이력 1행 (V32) — 편집 패널과 다른 패널의 전·후를 텍스트·점자 칸에 나눠 담는다.
-     * 그 모드에 없는 패널은 null(TXT의 텍스트는 원문이라 sourceText에, 구 mode a엔 점자가 없다).
+     * 수정 이력 (V33) — 그 쪽의 행을 찾아 최근 → 이전으로 밀고 이번 저장 결과를 최근에 넣는다.
+     * 행이 없으면(첫 수정) 원본 쪽 정보와 AI 초안을 고정해 만든다 — 이전 수정 = AI 초안.
+     * 편집 패널과 다른 패널을 텍스트·점자 칸에 나눠 담고, 그 모드에 없는 패널은 null.
      */
     private void saveLog(Job job, PageResult pageResult, String userId, String jobId, int pageNo,
                          String mode, boolean isText,
-                         List<Map<String, Object>> before, List<Map<String, Object>> after,
-                         List<Map<String, Object>> otherBefore, List<Map<String, Object>> otherAfter,
-                         Map<String, Object> changed) {
+                         List<Map<String, Object>> after, List<Map<String, Object>> otherAfter,
+                         Map<String, Object> changed, Map<String, Map<String, Object>> bboxById) {
         Page page = pageRepository.findByJobAndPageNo(job, pageNo)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
 
+        PageEditHistory history = pageEditHistoryRepository.findByPageId(page.getId())
+                .orElseGet(() -> newHistory(page, pageResult, jobId, mode, bboxById));
+        history.record(UUID.fromString(userId), pageNo, isText ? TARGET_TEXT : TARGET_BRAILLE,
+                isText ? after : otherAfter, isText ? otherAfter : after, changed);
+        pageEditHistoryRepository.save(history);
+    }
+
+    private PageEditHistory newHistory(Page page, PageResult pageResult, String jobId, String mode,
+                                       Map<String, Map<String, Object>> bboxById) {
         String sourcePdfPath = null;
         Integer imageWidth = null;
         Integer imageHeight = null;
@@ -562,23 +566,31 @@ public class PageSaveService {
             imageWidth = pageResult.getImageWidth();
             imageHeight = pageResult.getImageHeight();
         }
+        // 그 모드에 있는 패널만 — a는 텍스트, b는 점자(텍스트는 원문), c는 둘 다
+        List<Map<String, Object>> aiText = "b".equals(mode) ? null : aiSnapshot(
+                textElementRepository.findAiDraft(pageResult).stream().map(el -> (Element) new TextView(el)).toList(), bboxById);
+        List<Map<String, Object>> aiBraille = "a".equals(mode) ? null : aiSnapshot(
+                brailleElementRepository.findAiDraft(pageResult).stream().map(el -> (Element) new BrailleView(el)).toList(), bboxById);
 
-        pageEditLogRepository.save(PageEditLog.builder()
-                .userId(UUID.fromString(userId))
+        return PageEditHistory.builder()
+                .pageId(page.getId())
                 .jobId(jobId)
-                .pageNo(pageNo)
                 .mode(mode)
-                .editedPanel(isText ? TARGET_TEXT : TARGET_BRAILLE)
-                .beforeText(isText ? before : otherBefore)
-                .afterText(isText ? after : otherAfter)
-                .beforeBraille(isText ? otherBefore : before)
-                .afterBraille(isText ? otherAfter : after)
-                .changed(changed)
                 .sourcePdfPath(sourcePdfPath)
                 .imageWidth(imageWidth)
                 .imageHeight(imageHeight)
                 .sourceText(sourceText)
-                .build());
+                .aiText(aiText)
+                .aiBraille(aiBraille)
+                .build();
+    }
+
+    // AI 초안 스냅샷 — 현재 내용이 아니라 AI 원본으로. 사용자가 지운 블록도 AI가 준 것이므로 포함한다.
+    // 순서는 reading_order — 이 행이 생기기 전(V33 이전)에 블록 순서를 바꾼 쪽은 AI 원래 순서와 다를 수 있다
+    private List<Map<String, Object>> aiSnapshot(List<Element> elements, Map<String, Map<String, Object>> bboxById) {
+        List<Map<String, Object>> list = snapshot(elements, bboxById);
+        for (int i = 0; i < list.size(); i++) list.get(i).put("contents", elements.get(i).aiOriginal());
+        return list;
     }
 
     // FE 응답 — 최종 배열(요청과 같은 순서). 새 블록은 서버 발급 id가 채워져 FE가 임시 항목을 교체한다.
