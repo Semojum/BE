@@ -35,11 +35,18 @@ public class JobController {
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
     private final com.semojum.backend.domain.job.service.JobSaveService jobSaveService;
 
+    /**
+     * 파일 업로드로 변환 작업 생성.
+     *
+     * <p><b>{@code file} 파트를 여러 개 보낼 수 있는 건 이미지뿐이다</b> — 한 장이 한 쪽이 되고
+     * 쪽 순서는 보낸 순서다(피그마 C11). PDF·HWP·HWPX·TXT는 하나만 받고, 섞어 보내면 COMMON4000.
+     * 파트 이름은 그대로 {@code file}이라 한 장만 보내는 기존 호출은 바뀌지 않는다.
+     */
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestPart("file") MultipartFile file,
-            // 선택 — 서버가 파일 종류로 정한다(PDF·HWP·HWPX=c, TXT=b). 구 클라이언트 호환으로 받기만 한다
+            @RequestPart("file") List<MultipartFile> files,
+            // 선택 — 서버가 파일 종류로 정한다(PDF·HWP·HWPX·이미지=c, TXT=b). 구 클라이언트 호환으로 받기만 한다
             @RequestParam(value = "mode", required = false) String mode,
             // 점자 판면 마지막 줄에 쪽번호를 넣을지 — 업로드 시 선택 (미전송 시 false)
             @RequestParam(value = "insertPageNumber", defaultValue = "false") boolean insertPageNumber,
@@ -64,7 +71,7 @@ public class JobController {
                 sourcePageStart, braillePageStart, showSourcePageNumber, showBraillePageNumber,
                 showChangeLine, footerAlign, editScope, advancedAi);
         return ApiResponse.success(
-                jobService.createJob(userDetails.getUsername(), file, mode, insertPageNumber, footerText,
+                jobService.createJob(userDetails.getUsername(), files, mode, insertPageNumber, footerText,
                         options, clientInfoResolver.resolve(request)));
     }
 

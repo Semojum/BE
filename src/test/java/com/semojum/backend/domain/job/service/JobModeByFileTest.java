@@ -21,9 +21,16 @@ class JobModeByFileTest {
         assertEquals("b", JobService.modeForExtension("txt"));
     }
 
+    /** V3.1부터 이미지도 받는다 — 세부는 ImageUploadTest */
+    @Test
+    void 이미지도_세_패널을_주는_c() {
+        assertEquals("c", JobService.modeForExtension("jpg"));
+        assertEquals("c", JobService.modeForExtension("png"));
+    }
+
     @Test
     void 그_밖의_파일은_JOB4002() {
-        for (String ext : new String[]{"docx", "jpg", ""}) {
+        for (String ext : new String[]{"docx", "gif", "bmp", ""}) {
             assertEquals(ErrorCode.JOB_INVALID_FILE,
                     assertThrows(CustomException.class, () -> JobService.modeForExtension(ext)).getErrorCode(), ext);
         }

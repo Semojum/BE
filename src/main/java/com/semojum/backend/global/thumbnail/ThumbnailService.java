@@ -76,6 +76,21 @@ public class ThumbnailService {
         }
     }
 
+    /**
+     * 이미지 업로드의 썸네일 — 첫 장을 PNG로 다시 인코딩한다 (V3.1).
+     *
+     * <p>PDF처럼 렌더할 게 없다. 그래도 그냥 올리지 않고 PNG로 바꾸는 이유는 S3 공개 정책이
+     * thumbnail.png 하나뿐이어서다 — 키와 실제 형식을 어긋나게 두지 않는다.
+     */
+    public byte[] generateImageThumbnail(byte[] imageBytes) throws IOException {
+        BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
+        if (image == null) throw new IOException("이미지를 읽을 수 없습니다");
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        return out.toByteArray();
+    }
+
     // 텍스트를 흰 배경 위에 렌더링하여 PNG로 변환
     public byte[] generateTextThumbnail(String text) throws IOException {
         BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
