@@ -68,6 +68,12 @@ public class User {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    // 계정별 기본 점역 옵션 (V35) — 설정 › 기본 점역 옵션 설정(D6)에서 사용자가 직접 고친다.
+    // null = 한 번도 저장한 적 없음 → 조회 시 공장 기본값을 내려준다(resolveBrailleOptions)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "braille_options", columnDefinition = "jsonb")
+    private com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -105,6 +111,18 @@ public class User {
     public void markDeleted() {
         this.deletedAt = Instant.now();
         this.status = UserStatus.INACTIVE;   // 기존 차단 경로(로그인·refresh AUTH4004) 재사용
+    }
+
+    /** D6 「확인」 — 창이 항목 전부를 보여주므로 통째로 덮어쓴다(부분 갱신이 아니다) */
+    public void updateBrailleOptions(com.semojum.backend.domain.job.dto.BrailleOptions options) {
+        this.brailleOptions = options;
+    }
+
+    /** 저장한 적 없는 계정도 완전한 형태를 받는다 — 읽는 쪽에 null 분기를 안 남긴다 */
+    public com.semojum.backend.domain.job.dto.BrailleOptions resolveBrailleOptions() {
+        return brailleOptions == null
+                ? com.semojum.backend.domain.job.dto.BrailleOptions.defaults()
+                : brailleOptions.withDefaults();
     }
 
     public boolean isActive() {
