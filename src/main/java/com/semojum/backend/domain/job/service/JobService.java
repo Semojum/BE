@@ -87,8 +87,10 @@ public class JobService {
     /**
      * 이미지의 S3 Content-Type. 확장자로만 정한다 — 검증은 modeForExtension이 이미 했다.
      *
-     * <p>AI에 보내는 {@code image_format}("jpeg")과 값이 다르다. 이쪽은 HTTP가 읽는 MIME이라
-     * {@code image/jpeg}여야 한다 — {@code image/jpg}는 없는 타입이다(확장자만 .jpg로 줄여 쓴다).
+     * <p>AI에 보내는 proto {@code image_mime_type}과 같은 값이다({@code PageWorker.imageMimeTypeOf}).
+     *
+     * <p>⚠️ {@code image/jpg}는 없는 타입이다 — 확장자만 .jpg로 줄여 쓰고 MIME은 {@code image/jpeg}다.
+     * {@code "image/" + ext}로 만들면 엄격한 디코더가 거절한다.
      */
     static String imageMime(String ext) {
         return ext.equals("png") ? "image/png" : "image/jpeg";
