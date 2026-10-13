@@ -36,7 +36,6 @@ public class JobController {
     private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.result.service.PageSaveFacade pageSaveFacade;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
-    private final com.semojum.backend.domain.job.service.JobDownloadService jobDownloadService;
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(
@@ -131,25 +130,6 @@ public class JobController {
     ) {
         return ApiResponse.success(pageSaveFacade.save(
                 userDetails.getUsername(), jobId, pageNo, request.target(), request.elements()));
-    }
-
-    // 결과 다운로드 — mode a는 .txt(텍스트 병합), b는 .brf(braille-assist 조판), c는 format으로 둘 중 선택(기본 .brf).
-    // 응답은 JSON 래핑 없이 파일 스트림(Content-Disposition). body는 선택(파일명 지정).
-    @PostMapping("/{jobId}/download")
-    public org.springframework.http.ResponseEntity<byte[]> downloadJob(
-            @PathVariable String jobId,
-            @RequestBody(required = false) JobRequestDto.Download request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        var file = jobDownloadService.download(userDetails.getUsername(), jobId,
-                request == null ? null : request.fileName(), request == null ? null : request.format());
-        String encoded = java.net.URLEncoder.encode(file.fileName(), java.nio.charset.StandardCharsets.UTF_8)
-                .replace("+", "%20");
-        return org.springframework.http.ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=\"download." +
-                        (file.fileName().endsWith(".txt") ? "txt" : "brf") + "\"; filename*=UTF-8''" + encoded)
-                .header("Content-Type", file.contentType())
-                .body(file.content());
     }
 
     // 대체 초안 선택 — selected_idx 갱신 + 본문을 해당 초안으로 교체 (-1이면 AI 원본 복귀)

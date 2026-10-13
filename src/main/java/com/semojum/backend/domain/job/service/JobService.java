@@ -375,7 +375,7 @@ public class JobService {
     }
 
 
-    /** mode a 다운로드가 원본 쪽 사이에 넣는 구분선 — 하이픈 정확히 40개인 줄 (JobDownloadService와 같은 값) */
+    /** 원본 쪽 경계 구분선 — 하이픈 정확히 40개인 줄. TXT 업로드의 쪽 분리 기준이다 */
     private static final String PAGE_SEPARATOR = "-".repeat(40);
 
     /**
