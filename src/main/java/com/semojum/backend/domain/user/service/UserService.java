@@ -1,14 +1,8 @@
 package com.semojum.backend.domain.user.service;
 
-import com.semojum.backend.domain.folder.dto.FolderDto;
-import com.semojum.backend.domain.folder.entity.Folder;
-import com.semojum.backend.domain.folder.service.FolderPaths;
-import com.semojum.backend.domain.folder.repository.FolderRepository;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
-import com.semojum.backend.domain.job.dto.JobSearchCondition;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
-import com.semojum.backend.domain.job.repository.JobQueryRepositoryImpl;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.result.entity.*;
@@ -34,104 +28,11 @@ public class UserService {
 
     private final JobRepository jobRepository;
     private final PageRepository pageRepository;
-    private final FolderRepository folderRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private final S3Service s3Service;
     private final PageResultRepository pageResultRepository;
     private final com.semojum.backend.domain.result.service.PageResultSerializer pageResultSerializer;
     private final com.semojum.backend.domain.job.service.FooterBrailleService footerBrailleService;
-
-    /**
-     * 전체보기·검색 화면 — 폴더 구분 없이 <b>전역</b>으로 폴더와 파일을 모두 준다.
-     *
-     * <p>탐색(폴더를 타고 들어가는 화면)은 {@code GET /api/folders/.../contents}가 맡는다.
-     * 응답 구조는 그쪽과 같아, 화면이 폴더·파일을 같은 방식으로 그릴 수 있다.
-     */
-    @Transactional(readOnly = true)
-    public FolderDto.Contents searchEverything(String userId, JobSearchCondition condition,
-                                               boolean favoriteOnly, boolean oldestFirst) {
-        UUID uid = UUID.fromString(userId);
-        JobResponseDto.JobList files = getMyJobs(userId, condition);
-
-        // 상태·모드는 폴더에 없는 속성 → 그 필터가 걸리면 폴더는 결과에서 빠진다
-        // 2페이지 이후에는 폴더를 다시 보내지 않는다 — 폴더는 페이지네이션이 없어 매번
-        // 전체가 실려 오므로, 클라이언트가 그대로 누적하면 중복 표시된다
-        boolean fileOnlyFilter = notEmpty(condition.statuses()) || notEmpty(condition.modes());
-        boolean paged = condition.cursor() != null && !condition.cursor().isBlank();
-        if (fileOnlyFilter || paged) return new FolderDto.Contents(List.of(), files);
-
-        List<Folder> folders = new ArrayList<>(folderRepository.findActiveForTree(uid, favoriteOnly));
-        String keyword = condition.search();
-        if (keyword != null && !keyword.isBlank()) {
-            String needle = keyword.toLowerCase().strip();
-            folders.removeIf(f -> !f.getName().toLowerCase().contains(needle));
-        }
-        Comparator<Folder> order = Comparator.comparing(Folder::getLastModifiedAt)
-                .thenComparing(f -> f.getId().toString());
-        if (!oldestFirst) order = order.reversed();
-        folders.sort(order);
-
-        Map<UUID, String> paths = allFolderPaths(uid);
-        List<FolderDto.Item> items = new ArrayList<>();
-        for (Folder f : folders) {
-            // 폴더의 "위치"는 상위 경로다 — 최상위면 null
-            String parentPath = f.getParentFolderId() != null ? paths.get(f.getParentFolderId()) : null;
-            items.add(new FolderDto.Item(f.getId(), f.getName(), f.isFavorite(),
-                    f.getCreatedAt(), f.getLastModifiedAt(), parentPath));
-        }
-        return new FolderDto.Contents(items, files);
-    }
-
-    private static boolean notEmpty(List<String> values) {
-        return values != null && !values.isEmpty();
-    }
-
-    /** 폴더 id → 전체 경로("국어교재/1학기") */
-    private Map<UUID, String> allFolderPaths(UUID userId) {
-        Map<UUID, Folder> byId = new HashMap<>();
-        for (Folder f : folderRepository.findAllActiveByUserId(userId)) byId.put(f.getId(), f);
-        return FolderPaths.buildAll(byId);
-    }
-
-    /**
-     * 조건에 맞는 <b>파일</b> 목록 (커서 페이지네이션).
-     *
-     * <p>휴지통 항목은 조건에서 제외된다. 폴더까지 함께 필요한 화면은
-     * {@link #searchEverything} 또는 폴더 내부 조회를 쓴다.
-     */
-    @Transactional(readOnly = true)
-    public JobResponseDto.JobList getMyJobs(String userId, JobSearchCondition condition) {
-        UUID uid = UUID.fromString(userId);
-        List<Job> fetched = jobRepository.search(uid, condition);
-        JobQueryRepositoryImpl.PageSlice slice =
-                JobQueryRepositoryImpl.slice(fetched, condition.normalizedSize());
-
-        Map<UUID, String> folderPaths = buildFolderPaths(uid, slice.items());
-
-        LocalDateTime now = LocalDateTime.now();
-        List<JobResponseDto.JobCard> cards = new ArrayList<>();
-        for (Job job : slice.items()) {
-            cards.add(toCard(job, folderPaths, now));
-        }
-        return new JobResponseDto.JobList(cards, slice.nextCursor(), slice.hasMore());
-    }
-
-    private JobResponseDto.JobCard toCard(Job job, Map<UUID, String> folderPaths, LocalDateTime now) {
-        return new JobResponseDto.JobCard(
-                job.getId(),
-                job.getMode(),
-                job.getStatus(),
-                progressOf(job),   // 진행 중 작업만 Redis 조회 — 완료 작업은 즉시 null
-                job.getOriginalFileName(),
-                job.getThumbnailUrl(),
-                RelativeDateFormatter.format(job.getLastModifiedAt(), now),
-                job.getTotalPages(),
-                job.getLastEditedPage(),
-                job.isFavorite(),
-                job.getFolderId() != null ? job.getFolderId().toString() : null,
-                job.getFolderId() != null ? folderPaths.get(job.getFolderId()) : null
-        );
-    }
 
     /** 진행 중 작업의 완료 페이지 비율(0~100). 그 외에는 null. */
     private Integer progressOf(Job job) {
@@ -151,18 +52,6 @@ public class UserService {
             log.warn("진행률 조회 실패: jobId={}", job.getId(), e);
             return null;
         }
-    }
-
-    /** 카드에 표시할 폴더 경로("상위/하위"). 계정당 폴더 200개 상한이라 한 번에 읽어 메모리에서 계산. */
-    private Map<UUID, String> buildFolderPaths(UUID userId, List<Job> jobs) {
-        boolean anyInFolder = jobs.stream().anyMatch(j -> j.getFolderId() != null);
-        if (!anyInFolder) return Map.of();
-
-        Map<UUID, Folder> byId = new HashMap<>();
-        for (Folder f : folderRepository.findAllActiveByUserId(userId)) {
-            byId.put(f.getId(), f);
-        }
-        return FolderPaths.buildAll(byId);
     }
 
     // 앱 재시작·네트워크 재연결 시 복구용: 아직 진행 중인 Job 목록.
