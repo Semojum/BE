@@ -10,8 +10,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 업로드 옵션이 실제 조판에 반영되는지 — 다운로드가 braille-assist에 넘기는 값 그대로 확인한다.
- * (braille-assist는 원 레포 복사본이라 수정하지 않고 공개 API만 쓴다)
+ * 조판 옵션이 판면에서 무엇을 뜻하는지에 대한 <b>참조 명세</b>.
+ *
+ * <p>V3.1부터 조판·다운로드는 FE가 한다 — BE는 braille-assist를 호출하지 않는다.
+ * 그래서 이 테스트는 production 코드를 검증하지 않고, <b>FE가 맞춰야 할 기준</b>을 못 박는다.
+ * {@code cellsPerLine} 하나가 판면을 어떻게 바꾸는지를 실행 가능한 형태로 남겨, 두 구현이
+ * 갈렸을 때 어느 쪽이 맞는지 가릴 수 있게 한다.
+ *
+ * <p>(braille-assist는 원 레포 복사본이라 수정하지 않고 공개 API만 쓴다)
  */
 class LayoutOptionsTypesettingTest {
 
@@ -26,7 +32,7 @@ class LayoutOptionsTypesettingTest {
         return BrailleAssist.buildPages(sources, "", o.braillePageStart(), assistOptions(o));
     }
 
-    /** JobDownloadService.buildBrf와 같은 방식으로 조립한다 — 호출부가 바뀌면 여기도 바꾼다 */
+    /** LayoutOptions → BrailleAssist.Options 매핑. FE 조판 엔진이 같은 대응을 써야 한다 */
     private BrailleAssist.Options assistOptions(LayoutOptions o) {
         return new BrailleAssist.Options(
                 o.cellsPerLine(), o.linesPerPage(),

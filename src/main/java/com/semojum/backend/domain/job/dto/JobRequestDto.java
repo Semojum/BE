@@ -32,12 +32,6 @@ public class JobRequestDto {
             @NotNull Integer selectedIdx
     ) {}
 
-    // 다운로드: 파일명 지정(선택). format: "txt" | "brf" (선택) — 생략하면 mode 기본값(a=txt, b·c=brf).
-    // mode c(3패널)만 둘 다 받는다(텍스트 결과 .txt / 점자 결과 .brf)
-    public record Download(
-            String fileName,
-            String format
-    ) {}
 
     /**
      * 업로드 후 조판 설정 변경 (V32) — 에디터 "이 파일의 조판 설정" 모달.
