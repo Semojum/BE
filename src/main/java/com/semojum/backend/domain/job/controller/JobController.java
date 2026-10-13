@@ -36,6 +36,7 @@ public class JobController {
     private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.result.service.PageSaveFacade pageSaveFacade;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
+    private final com.semojum.backend.domain.job.service.JobSaveService jobSaveService;
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(
@@ -91,6 +92,24 @@ public class JobController {
     }
 
     // job 상태 확인 API
+    /**
+     * 작업 저장 — V3.1의 유일한 저장 경로.
+     *
+     * <p>FE가 「저장」을 누를 때 한 번만 부른다(자동 저장 없음). 본문은 작업 최종 상태 전체 —
+     * 조판 설정 · 점역 옵션 · 세 패널 · 줄 메모가 함께 들어온다.
+     *
+     * <p>쪽 단위 트랜잭션이라 일부만 실패할 수 있다. {@code failedPages}가 비어 있으면 전부 성공이다.
+     * 한글 JSON은 7~8배 압축되므로 {@code Content-Encoding: gzip}을 권한다.
+     */
+    @PostMapping("/{jobId}/save")
+    public ApiResponse<JobResponseDto.SaveResult> saveJob(
+            @PathVariable String jobId,
+            @Valid @RequestBody JobRequestDto.SaveJob request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ApiResponse.success(jobSaveService.save(userDetails.getUsername(), jobId, request));
+    }
+
     @GetMapping("/{jobId}/status")
     public ApiResponse<JobResponseDto.Status> getJobStatus(
             @PathVariable String jobId

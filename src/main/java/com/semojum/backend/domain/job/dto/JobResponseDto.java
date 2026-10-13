@@ -137,4 +137,17 @@ public class JobResponseDto {
             String url,
             List<String> lines
     ) {}
+
+    /**
+     * 작업 저장 결과.
+     *
+     * <p>쪽 단위 트랜잭션이라 일부만 실패할 수 있다. {@code failedPages}가 비어 있으면 전부 성공이고,
+     * null이 아니라 빈 배열로 나간다 — FE가 null 검사 없이 순회하도록.
+     */
+    public record SaveResult(
+            String jobId,
+            int savedPages,
+            List<Integer> failedPages,
+            java.time.LocalDateTime savedAt
+    ) {}
 }
