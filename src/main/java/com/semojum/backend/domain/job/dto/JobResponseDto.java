@@ -119,7 +119,23 @@ public class JobResponseDto {
             // 구간 꼬리말이 생겨도 면마다 다른 값을 주면 되므로 모양은 그대로다
             String footerBraille,
             Map<String, Object> result,
-            OriginalContent original
+            OriginalContent original,
+            // 이 쪽의 줄 메모 (V34) — 없으면 빈 배열. 쓰기는 작업 저장 본문이다
+            List<Memo> memos
+    ) {}
+
+    /**
+     * 줄 메모. {@code lineText}는 <b>그 줄의 원문</b>이지 메모 내용이 아니다 —
+     * 조판 설정이 바뀌어 {@code lineIndex}가 어긋났을 때 FE가 이것으로 다시 찾는다.
+     */
+    public record Memo(
+            Long memoId,
+            String panel,
+            String elementId,
+            int lineIndex,
+            String lineText,
+            String body,
+            LocalDateTime createdAt
     ) {}
 
     // 페이지별 원본. URL은 하나이고 무엇인지는 type이 알려준다 (2026-08-31 단일화).

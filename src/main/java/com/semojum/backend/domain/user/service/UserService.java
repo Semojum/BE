@@ -33,6 +33,7 @@ public class UserService {
     private final PageResultRepository pageResultRepository;
     private final com.semojum.backend.domain.result.service.PageResultSerializer pageResultSerializer;
     private final com.semojum.backend.domain.job.service.FooterBrailleService footerBrailleService;
+    private final com.semojum.backend.domain.result.repository.PageMemoRepository pageMemoRepository;
 
     /** 진행 중 작업의 완료 페이지 비율(0~100). 그 외에는 null. */
     private Integer progressOf(Job job) {
@@ -104,8 +105,18 @@ public class UserService {
                 job.resolveLayoutOptions(),
                 footerBrailleService.resolve(job),
                 pageResultSerializer.buildResult(pageResult),
-                original
+                original,
+                memosOf(page.getId())
         );
+    }
+
+    /** 그 쪽의 줄 메모. 없으면 빈 배열 — FE가 null 검사 없이 순회하도록 */
+    private List<JobResponseDto.Memo> memosOf(UUID pageId) {
+        return pageMemoRepository.findByPageIdOrderByElementIdAscLineIndexAsc(pageId).stream()
+                .map(m -> new JobResponseDto.Memo(
+                        m.getId(), m.getPanel(), m.getElementId(), m.getLineIndex(),
+                        m.getLineText(), m.getBody(), m.getCreatedAt()))
+                .toList();
     }
 
     // 운영자 열람(T1-5 미리보기) — 소유자 검증 없이 페이지 결과+원본 조회.
@@ -124,7 +135,8 @@ public class UserService {
                 job.isInsertPageNumber(), job.resolveLayoutOptions(),
                 footerBrailleService.resolve(job),
                 pageResultSerializer.buildResult(pageResult),
-                buildOriginal(job.getMode(), page));
+                buildOriginal(job.getMode(), page),
+                memosOf(page.getId()));
     }
 
     // 원본 PDF presigned URL 수명 — FE는 페이지 진입 직후 1회 fetch하므로 짧아도 되지만,
