@@ -90,6 +90,10 @@ public class PageContentSaver {
                     el.updateCurrentContents(item.contents());
                     changed = true;
                 }
+                if (item.selectedIdx() != null && !item.selectedIdx().equals(el.getSelectedIdx())) {
+                    el.updateSelectedIdx(item.selectedIdx());   // 본문은 FE가 채워 보낸다 — 선택만 기록
+                    changed = true;
+                }
                 finalOrder.add(el);
             }
         }
@@ -121,6 +125,10 @@ public class PageContentSaver {
                 if (el == null) throw new CustomException(ErrorCode.ELEMENT_NOT_FOUND);
                 if (!item.contents().equals(el.getCurrentContent())) {
                     el.updateCurrentContent(item.contents());
+                    changed = true;
+                }
+                if (item.selectedIdx() != null && !item.selectedIdx().equals(el.getSelectedIdx())) {
+                    el.updateSelectedIdx(item.selectedIdx());   // 본문은 FE가 채워 보낸다 — 선택만 기록
                     changed = true;
                 }
                 finalOrder.add(el);

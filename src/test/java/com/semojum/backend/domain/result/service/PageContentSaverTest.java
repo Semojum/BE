@@ -73,7 +73,11 @@ class PageContentSaverTest {
     }
 
     private JobRequestDto.SaveElement item(String id, String body) {
-        return new JobRequestDto.SaveElement(id, List.of(body));
+        return new JobRequestDto.SaveElement(id, List.of(body), null);
+    }
+
+    private JobRequestDto.SaveElement draftPick(String id, String body, Integer selectedIdx) {
+        return new JobRequestDto.SaveElement(id, List.of(body), selectedIdx);
     }
 
     private JobRequestDto.SaveJobPage page(List<JobRequestDto.SaveElement> text,
@@ -168,6 +172,45 @@ class PageContentSaverTest {
 
         assertEquals(List.of("원본"), t1.getCurrentContents(), "역점역은 지원하지 않는다");
         assertEquals(List.of("⠠⠍"), b1.getCurrentContent());
+    }
+
+    // ── 대체 초안 선택 ───────────────────────────────────────────────
+    // 본문은 FE가 그 초안으로 채워 보낸다 — 서버는 "어느 것을 골랐나"만 기록한다.
+    // 조회 응답의 selected_idx가 이 값이라, 저장하지 않으면 화면이 다음에 엉뚱한 초안을 짚는다.
+
+    @Test
+    void 고른_초안_번호를_기록한다() {
+        BrailleElement b1 = brailleEl("v1", 1, "⠈⠪ 기존");
+        b1.updateSelectedIdx(2);
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
+
+        boolean changed = saver.savePage(job, page(null, List.of(draftPick("v1", "⠠⠄생략⠠⠄", 0))));
+
+        assertEquals(0, b1.getSelectedIdx());
+        assertEquals(List.of("⠠⠄생략⠠⠄"), b1.getCurrentContent(), "본문은 FE가 보낸 그대로");
+        assertTrue(changed);
+    }
+
+    @Test
+    void 선택_해제는_음수1로_온다() {
+        BrailleElement b1 = brailleEl("v1", 1, "⠠⠄생략⠠⠄");
+        b1.updateSelectedIdx(0);
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
+
+        saver.savePage(job, page(null, List.of(draftPick("v1", "⠈⠪ 원본", -1))));
+
+        assertEquals(-1, b1.getSelectedIdx(), "AI 원본으로 되돌림");
+    }
+
+    @Test
+    void 초안_번호를_안_보내면_그대로_둔다() {
+        BrailleElement b1 = brailleEl("v1", 1, "⠈⠪ 기존");
+        b1.updateSelectedIdx(2);
+        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
+
+        saver.savePage(job, page(null, List.of(item("v1", "⠈⠪ 기존"))));
+
+        assertEquals(2, b1.getSelectedIdx(), "null은 미전송 — 건드리지 않는다");
     }
 
     // ── 줄 메모 ─────────────────────────────────────────────────────

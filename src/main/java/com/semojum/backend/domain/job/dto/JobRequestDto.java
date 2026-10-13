@@ -21,10 +21,17 @@ public class JobRequestDto {
             String target
     ) {}
 
-    // id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐)
+    /**
+     * id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐).
+     *
+     * <p>{@code selectedIdx}는 대체 초안 중 어느 것을 골랐는지다 — null이면 그대로 두고,
+     * -1은 AI 원본 복귀, 0 이상은 그 초안. 본문({@code contents})은 FE가 이미 그 초안으로 채워 보내므로
+     * 서버는 <b>어느 것을 골랐는지만 기록</b>한다. 조회 응답의 {@code selected_idx}가 이 값이다.
+     */
     public record SaveElement(
             String id,
-            @NotNull List<String> contents
+            @NotNull List<String> contents,
+            Integer selectedIdx
     ) {}
 
     // 대체 초안 선택: 0-based 초안 번호. -1 = 선택 해제(AI 원본 복귀)
