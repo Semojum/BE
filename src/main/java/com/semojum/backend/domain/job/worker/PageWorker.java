@@ -99,9 +99,14 @@ public class PageWorker {
         return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png");
     }
 
-    /** AI에 알려줄 이미지 형식. 확장자로만 정한다 — 업로드 때 확장자로 검증했다 */
-    static String imageMimeOf(String sourcePath) {
-        return sourcePath != null && sourcePath.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+    /**
+     * AI에 알려줄 이미지 형식 — proto {@code image_format}에 싣는다. 확장자로만 정한다(업로드 때 검증했다).
+     *
+     * <p>S3 Content-Type과 값이 다르다 — 저쪽은 HTTP가 읽는 MIME이라 {@code image/jpeg}이고,
+     * 이쪽은 AI가 디코더를 고르는 표시라 {@code jpeg}다. {@code .jpg}도 형식 이름은 jpeg다.
+     */
+    static String imageFormatOf(String sourcePath) {
+        return sourcePath != null && sourcePath.toLowerCase().endsWith(".png") ? "png" : "jpeg";
     }
 
     private void runWorker(int workerId) {
@@ -170,7 +175,7 @@ public class PageWorker {
                 } else if (isImageSource(sourcePath)) {
                     // 이미지 업로드(V3.1): PDF로 바꾸지 않고 원본 바이트를 그대로 보낸다
                     requestBuilder.setImageData(com.google.protobuf.ByteString.copyFrom(fileData));
-                    requestBuilder.setImageMime(imageMimeOf(sourcePath));
+                    requestBuilder.setImageFormat(imageFormatOf(sourcePath));
                 } else {
                     // mode a, c: PDF 바이너리로 전송
                     requestBuilder.setPdfData(com.google.protobuf.ByteString.copyFrom(fileData));
