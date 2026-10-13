@@ -30,10 +30,11 @@ class ImageSourceTest {
         assertFalse(PageWorker.isImageSource(null));
     }
 
+    /** AI에는 MIME이 아니라 형식 이름을 보낸다 — S3 Content-Type과 값이 다르다 */
     @Test
-    void png만_image_png로_알린다() {
-        assertEquals("image/png", PageWorker.imageMimeOf("job-1/pages/page-2.png"));
-        assertEquals("image/jpeg", PageWorker.imageMimeOf("job-1/pages/page-2.jpg"));
-        assertEquals("image/jpeg", PageWorker.imageMimeOf("job-1/pages/page-2.jpeg"));
+    void 형식_이름으로_알린다() {
+        assertEquals("png", PageWorker.imageFormatOf("job-1/pages/page-2.png"));
+        assertEquals("jpeg", PageWorker.imageFormatOf("job-1/pages/page-2.jpg"));
+        assertEquals("jpeg", PageWorker.imageFormatOf("job-1/pages/page-2.jpeg"));
     }
 }
