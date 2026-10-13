@@ -18,7 +18,7 @@ class NewDocumentTest {
     private static final String SEP = "-".repeat(40);
 
     private JobRequestDto.NewDocument doc(String text, String fileName) {
-        return new JobRequestDto.NewDocument(text, fileName, null, null, null, null);
+        return new JobRequestDto.NewDocument(text, fileName, null, null, null, null, null);
     }
 
     // ── 쪽 분리는 TXT와 같은 규칙 ────────────────────────────────────

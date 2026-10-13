@@ -36,7 +36,10 @@ class JobCreateGuardTest {
                 userRepository, Mockito.mock(S3Service.class),
                 Mockito.mock(RedisTemplate.class), Mockito.mock(JobDispatcher.class),
                 Mockito.mock(ThumbnailService.class), Mockito.mock(HwpToPdfConverter.class),
-                Mockito.mock(FooterBrailleService.class));
+                Mockito.mock(FooterBrailleService.class),
+                new com.semojum.backend.domain.job.service.UploadOptionsResolver(
+                        Mockito.mock(com.semojum.backend.domain.user.repository.BrailleFormRepository.class),
+                        builtinForms()));
 
         User orgAdmin = User.builder().loginId("kblib01").password("pw").build();
         orgAdmin.changeRole(Role.ROLE_ORG_ADMIN);
@@ -44,7 +47,13 @@ class JobCreateGuardTest {
 
         MockMultipartFile file = new MockMultipartFile("file", "sample.pdf", "application/pdf", new byte[]{1});
         CustomException e = assertThrows(CustomException.class, () ->
-                service.createJob(UUID.randomUUID().toString(), java.util.List.of(file), "a", false, null, null, null));
+                service.createJob(UUID.randomUUID().toString(), java.util.List.of(file), "a", false, null, null, null, null, null));
         assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+    }
+    /** 기본 양식은 클래스패스에서 읽는다 — 양식을 안 고르는 경로라도 리졸버가 필요하다 */
+    private static com.semojum.backend.domain.user.service.BuiltinBrailleForms builtinForms() {
+        var b = new com.semojum.backend.domain.user.service.BuiltinBrailleForms();
+        b.load();
+        return b;
     }
 }

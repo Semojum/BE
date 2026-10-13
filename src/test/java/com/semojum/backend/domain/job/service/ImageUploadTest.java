@@ -123,14 +123,17 @@ class ImageUploadTest {
         JobService service = new JobService(
                 Mockito.mock(JobRepository.class), pageRepository, userRepository, s3Service,
                 redisTemplate, dispatcher, Mockito.mock(ThumbnailService.class),
-                Mockito.mock(HwpToPdfConverter.class), Mockito.mock(FooterBrailleService.class));
+                Mockito.mock(HwpToPdfConverter.class), Mockito.mock(FooterBrailleService.class),
+                new com.semojum.backend.domain.job.service.UploadOptionsResolver(
+                        Mockito.mock(com.semojum.backend.domain.user.repository.BrailleFormRepository.class),
+                        builtinForms()));
 
         // 사용자가 「순서 바꾸기」로 이름순이 아닌 순서를 보낸 상황
         List<MultipartFile> files = List.of(
                 image("3-표지.png", 30), image("1-본문.jpg", 10), image("2-본문.jpeg", 20));
 
         var created = service.createJob(UUID.randomUUID().toString(), files,
-                null, false, null, null, null);
+                null, false, null, null, null, null, null);
 
         assertEquals("c", created.mode());
         assertEquals(3, created.totalPages());
@@ -178,10 +181,13 @@ class ImageUploadTest {
                 Mockito.mock(JobRepository.class), Mockito.mock(PageRepository.class),
                 userRepository, s3Service, redisTemplate, Mockito.mock(JobDispatcher.class),
                 Mockito.mock(ThumbnailService.class), Mockito.mock(HwpToPdfConverter.class),
-                Mockito.mock(FooterBrailleService.class));
+                Mockito.mock(FooterBrailleService.class),
+                new com.semojum.backend.domain.job.service.UploadOptionsResolver(
+                        Mockito.mock(com.semojum.backend.domain.user.repository.BrailleFormRepository.class),
+                        builtinForms()));
 
         service.createJob(UUID.randomUUID().toString(),
-                List.of(image("a.png"), image("b.jpg")), null, false, null, null, null);
+                List.of(image("a.png"), image("b.jpg")), null, false, null, null, null, null, null);
 
         ArgumentCaptor<String> keys = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> types = ArgumentCaptor.forClass(String.class);
@@ -220,5 +226,11 @@ class ImageUploadTest {
 
     private MultipartFile image(String name) {
         return image(name, 0);
+    }
+    /** 기본 양식은 클래스패스에서 읽는다 — 양식을 안 고르는 경로라도 리졸버가 필요하다 */
+    private static com.semojum.backend.domain.user.service.BuiltinBrailleForms builtinForms() {
+        var b = new com.semojum.backend.domain.user.service.BuiltinBrailleForms();
+        b.load();
+        return b;
     }
 }

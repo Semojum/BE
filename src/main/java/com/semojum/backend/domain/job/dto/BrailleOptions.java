@@ -59,6 +59,28 @@ public record BrailleOptions(
     }
 
     /**
+     * 이 값 위에 {@code patch}의 <b>비어 있지 않은 항목만</b> 덮어쓴 사본.
+     *
+     * <p>업로드가 쓴다 — 양식을 고르면 그 값이 바탕이 되고, 업로드 창에서 따로 건드린 항목만
+     * 그 위에 덮인다(D2 「열기」는 양식과 개별 항목을 함께 보여준다). 양식을 안 골랐으면
+     * 계정 기본값이 바탕이다. null은 "그대로 두라"는 뜻이라 이 방식으로 값을 비울 수는 없지만,
+     * 8개 항목 전부 기본값이 있는 스칼라라 비울 일이 없다.
+     */
+    public BrailleOptions merge(BrailleOptions patch) {
+        if (patch == null) return this;
+        return new BrailleOptions(
+                patch.hangulGrade() != null ? patch.hangulGrade() : hangulGrade,
+                patch.brailleRule() != null ? patch.brailleRule() : brailleRule,
+                patch.mixedRule() != null ? patch.mixedRule() : mixedRule,
+                patch.consecutiveSpace() != null ? patch.consecutiveSpace() : consecutiveSpace,
+                patch.lineBreakUnit() != null ? patch.lineBreakUnit() : lineBreakUnit,
+                patch.choiceLayout() != null ? patch.choiceLayout() : choiceLayout,
+                patch.brailleFormat() != null ? patch.brailleFormat() : brailleFormat,
+                patch.textFormat() != null ? patch.textFormat() : textFormat
+        ).withDefaults();
+    }
+
+    /**
      * 기본값을 채운 뒤 값을 검증한 사본. 범위 밖이면 COMMON4000.
      *
      * <p>막는 이유: BE는 이 값을 해석하지 않으므로 오타가 들어와도 저장은 성공한다. 그러면 FE

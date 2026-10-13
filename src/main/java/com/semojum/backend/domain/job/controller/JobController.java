@@ -65,14 +65,29 @@ public class JobController {
             @RequestParam(value = "footerAlign", required = false) String footerAlign,
             @RequestParam(value = "editScope", required = false) String editScope,
             @RequestParam(value = "advancedAi", required = false) Boolean advancedAi,
+            // 점역 양식 (V3.1) — 고르면 그 양식의 조판·점역 값이 바탕이 되고, 아래 개별 항목이 그 위에 덮인다.
+            // 안 고르면 계정 기본 점역 옵션이 바탕이다
+            @RequestParam(value = "formId", required = false) String formId,
+            // 점역 옵션 (V3.1) — D2 「열기」 창에서 이 작업만 따로 바꾼 항목. 안 보낸 항목은 바탕 값 그대로
+            @RequestParam(value = "hangulGrade", required = false) String hangulGrade,
+            @RequestParam(value = "brailleRule", required = false) String brailleRule,
+            @RequestParam(value = "mixedRule", required = false) String mixedRule,
+            @RequestParam(value = "consecutiveSpace", required = false) String consecutiveSpace,
+            @RequestParam(value = "lineBreakUnit", required = false) String lineBreakUnit,
+            @RequestParam(value = "choiceLayout", required = false) String choiceLayout,
+            @RequestParam(value = "brailleFormat", required = false) String brailleFormat,
+            @RequestParam(value = "textFormat", required = false) String textFormat,
             jakarta.servlet.http.HttpServletRequest request
     ) throws Exception {
         LayoutOptions options = new LayoutOptions(cellsPerLine, linesPerPage, pageNumberLine, coverPages,
                 sourcePageStart, braillePageStart, showSourcePageNumber, showBraillePageNumber,
                 showChangeLine, footerAlign, editScope, advancedAi);
+        com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions =
+                new com.semojum.backend.domain.job.dto.BrailleOptions(hangulGrade, brailleRule, mixedRule,
+                        consecutiveSpace, lineBreakUnit, choiceLayout, brailleFormat, textFormat);
         return ApiResponse.success(
                 jobService.createJob(userDetails.getUsername(), files, mode, insertPageNumber, footerText,
-                        options, clientInfoResolver.resolve(request)));
+                        options, formId, brailleOptions, clientInfoResolver.resolve(request)));
     }
 
     // 업로드 설정 조회 — 조판 옵션 + 꼬리말. 에디터가 작업을 열 때 설정 복원용 (V30)
