@@ -35,7 +35,6 @@ public class JobController {
     private final JobRepository jobRepository;
     private final PageSaveService pageSaveService;
     private final com.semojum.backend.domain.result.service.PageSaveFacade pageSaveFacade;
-    private final com.semojum.backend.domain.job.service.PageDeleteService pageDeleteService;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
     private final com.semojum.backend.domain.job.service.JobDownloadService jobDownloadService;
 
@@ -132,39 +131,6 @@ public class JobController {
     ) {
         return ApiResponse.success(pageSaveFacade.save(
                 userDetails.getUsername(), jobId, pageNo, request.target(), request.elements()));
-    }
-
-    /**
-     * 원본 페이지 영구 삭제 + 뒤 번호 자동 당김 (X-1).
-     *
-     * <p><b>되돌릴 수 없다.</b> 크레딧은 환불하지 않고 편집 이력은 남긴다(유저 확정).
-     * 변환 중이면 JOB4010, 마지막 한 장이면 COMMON4000(작업 자체를 지워야 한다).
-     */
-    /**
-     * 원본 페이지 <b>여러 장</b> 영구 삭제 (X-1 벌크).
-     *
-     * <p>{@code ?nos=5,6,7,8} — <b>지금 화면에 보이는 번호 그대로</b> 보내면 된다.
-     * 서버가 큰 번호부터 지워, 한 장씩 호출할 때 생기는 "지울수록 뒤 번호가 당겨지는" 문제가 없다.
-     * 하나라도 없는 쪽이 섞이면 아무것도 지우지 않는다.
-     */
-    @DeleteMapping("/{jobId}/pages")
-    public ApiResponse<Map<String, Object>> deletePages(
-            @PathVariable String jobId,
-            @RequestParam("nos") List<Integer> nos,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        int remaining = pageDeleteService.deletePages(userDetails.getUsername(), jobId, nos);
-        return ApiResponse.success(Map.of("jobId", jobId, "deletedPageNos", nos, "totalPages", remaining));
-    }
-
-    @DeleteMapping("/{jobId}/pages/{pageNo}")
-    public ApiResponse<Map<String, Object>> deletePage(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        int remaining = pageDeleteService.deletePage(userDetails.getUsername(), jobId, pageNo);
-        return ApiResponse.success(Map.of("jobId", jobId, "deletedPageNo", pageNo, "totalPages", remaining));
     }
 
     // 결과 다운로드 — mode a는 .txt(텍스트 병합), b는 .brf(braille-assist 조판), c는 format으로 둘 중 선택(기본 .brf).
