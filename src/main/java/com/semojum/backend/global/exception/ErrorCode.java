@@ -12,6 +12,7 @@ public enum ErrorCode {
     COMMON_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMON4003", "권한이 없습니다."),
     COMMON_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMON4004", "요청한 경로를 찾을 수 없습니다."),
     COMMON_METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "COMMON4005", "지원하지 않는 요청 방식입니다."),
+    COMMON_NAME_DUPLICATE(HttpStatus.CONFLICT, "COMMON4009", "같은 이름이 이미 있습니다."),   // 점역 양식 등 (V3.1)
     COMMON_INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON5000", "서버 에러, 관리자에게 문의 바랍니다."),
 
     // ========== 인증 (AUTH) ==========
