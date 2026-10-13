@@ -69,7 +69,7 @@ class JobOptionsUpdateTest {
     }
 
     private JobRequestDto.UpdateOptions patch(LayoutOptions options) {
-        return new JobRequestDto.UpdateOptions(null, null, options);
+        return new JobRequestDto.UpdateOptions(null, null, options, null);
     }
 
     /** 12개 중 하나만 담은 부분 패치 — 나머지는 null(=그대로 두라) */
@@ -112,7 +112,7 @@ class JobOptionsUpdateTest {
         job("COMPLETED", null, null);
 
         JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1",
-                new JobRequestDto.UpdateOptions(false, null, null));
+                new JobRequestDto.UpdateOptions(false, null, null, null));
 
         assertFalse(result.insertPageNumber());
         assertEquals(40, result.layoutOptions().cellsPerLine(), "조판 옵션은 손대지 않는다");
@@ -138,7 +138,7 @@ class JobOptionsUpdateTest {
         when(footerBrailleService.translateForUpload(anyString(), any(), anyInt())).thenReturn("⠨⠎⠢⠨");
 
         JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1",
-                new JobRequestDto.UpdateOptions(null, "제1장", null));
+                new JobRequestDto.UpdateOptions(null, "제1장", null, null));
 
         assertEquals("제1장", result.footerText());
         assertEquals("⠨⠎⠢⠨", result.footerBraille());
@@ -178,7 +178,7 @@ class JobOptionsUpdateTest {
         Job job = job("COMPLETED", "안녕", "⠣⠒⠉⠻");
 
         JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1",
-                new JobRequestDto.UpdateOptions(null, "", null));
+                new JobRequestDto.UpdateOptions(null, "", null, null));
 
         assertNull(result.footerText());
         assertNull(result.footerBraille(), "묵자를 지웠으면 점자도 남으면 안 된다");
@@ -202,7 +202,7 @@ class JobOptionsUpdateTest {
         job("COMPLETED", null, null);
 
         CustomException e = assertThrows(CustomException.class, () -> jobService.updateJobOptions(
-                userId, "job-1", new JobRequestDto.UpdateOptions(null, "가".repeat(201), null)));
+                userId, "job-1", new JobRequestDto.UpdateOptions(null, "가".repeat(201), null, null)));
 
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }

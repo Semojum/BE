@@ -5,6 +5,7 @@ import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.repository.UserRepository;
+import com.semojum.backend.domain.job.dto.BrailleOptions;
 import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.dto.LayoutOptions;
@@ -48,6 +49,7 @@ public class JobService {
     private final com.semojum.backend.global.thumbnail.ThumbnailService thumbnailService;
     private final com.semojum.backend.global.hwp.HwpToPdfConverter hwpToPdfConverter;
     private final FooterBrailleService footerBrailleService;
+    private final UploadOptionsResolver uploadOptionsResolver;
 
     private static final int LINES_PER_PAGE = 30;
 
@@ -114,13 +116,10 @@ public class JobService {
 
     public JobResponseDto.Create createJob(String userId, List<MultipartFile> files, String mode,
                                            boolean insertPageNumber, String footerText,
-                                           LayoutOptions requestedOptions,
+                                           LayoutOptions requestedOptions, String formId,
+                                           BrailleOptions requestedBrailleOptions,
                                            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo)
             throws Exception {
-
-        // 조판 옵션 — 빠진 값은 기본값으로 채워 항상 완전한 형태로 저장한다(읽는 쪽에 null 분기를 안 남긴다)
-        LayoutOptions layoutOptions = validateLayoutOptions(
-                requestedOptions == null ? LayoutOptions.legacy(insertPageNumber) : requestedOptions.withDefaults());
 
         // 꼬리말(묵자) 정리 — 빈 값은 null, 200자 초과는 거절 (TranslateText 입력 상한)
         footerText = footerText == null || footerText.isBlank() ? null : footerText.trim();
@@ -137,6 +136,13 @@ public class JobService {
             log.warn("기관 관리자 계정의 Job 생성 시도 거부: user={}", user.getLoginId());
             throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
         }
+
+        // 조판·점역 옵션 — 양식이 바탕, 개별 항목이 그 위에 덮인다(UploadOptionsResolver).
+        // 빠진 값은 기본값으로 채워 항상 완전한 형태로 저장한다(읽는 쪽에 null 분기를 안 남긴다)
+        UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
+                user, formId, requestedOptions, requestedBrailleOptions, insertPageNumber);
+        LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
+        BrailleOptions brailleOptions = resolved.brailleOptions();
 
         // 2. 모드는 파일 종류가 정한다 (3패널 통합, 2026-09-30) — 사용자가 고르지 않는다.
         //    PDF·HWP·HWPX·이미지 → c(원본 | 텍스트 | 점자 한 번에), TXT → b(원문 | 점자).
@@ -165,13 +171,13 @@ public class JobService {
 
         if (isImage(ext)) {
             return createFromImages(user, jobId, files,
-                    insertPageNumber, footerText, layoutOptions, clientInfo);
+                    insertPageNumber, footerText, layoutOptions, brailleOptions, clientInfo);
 
         } else if (mode.equals("b")) {
             String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
             return createFromText(user, jobId, fullText,
                     resolveFileName(user.getId(), file.getOriginalFilename()),
-                    insertPageNumber, footerText, layoutOptions, clientInfo);
+                    insertPageNumber, footerText, layoutOptions, brailleOptions, clientInfo);
 
         } else {
             // 5. PDF 페이지별 분리 및 S3 업로드.
@@ -202,6 +208,7 @@ public class JobService {
                         .insertPageNumber(insertPageNumber)
                         .footerText(footerText)
                         .layoutOptions(layoutOptions)
+                        .brailleOptions(brailleOptions)
                         .build();
                 // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
                 // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
@@ -278,6 +285,7 @@ public class JobService {
     private JobResponseDto.Create createFromImages(
             User user, String jobId, List<MultipartFile> files,
             boolean insertPageNumber, String footerText, LayoutOptions layoutOptions,
+            BrailleOptions brailleOptions,
             com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) throws Exception {
 
         int totalPages = files.size();
@@ -293,6 +301,7 @@ public class JobService {
                 .insertPageNumber(insertPageNumber)
                 .footerText(footerText)
                 .layoutOptions(layoutOptions)
+                .brailleOptions(brailleOptions)
                 .build();
         job.updateFooterBraille(
                 footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
@@ -380,10 +389,6 @@ public class JobService {
         validateNewDocumentText(request.text());
 
         boolean insertPageNumber = Boolean.TRUE.equals(request.insertPageNumber());
-        LayoutOptions layoutOptions = validateLayoutOptions(
-                request.layoutOptions() == null
-                        ? LayoutOptions.legacy(insertPageNumber)
-                        : request.layoutOptions().withDefaults());
 
         String footerText = request.footerText() == null || request.footerText().isBlank()
                 ? null : request.footerText().trim();
@@ -398,6 +403,11 @@ public class JobService {
             throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
         }
 
+        // 업로드와 같은 규칙 — 양식이 바탕, 개별 항목이 그 위에 덮인다
+        UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
+                user, request.formId(), request.layoutOptions(), request.brailleOptions(), insertPageNumber);
+        LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
+
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
         String jobId = "job_" + timestamp + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
 
@@ -407,7 +417,7 @@ public class JobService {
 
         return createFromText(user, jobId, request.text(),
                 resolveFileName(user.getId(), name),
-                insertPageNumber, footerText, layoutOptions, clientInfo);
+                insertPageNumber, footerText, layoutOptions, resolved.brailleOptions(), clientInfo);
     }
 
     /** TXT 업로드와 「새 문서」가 공유하는 경로 — 둘 다 결과물이 본문 텍스트 하나다 */
@@ -436,7 +446,7 @@ public class JobService {
     private JobResponseDto.Create createFromText(
             com.semojum.backend.domain.auth.entity.User user, String jobId, String fullText,
             String fileName, boolean insertPageNumber, String footerText,
-            LayoutOptions layoutOptions,
+            LayoutOptions layoutOptions, BrailleOptions brailleOptions,
             com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
 
         List<Page> pages = new ArrayList<>();
@@ -455,6 +465,7 @@ public class JobService {
                 .insertPageNumber(insertPageNumber)
                 .footerText(footerText)
                 .layoutOptions(layoutOptions)
+                .brailleOptions(brailleOptions)
                 .build();
         // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
         // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
@@ -541,7 +552,7 @@ public class JobService {
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
         return new JobResponseDto.Options(
                 job.getId(), job.isInsertPageNumber(), job.getFooterText(),
-                footerBrailleService.resolve(job), job.resolveLayoutOptions());
+                footerBrailleService.resolve(job), job.resolveLayoutOptions(), job.resolveBrailleOptions());
     }
 
     /**
@@ -600,11 +611,15 @@ public class JobService {
                     .translateForUpload(footerText, merged, job.getTotalPages());
         }
 
+        // 점역 옵션도 같은 규칙 — 보낸 항목만 덮는다. 조판과 달리 판면 검증이 없어 값 검증만 한다
+        BrailleOptions braille = job.resolveBrailleOptions().merge(request.brailleOptions()).validated();
+
         job.updateOptions(insertPageNumber, footerText, merged);
+        job.updateBrailleOptions(braille);
         job.updateFooterBraille(footerBraille);
         log.info("조판 설정 변경: jobId={}, 꼬리말={}, 판면={}칸×{}줄",
                 jobId, footerText == null ? "(없음)" : footerText, merged.cellsPerLine(), merged.linesPerPage());
-        return new JobResponseDto.Options(jobId, insertPageNumber, footerText, footerBraille, merged);
+        return new JobResponseDto.Options(jobId, insertPageNumber, footerText, footerBraille, merged, braille);
     }
 
 

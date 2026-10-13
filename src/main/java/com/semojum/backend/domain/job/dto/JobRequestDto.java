@@ -52,7 +52,8 @@ public class JobRequestDto {
     public record UpdateOptions(
             Boolean insertPageNumber,
             String footerText,
-            LayoutOptions layoutOptions
+            LayoutOptions layoutOptions,
+            BrailleOptions brailleOptions
     ) {}
 
     /**
@@ -66,7 +67,7 @@ public class JobRequestDto {
             Boolean insertPageNumber,
             String footerText,
             LayoutOptions layoutOptions,
-            java.util.Map<String, Object> brailleOptions,
+            BrailleOptions brailleOptions,
             @NotNull List<SaveJobPage> pages
     ) {}
 
@@ -104,6 +105,7 @@ public class JobRequestDto {
             Boolean insertPageNumber,
             String footerText,
             LayoutOptions layoutOptions,
-            java.util.Map<String, Object> brailleOptions
+            String formId,
+            BrailleOptions brailleOptions
     ) {}
 }

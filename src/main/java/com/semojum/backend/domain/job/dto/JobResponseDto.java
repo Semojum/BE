@@ -29,7 +29,10 @@ public class JobResponseDto {
             String footerText,
             // 위 꼬리말의 점역 결과 (V31) — 화면이 페이지행에 그대로 그릴 수 있게. 미점역이면 null
             String footerBraille,
-            LayoutOptions layoutOptions
+            LayoutOptions layoutOptions,
+            // 그 작업에 적용된 점역 옵션 (V37) — 에디터가 열 때 점역 설정을 복원한다.
+            // V3.1 이전 작업은 공장 기본값이 채워져 내려온다
+            BrailleOptions brailleOptions
     ) {}
 
     public record Status(

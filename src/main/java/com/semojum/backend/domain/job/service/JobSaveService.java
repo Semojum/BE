@@ -41,7 +41,8 @@ public class JobSaveService {
     public JobResponseDto.SaveResult save(String userId, String jobId, JobRequestDto.SaveJob request) {
         // 1. 설정 먼저 — 소유자·변환 중 검증이 여기서 끝난다(타인 작업 403, 변환 중 JOB4010)
         jobService.updateJobOptions(userId, jobId, new JobRequestDto.UpdateOptions(
-                request.insertPageNumber(), request.footerText(), request.layoutOptions()));
+                request.insertPageNumber(), request.footerText(),
+                request.layoutOptions(), request.brailleOptions()));
 
         Job job = jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
                 .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
