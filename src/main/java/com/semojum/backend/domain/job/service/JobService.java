@@ -59,12 +59,53 @@ public class JobService {
     static String modeForExtension(String ext) {
         return switch (ext) {
             case "pdf", "hwp", "hwpx" -> "c";
+            case "jpg", "jpeg", "png" -> "c";
             case "txt" -> "b";
             default -> throw new CustomException(ErrorCode.JOB_INVALID_FILE);
         };
     }
 
-    public JobResponseDto.Create createJob(String userId, MultipartFile file, String mode,
+    /**
+     * 이미지 업로드 확장자 (V3.1). 피그마는 JPG·PNG라고만 적었지만 .jpeg는 같은 형식이라 함께 받는다.
+     *
+     * <p>이미지도 모드는 c다 — 원본 | 텍스트 | 점자 세 패널이 나오는 건 PDF와 같고,
+     * 다른 점은 쪽을 쪼갤 필요가 없다는 것뿐이다(한 장이 한 쪽).
+     */
+    static final java.util.Set<String> IMAGE_EXTS = java.util.Set.of("jpg", "jpeg", "png");
+
+    static boolean isImage(String ext) {
+        return IMAGE_EXTS.contains(ext);
+    }
+
+    /** 파일 이름의 확장자 (소문자, 점 없음). 확장자가 없으면 "" — modeForExtension이 JOB4002로 거절한다 */
+    static String extensionOf(String fileName) {
+        return fileName != null && fileName.contains(".")
+                ? fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase()
+                : "";
+    }
+
+    /** 이미지의 S3 Content-Type. 확장자로만 정한다 — 검증은 modeForExtension이 이미 했다 */
+    static String imageMime(String ext) {
+        return ext.equals("png") ? "image/png" : "image/jpeg";
+    }
+
+    /**
+     * 여러 파일을 한 작업으로 받을 수 있는 건 이미지뿐이다 — 한 장이 한 쪽이라 N장이 N쪽이 된다
+     * (피그마 C11 「이미지 올리기 확인」).
+     *
+     * <p>PDF·HWP·HWPX·TXT는 한 파일이 문서 하나여서 여러 개를 이어붙일 기준이 없고,
+     * 이미지와 섞이면 쪽 순서를 정할 수 없다. 둘 다 COMMON4000.
+     */
+    static void validateUploadFiles(List<String> exts) {
+        if (exts.isEmpty()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        if (exts.size() > 1 && !exts.stream().allMatch(JobService::isImage)) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+    }
+
+    public JobResponseDto.Create createJob(String userId, List<MultipartFile> files, String mode,
                                            boolean insertPageNumber, String footerText,
                                            LayoutOptions requestedOptions,
                                            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo)
@@ -91,17 +132,22 @@ public class JobService {
         }
 
         // 2. 모드는 파일 종류가 정한다 (3패널 통합, 2026-09-30) — 사용자가 고르지 않는다.
-        //    PDF·HWP·HWPX → c(원본 | 텍스트 | 점자 한 번에), TXT → b(원문 | 점자).
+        //    PDF·HWP·HWPX·이미지 → c(원본 | 텍스트 | 점자 한 번에), TXT → b(원문 | 점자).
         //    구 클라이언트가 보내는 mode는 받기만 하고 쓰지 않는다 — a를 보내도 c로 만든다(텍스트 결과는 c에 다 들어 있다)
-        String originalFilename = file.getOriginalFilename();
-        String ext = originalFilename != null && originalFilename.contains(".")
-                ? originalFilename.substring(originalFilename.lastIndexOf(".") + 1).toLowerCase()
-                : "";
-        String requestedMode = mode;
-        mode = modeForExtension(ext);
+        List<String> exts = (files == null ? List.<MultipartFile>of() : files).stream()
+                .map(f -> extensionOf(f.getOriginalFilename()))
+                .toList();
+        validateUploadFiles(exts);
 
-        log.info("Job 생성 시작: mode={}(요청 {}), file={} ({}KB), user={}",
-                mode, requestedMode, file.getOriginalFilename(), file.getSize() / 1024, user.getLoginId());
+        String requestedMode = mode;
+        String ext = exts.get(0);
+        mode = modeForExtension(ext);
+        exts.forEach(JobService::modeForExtension);   // 섞인 목록도 확장자별로 검증한다
+
+        MultipartFile file = files.get(0);
+        log.info("Job 생성 시작: mode={}(요청 {}), file={} ({}KB){}, user={}",
+                mode, requestedMode, file.getOriginalFilename(), file.getSize() / 1024,
+                files.size() > 1 ? " 외 " + (files.size() - 1) + "장" : "", user.getLoginId());
 
         // 4. job_id 발급
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
@@ -110,7 +156,11 @@ public class JobService {
         List<Page> pages = new ArrayList<>();
         List<String> tasks = new ArrayList<>();
 
-        if (mode.equals("b")) {
+        if (isImage(ext)) {
+            return createFromImages(user, jobId, files,
+                    insertPageNumber, footerText, layoutOptions, clientInfo);
+
+        } else if (mode.equals("b")) {
             String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
             return createFromText(user, jobId, fullText,
                     resolveFileName(user.getId(), file.getOriginalFilename()),
@@ -207,6 +257,88 @@ public class JobService {
     }
 
 
+
+    /**
+     * 이미지 업로드 — 한 장이 한 쪽이다 (피그마 C11 「이미지 올리기 확인」).
+     *
+     * <p>PDF 경로와 다른 점은 셋이다. 쪽을 쪼개지 않고(파일 하나가 쪽 하나), PDF로 변환하지 않고
+     * 올라온 바이트를 그대로 S3에 둬서 워커가 그대로 AI에 보내며, 미리보기 렌더도 하지 않는다 —
+     * 원본이 이미 이미지라 그 파일이 곧 미리보기다({@code imagePath}를 업로드 시점에 바로 채운다).
+     *
+     * <p><b>쪽 순서는 받은 순서다.</b> 서버가 파일 이름으로 다시 정렬하면 사용자가 고친 순서가
+     * 뒤집힌다 — 이름순은 FE가 기본값으로 정렬해 보내고, 「순서 바꾸기」로 바꾼 결과도 그 순서로 온다.
+     */
+    private JobResponseDto.Create createFromImages(
+            User user, String jobId, List<MultipartFile> files,
+            boolean insertPageNumber, String footerText, LayoutOptions layoutOptions,
+            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) throws Exception {
+
+        int totalPages = files.size();
+        String mode = modeForExtension(extensionOf(files.get(0).getOriginalFilename()));
+
+        Job job = Job.builder()
+                .id(jobId)
+                .user(user)
+                .mode(mode)
+                .totalPages(totalPages)
+                // 작업 이름은 첫 장의 파일 이름 — 여러 장이어도 작업은 하나다
+                .originalFileName(resolveFileName(user.getId(), files.get(0).getOriginalFilename()))
+                .insertPageNumber(insertPageNumber)
+                .footerText(footerText)
+                .layoutOptions(layoutOptions)
+                .build();
+        job.updateFooterBraille(
+                footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
+        if (clientInfo != null) {
+            job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
+        }
+        jobRepository.saveAndFlush(job);
+
+        // 썸네일은 첫 장 — PDF처럼 렌더할 게 없어 PNG로 다시 인코딩만 한다. 실패는 삼킨다
+        try {
+            byte[] thumbnailBytes = thumbnailService.generateImageThumbnail(files.get(0).getBytes());
+            String thumbnailKey = jobId + "/thumbnail.png";
+            String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
+            job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
+            jobRepository.save(job);
+        } catch (Exception e) {
+            log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+        }
+
+        redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+
+        List<Page> pages = new ArrayList<>();
+        List<String> tasks = new ArrayList<>();
+
+        for (int i = 0; i < totalPages; i++) {
+            int pageNo = i + 1;
+            // 확장자는 그 자리의 파일에서 직접 뽑는다 — 목록과 따로 들고 다니면 어긋날 수 있다
+            String ext = extensionOf(files.get(i).getOriginalFilename());
+
+            String pageKey = jobId + "/pages/page-" + pageNo + "." + ext;
+            String fullPath = s3Service.uploadFile(pageKey, files.get(i).getBytes(), imageMime(ext));
+
+            Page page = Page.builder()
+                    .job(job)
+                    .pageNo(pageNo)
+                    .pdfPath(fullPath)
+                    .build();
+            // 원본이 곧 미리보기 — 워커가 따로 렌더하지 않으므로 여기서 채운다
+            page.updateImagePath(fullPath);
+            pages.add(page);
+
+            tasks.add(taskJson(jobId, pageNo, fullPath, mode, totalPages,
+                    user.getId(), layoutOptions.advancedAi()));
+
+            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+        }
+
+        pageRepository.saveAll(pages);
+        jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
+
+        log.info("Job 생성 완료(이미지 {}장): jobId={}, totalPages={} — 큐 적재됨", totalPages, jobId, totalPages);
+        return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
+    }
 
     /** 본문 텍스트 상한 — 업로드 파일과 같은 100MB(UTF-8 기준) */
     private static final int NEW_DOCUMENT_MAX_BYTES = 100 * 1024 * 1024;

@@ -44,7 +44,7 @@ class JobCreateGuardTest {
 
         MockMultipartFile file = new MockMultipartFile("file", "sample.pdf", "application/pdf", new byte[]{1});
         CustomException e = assertThrows(CustomException.class, () ->
-                service.createJob(UUID.randomUUID().toString(), file, "a", false, null, null, null));
+                service.createJob(UUID.randomUUID().toString(), java.util.List.of(file), "a", false, null, null, null));
         assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
     }
 }
