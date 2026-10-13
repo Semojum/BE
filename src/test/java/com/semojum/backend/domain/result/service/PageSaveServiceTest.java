@@ -2,20 +2,16 @@ package com.semojum.backend.domain.result.service;
 
 import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.entity.Job;
-import com.semojum.backend.domain.job.entity.Page;
 import com.semojum.backend.domain.job.repository.JobRepository;
-import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.domain.result.entity.*;
 import com.semojum.backend.domain.result.repository.*;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.s3.S3Service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,17 +21,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
-/** 페이지 일괄 저장 — 서버 diff 판정(수정/추가/삭제/순서)과 page_edit_logs 스냅샷 검증 */
+/** 페이지 일괄 저장 — 서버 diff 판정(수정/추가/삭제/순서)과 mode c 점자 동기화 검증 */
 class PageSaveServiceTest {
 
     JobRepository jobRepo;
-    PageRepository pageRepo;
     PageResultRepository pageResultRepo;
     TextElementRepository textRepo;
     BrailleElementRepository brailleRepo;
-    BoundingBoxRepository boxRepo;
-    PageEditHistoryRepository logRepo;
-    S3Service s3;
     BrailleRetranslator retranslator;
     PageSaveService service;
 
@@ -46,27 +38,16 @@ class PageSaveServiceTest {
     @BeforeEach
     void setUp() {
         jobRepo = Mockito.mock(JobRepository.class);
-        pageRepo = Mockito.mock(PageRepository.class);
         pageResultRepo = Mockito.mock(PageResultRepository.class);
         textRepo = Mockito.mock(TextElementRepository.class);
         brailleRepo = Mockito.mock(BrailleElementRepository.class);
-        boxRepo = Mockito.mock(BoundingBoxRepository.class);
-        logRepo = Mockito.mock(PageEditHistoryRepository.class);
-        s3 = Mockito.mock(S3Service.class);
         retranslator = Mockito.mock(BrailleRetranslator.class);
-        service = new PageSaveService(jobRepo, pageRepo, pageResultRepo, textRepo, brailleRepo,
-                boxRepo, logRepo, s3, retranslator);
+        service = new PageSaveService(jobRepo, pageResultRepo, textRepo, brailleRepo, retranslator);
 
         when(textRepo.findByPageResult(any())).thenReturn(List.of());
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of());
-        // AI 초안 = 테스트가 깔아 둔 요소들의 AI 원본 (첫 수정의 이전 칸)
-        when(textRepo.findAiDraft(any())).thenAnswer(inv -> textRepo.findByPageResult(inv.getArgument(0)));
-        when(brailleRepo.findAiDraft(any())).thenAnswer(inv -> brailleRepo.findByPageResult(inv.getArgument(0)));
-        when(boxRepo.findByPageResult(any())).thenReturn(List.of());
         when(textRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(brailleRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(pageRepo.findByJobAndPageNo(any(), anyInt())).thenAnswer(inv ->
-                java.util.Optional.of(Page.builder().job(job).pageNo(1).pdfPath("s3/page-1.pdf").build()));
     }
 
     private void givenJob(String mode) {
@@ -89,27 +70,18 @@ class PageSaveServiceTest {
         return new JobRequestDto.SaveElement(id, List.of(contents));
     }
 
-    private PageEditHistory savedLog() {
-        ArgumentCaptor<PageEditHistory> captor = ArgumentCaptor.forClass(PageEditHistory.class);
-        verify(logRepo).save(captor.capture());
-        return captor.getValue();
-    }
 
-    /** 내용이 바뀐 요소만 edited로 판정하고, before/after 스냅샷이 정확해야 한다 */
+    /** 내용이 바뀐 요소만 갱신되고, 응답은 최종 상태를 돌려준다 */
     @Test
-    void 내용_수정은_바뀐_요소만_edited로_기록된다() {
+    void 바뀐_요소만_저장되고_나머지는_그대로다() {
         givenJob("a");
         when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "원본1"), textEl("e2", "원본2")));
 
         List<Map<String, Object>> result = service.savePage(USER_ID, "job1", 1,
                 List.of(item("e1", "수정1"), item("e2", "원본2")));
 
-        PageEditHistory log = savedLog();
-        assertEquals(List.of("e1"), ((Map<?, ?>) log.getChanged()).get("edited"));
-        assertEquals(List.of(), ((Map<?, ?>) log.getChanged()).get("added"));
-        assertEquals(List.of("원본1"), log.getPrevText().get(0).get("contents"));
-        assertEquals(List.of("수정1"), log.getLatestText().get(0).get("contents"));
         assertEquals(List.of("수정1"), result.get(0).get("contents"));
+        assertEquals(List.of("원본2"), result.get(1).get("contents"), "안 바뀐 요소는 그대로");
         assertTrue(job.isEdited(), "내용이 바뀌었으므로 카드 날짜 갱신");
     }
 
@@ -124,13 +96,12 @@ class PageSaveServiceTest {
 
         String newId = (String) result.get(1).get("id");
         assertNotNull(newId, "새 블록엔 발급된 id");
-        PageEditHistory log = savedLog();
-        assertEquals(List.of(newId), ((Map<?, ?>) log.getChanged()).get("added"));
-        assertEquals(1, log.getPrevText().size(), "before엔 추가 블록 없음");
-        Map<String, Object> addedSnap = log.getLatestText().get(1);
-        assertEquals("user", addedSnap.get("origin"));
-        assertNull(addedSnap.get("ai_original"));
-        assertEquals("text", addedSnap.get("type"), "사용자 블록은 항상 text");
+        ArgumentCaptor<TextElement> captor = ArgumentCaptor.forClass(TextElement.class);
+        verify(textRepo).save(captor.capture());
+        TextElement created = captor.getValue();
+        assertEquals(newId, created.getElementId());
+        assertNull(created.getOriginalContents(), "사용자 블록엔 AI 원본이 없다");
+        assertEquals("text", created.getType(), "사용자 블록은 항상 text");
     }
 
     /** 배열에서 빠진 기존 요소는 삭제(soft-delete)로 판정된다 */
@@ -145,7 +116,6 @@ class PageSaveServiceTest {
 
         assertTrue(e2.isDeleted());
         assertFalse(e1.isDeleted());
-        assertEquals(List.of("e2"), ((Map<?, ?>) savedLog().getChanged()).get("deleted"));
     }
 
     /** 내용이 같아도 순서가 바뀌면 저장 대상 — reading_order 재번호 + reordered=true */
@@ -158,20 +128,18 @@ class PageSaveServiceTest {
 
         service.savePage(USER_ID, "job1", 1, List.of(item("e2", "나"), item("e1", "가")));
 
-        assertEquals(true, ((Map<?, ?>) savedLog().getChanged()).get("reordered"));
         assertEquals(1, e2.getReadingOrder());
         assertEquals(2, e1.getReadingOrder());
     }
 
-    /** 아무것도 안 바뀐 저장은 로그·카드 날짜를 남기지 않는다 */
+    /** 아무것도 안 바뀐 저장은 카드 날짜를 건드리지 않는다 */
     @Test
-    void 변경_없는_저장은_로그를_남기지_않는다() {
+    void 변경_없는_저장은_카드_날짜를_건드리지_않는다() {
         givenJob("a");
         when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "그대로")));
 
         service.savePage(USER_ID, "job1", 1, List.of(item("e1", "그대로")));
 
-        verify(logRepo, never()).save(any());
         assertFalse(job.isEdited());
     }
 
@@ -190,23 +158,16 @@ class PageSaveServiceTest {
         assertEquals(ErrorCode.ELEMENT_LIST_MISMATCH, dup.getErrorCode());
     }
 
-    /** mode b는 braille_elements가 편집 대상이고, 로그에 원본 한글 텍스트가 담긴다 */
+    /** mode b는 braille_elements가 편집 대상이다 — 텍스트 패널은 아예 읽지 않는다 */
     @Test
-    void mode_b는_braille이_대상이고_원문_텍스트를_로그에_담는다() {
+    void mode_b는_braille이_편집_대상이다() {
         givenJob("b");
         BrailleElement b1 = BrailleElement.builder().pageResult(pageResult).elementId("b1")
                 .type("text").readingOrder(1).content(List.of("⠁⠝")).isBlocked(false).build();
         when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
-        when(s3.downloadFile(anyString())).thenReturn("원본 한글".getBytes(StandardCharsets.UTF_8));
 
         service.savePage(USER_ID, "job1", 1, List.of(item("b1", "⠁⠝⠞")));
 
-        PageEditHistory log = savedLog();
-        assertEquals("braille", log.getEditedPanel());
-        assertEquals("원본 한글", log.getSourceText());
-        assertNull(log.getPrevText(), "TXT의 텍스트는 원문이라 sourceText로 — 텍스트 칸은 비운다");
-        assertEquals(List.of("⠁⠝⠞"), log.getLatestBraille().get(0).get("contents"));
-        assertNull(log.getSourcePdfPath(), "mode b엔 PDF 경로 없음");
         assertEquals(List.of("⠁⠝⠞"), b1.getCurrentContent());
         verify(textRepo, never()).findByPageResult(any());
     }
@@ -238,13 +199,6 @@ class PageSaveServiceTest {
         assertEquals(List.of("⠠⠄생략⠠⠄"), el.getCurrentContent(), "본문 교체");
         assertEquals(0, el.getSelectedIdx());
         assertTrue(job.isEdited(), "내용이 바뀌었으므로 카드 날짜 갱신");
-
-        Map<?, ?> changed = (Map<?, ?>) savedLog().getChanged();
-        Map<?, ?> sel = (Map<?, ?>) ((List<?>) changed.get("draft_selected")).get(0);
-        assertEquals("v1", sel.get("element_id"));
-        assertEquals(2, sel.get("from"));
-        assertEquals(0, sel.get("to"));
-        assertEquals("생략", sel.get("label"), "어느 초안을 골랐는지가 RLHF 신호");
     }
 
     /** mode a는 결과물이 텍스트라 초안 contents가 비어 있다 → text를 쓰고 점역자주 마커 형태를 보존한다 */
@@ -307,26 +261,9 @@ class PageSaveServiceTest {
         assertEquals(ErrorCode.ELEMENT_NOT_FOUND,
                 assertThrows(CustomException.class,
                         () -> service.selectDraft(USER_ID, "job1", 1, "없는id", 0)).getErrorCode());
-        verify(logRepo, never()).save(any());
+        assertFalse(job.isEdited(), "거절된 요청은 카드 날짜를 건드리지 않는다");
     }
 
-    /** mode a/c 스냅샷엔 요소별 bounding_box가 포함된다 (자기완결 학습 데이터) */
-    @Test
-    void mode_a_스냅샷엔_bbox와_이미지_크기가_담긴다() {
-        givenJob("a");
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "가")));
-        when(boxRepo.findByPageResult(any())).thenReturn(List.of(
-                BoundingBox.builder().pageResult(pageResult).elementId("e1")
-                        .x(1).y(2).x2(3).y2(4).type("text").build()));
-
-        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "수정")));
-
-        PageEditHistory log = savedLog();
-        assertEquals(1224, log.getImageWidth());
-        Map<?, ?> bbox = (Map<?, ?>) log.getPrevText().get(0).get("bounding_box");
-        assertEquals(1, bbox.get("x"));
-        assertEquals(4, bbox.get("y2"));
-    }
     // ===== 3패널(mode c) — 텍스트 편집이 점자를 끌고 간다 (2026-09-30) =====
 
     private BrailleElement brailleEl(String elementId, int order, String contents) {
@@ -358,11 +295,6 @@ class PageSaveServiceTest {
         assertEquals(List.of("⠀⠀⠈⠪⠊⠗⠐⠥\n"), b2.getCurrentContent(), "안 바뀐 텍스트의 점자는 그대로");
         assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), result.get(0).get("brailleContents"), "응답에 바뀐 점자");
         verify(retranslator, never()).translateLines(any()); // 미리 구해 온 값을 쓴다
-
-        PageEditHistory log = savedLog();
-        assertEquals("text", log.getEditedPanel());
-        Map<?, ?> synced = (Map<?, ?>) ((Map<?, ?>) log.getChanged()).get("braille_synced");
-        assertEquals(List.of("e1"), synced.get("edited"));
     }
 
     /** 새 텍스트 블록은 같은 id로 점자 블록을 만들고, 지운 텍스트는 짝 점자도 지운다 */
@@ -438,7 +370,6 @@ class PageSaveServiceTest {
 
         assertEquals(List.of("⠁⠃"), b1.getCurrentContent());
         assertFalse(result.get(0).containsKey("brailleContents"), "점자 저장엔 동기화 필드 없음");
-        assertEquals("braille", savedLog().getEditedPanel());
     }
 
     /** 편집할 수 없는 패널 — a의 점자(없음), b의 텍스트(원문 대조용), 모르는 값은 400 */
@@ -489,134 +420,10 @@ class PageSaveServiceTest {
         assertEquals(List.of("<!점역자주>그래프 생략<!/점역자주>"), t.getCurrentContents(), "마커 형태 보존");
         assertEquals(0, t.getSelectedIdx());
         assertEquals(t.getCurrentContents(), result.get("textContents"));
-        assertEquals(List.of("v1"), ((Map<?, ?>) savedLog().getChanged()).get("text_synced"));
-    }
-    // ===== 이력 1행에 두 패널 (V32, 2026-10-04) =====
-
-    /** 3패널 텍스트 저장 — 한 행에 텍스트 전·후 + 따라 바뀐 점자 전·후가 모두, 블록마다 AI 원본과 함께 남는다 */
-    @Test
-    void mode_c_텍스트_저장_이력엔_따라_바뀐_점자_전후도_남는다() {
-        givenJob("c");
-        TextElement t1 = textEl("e1", "원본");
-        BrailleElement b1 = brailleEl("e1", 1, "⠀⠀⠏⠒⠃⠷\n");
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1));
-        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b1));
-
-        saveText(List.of(item("e1", "수정")), Map.of("수정", "⠠⠍⠨⠎⠶"));
-
-        PageEditHistory log = savedLog();
-        assertEquals("text", log.getEditedPanel());
-        assertEquals(List.of("원본"), log.getPrevText().get(0).get("contents"));
-        assertEquals(List.of("수정"), log.getLatestText().get(0).get("contents"));
-        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getPrevBraille().get(0).get("contents"), "점자 before = 재점역 전");
-        assertEquals(List.of("⠀⠀⠠⠍⠨⠎⠶\n"), log.getLatestBraille().get(0).get("contents"), "점자 after = 재점역 결과");
-        assertEquals(List.of("⠀⠀⠏⠒⠃⠷\n"), log.getLatestBraille().get(0).get("ai_original"), "블록마다 AI 원본");
-        assertEquals(List.of("원본"), log.getLatestText().get(0).get("ai_original"));
     }
 
-    /** 3패널 점자 저장 — 텍스트는 안 바뀌지만 맥락으로 같이 남긴다(before == after) */
-    @Test
-    void mode_c_점자_저장_이력엔_그대로인_텍스트도_맥락으로_남는다() {
-        givenJob("c");
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "원문")));
-        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(brailleEl("e1", 1, "⠁")));
 
-        service.savePage(USER_ID, "job1", 1, "braille", List.of(item("e1", "⠁⠃")), Map.of());
 
-        PageEditHistory log = savedLog();
-        assertEquals("braille", log.getEditedPanel());
-        assertEquals(List.of("⠁⠃"), log.getLatestBraille().get(0).get("contents"));
-        assertEquals(List.of("원문"), log.getPrevText().get(0).get("contents"));
-        assertEquals(log.getPrevText(), log.getLatestText(), "텍스트는 그대로");
-    }
 
-    /** 구 mode a엔 점자 패널이 없다 — 점자 칸은 null */
-    @Test
-    void mode_a_이력의_점자_칸은_비어_있다() {
-        givenJob("a");
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "가")));
 
-        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "나")));
-
-        PageEditHistory log = savedLog();
-        assertNull(log.getPrevBraille());
-        assertNull(log.getLatestBraille());
-        verify(brailleRepo, never()).findByPageResult(any());
-    }
-
-    /** 3패널 초안 선택 — 점자 본문과 함께 맞춰진 텍스트도 이력 after에 남는다 */
-    @Test
-    void mode_c_초안_선택_이력엔_텍스트_동기화도_남는다() {
-        givenJob("c");
-        BrailleElement b = BrailleElement.builder().pageResult(pageResult).elementId("v1")
-                .type("chart_graph").readingOrder(1).content(List.of("⠠⠄기존⠠⠄")).selectedIdx(1)
-                .drafts(List.of(draft("생략", "그래프 생략", List.of("⠠⠄생략⠠⠄")),
-                                draft("개조식 설명", "그래프: 기존", List.of("⠠⠄기존⠠⠄"))))
-                .isBlocked(false).build();
-        TextElement t = TextElement.builder().pageResult(pageResult).elementId("v1")
-                .type("chart_graph").readingOrder(1).contents(List.of("그래프: 기존"))
-                .selectedIdx(1).isBlocked(false).build();
-        when(brailleRepo.findByPageResult(any())).thenReturn(List.of(b));
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(t));
-
-        service.selectDraft(USER_ID, "job1", 1, "v1", 0);
-
-        PageEditHistory log = savedLog();
-        assertEquals("braille", log.getEditedPanel());
-        assertEquals(List.of("그래프: 기존"), log.getPrevText().get(0).get("contents"));
-        assertEquals(List.of("그래프 생략"), log.getLatestText().get(0).get("contents"));
-        assertEquals(List.of("⠠⠄생략⠠⠄"), log.getLatestBraille().get(0).get("contents"));
-    }
-
-    // ── 수정 이력: 쪽당 1행 (V33) ──
-
-    /** 첫 수정 — AI 초안을 고정하고 이전 = AI 초안. V33 이전에 고친 쪽이어도 이전 칸은 현재 내용이 아니라 AI 원본 */
-    @Test
-    void 첫_수정은_AI_초안을_고정하고_이전_칸에도_AI_초안을_넣는다() {
-        givenJob("a");
-        TextElement e1 = textEl("e1", "AI 원본");
-        e1.updateCurrentContents(List.of("예전에 고친 값"));
-        TextElement gone = textEl("e2", "지운 블록");
-        gone.markDeleted();
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(e1));
-        doReturn(List.of(e1, gone)).when(textRepo).findAiDraft(any());
-
-        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "새로 고침")));
-
-        PageEditHistory h = savedLog();
-        assertEquals(List.of("AI 원본"), h.getAiText().get(0).get("contents"));
-        assertEquals(List.of("지운 블록"), h.getAiText().get(1).get("contents"), "사용자가 지운 AI 블록도 초안에 포함");
-        assertEquals(h.getAiText(), h.getPrevText(), "첫 수정의 이전 = AI 초안");
-        assertEquals(List.of("새로 고침"), h.getLatestText().get(0).get("contents"));
-        assertNull(h.getAiBraille(), "mode a엔 점자 없음");
-        assertEquals(1, h.getEditCount());
-        assertEquals("s3/page-1.pdf", h.getSourcePdfPath());
-    }
-
-    /** 두 번째 수정 — 최근 → 이전으로 밀고 새 상태를 최근에. AI 초안·행은 그대로(새 행 없음) */
-    @Test
-    void 다시_수정하면_최근이_이전으로_밀리고_같은_행을_갱신한다() {
-        givenJob("a");
-        UUID pageId = UUID.randomUUID();
-        Page page = Page.builder().job(job).pageNo(1).pdfPath("s3/page-1.pdf").build();
-        org.springframework.test.util.ReflectionTestUtils.setField(page, "id", pageId);
-        when(pageRepo.findByJobAndPageNo(any(), anyInt())).thenReturn(java.util.Optional.of(page));
-
-        List<Map<String, Object>> ai = List.of(Map.of("id", "e1", "contents", List.of("AI 원본")));
-        List<Map<String, Object>> first = List.of(Map.of("id", "e1", "contents", List.of("1차")));
-        PageEditHistory existing = PageEditHistory.builder().pageId(pageId).jobId("job1").mode("a").aiText(ai).build();
-        existing.record(UUID.fromString(USER_ID), 1, "text", first, null, Map.of());
-        when(logRepo.findByPageId(pageId)).thenReturn(java.util.Optional.of(existing));
-        when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", "1차")));
-
-        service.savePage(USER_ID, "job1", 1, List.of(item("e1", "2차")));
-
-        PageEditHistory h = savedLog();
-        assertSame(existing, h, "쪽 id로 찾은 기존 행을 갱신");
-        assertEquals(ai, h.getAiText(), "AI 초안 불변");
-        assertEquals(first, h.getPrevText(), "직전 최근 수정 → 이전");
-        assertEquals(List.of("2차"), h.getLatestText().get(0).get("contents"));
-        assertEquals(2, h.getEditCount());
-        verify(textRepo, never()).findAiDraft(any());
-    }
 }
