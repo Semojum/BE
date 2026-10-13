@@ -69,6 +69,21 @@ public class JobController {
     }
 
     // 업로드 설정 조회 — 조판 옵션 + 꼬리말. 에디터가 작업을 열 때 설정 복원용 (V30)
+    /**
+     * 새 문서 — 파일 없이 본문 텍스트로 작업을 만든다(파일 › 새 문서, Ctrl+N).
+     *
+     * <p>쪽 분리는 TXT 업로드와 같다. 원본 패널이 없는 2패널 작업이 된다.
+     */
+    @PostMapping("/text")
+    public ApiResponse<JobResponseDto.Create> createFromText(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody JobRequestDto.NewDocument request,
+            jakarta.servlet.http.HttpServletRequest httpRequest
+    ) {
+        return ApiResponse.success(jobService.createNewDocument(
+                userDetails.getUsername(), request, clientInfoResolver.resolve(httpRequest)));
+    }
+
     @GetMapping("/{jobId}/options")
     public ApiResponse<JobResponseDto.Options> getJobOptions(
             @PathVariable String jobId,

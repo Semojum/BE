@@ -111,80 +111,10 @@ public class JobService {
         List<String> tasks = new ArrayList<>();
 
         if (mode.equals("b")) {
-            // 5-b. txt → 쪽 단위 청크로 분리하여 S3 업로드
-            // (HWP는 2026-08-24부터 mode a에서 PDF 변환으로 처리 — 텍스트 추출 경로 폐기)
             String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
-            List<String> chunks = splitIntoPages(fullText);
-
-            int totalPages = chunks.size();
-
-            // 6-b. Job 엔티티 생성 및 저장
-            Job job = Job.builder()
-                    .id(jobId)
-                    .user(user)
-                    .mode(mode)
-                    .totalPages(totalPages)
-                    .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
-                    .insertPageNumber(insertPageNumber)
-                    .footerText(footerText)
-                    .layoutOptions(layoutOptions)
-                    .build();
-            // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
-            // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
-            job.updateFooterBraille(
-                    footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
-            if (clientInfo != null) {
-                job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
-            }
-            jobRepository.saveAndFlush(job);
-
-            try {
-                byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
-                String thumbnailKey = jobId + "/thumbnail.png";
-                String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
-                job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
-                jobRepository.save(job);
-            } catch (Exception e) {
-                log.warn("썸네일 생성 실패: jobId={}", jobId, e);
-            }
-
-            // total_pages Redis에 저장
-            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
-
-            // 7-b. 청크별 처리
-            for (int i = 0; i < totalPages; i++) {
-                int pageNo = i + 1;
-
-                // S3 업로드 (txt로 통일)
-                String pageKey = jobId + "/pages/page-" + pageNo + ".txt";
-                byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
-                String fullPath = s3Service.uploadFile(pageKey, chunkBytes, "text/plain");
-
-                // Page 엔티티 생성
-                Page page = Page.builder()
-                        .job(job)
-                        .pageNo(pageNo)
-                        .pdfPath(fullPath)
-                        .build();
-                pages.add(page);
-
-                // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
-                String task = String.format(
-                        "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
-                        jobId, pageNo, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
-                );
-                tasks.add(task);
-
-                // Redis 상태 초기화
-                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
-            }
-
-            // 8-b. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
-            pageRepository.saveAll(pages);
-            jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
-
-            log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
-            return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
+            return createFromText(user, jobId, fullText,
+                    resolveFileName(user.getId(), file.getOriginalFilename()),
+                    insertPageNumber, footerText, layoutOptions, clientInfo);
 
         } else {
             // 5. PDF 페이지별 분리 및 S3 업로드.
@@ -277,6 +207,162 @@ public class JobService {
                 return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
             }
         }
+    }
+
+
+
+    /** 본문 텍스트 상한 — 업로드 파일과 같은 100MB(UTF-8 기준) */
+    private static final int NEW_DOCUMENT_MAX_BYTES = 100 * 1024 * 1024;
+
+
+    /** 본문 검증 — 빈 글은 400, 100MB 초과는 413(업로드 파일과 같은 상한) */
+    static void validateNewDocumentText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        if (text.getBytes(StandardCharsets.UTF_8).length > NEW_DOCUMENT_MAX_BYTES) {
+            throw new CustomException(ErrorCode.JOB_FILE_TOO_LARGE);
+        }
+    }
+
+    /** 이름을 안 주면 「무제」 — 같은 이름이 있으면 resolveFileName이 (2), (3)을 붙인다 */
+    static String resolveNewDocumentName(JobRequestDto.NewDocument request) {
+        return request.fileName() == null || request.fileName().isBlank()
+                ? "무제" : request.fileName().trim();
+    }
+
+    /**
+     * 새 문서 — 파일 없이 본문 텍스트로 작업을 만든다.
+     *
+     * <p>앞단 검증은 파일 업로드와 같다(조판 옵션 · 꼬리말 200자 · 기관 관리자 차단).
+     * 다른 점은 확장자로 모드를 정하지 않는다는 것뿐이다 — 언제나 텍스트 경로다.
+     */
+    public JobResponseDto.Create createNewDocument(
+            String userId, JobRequestDto.NewDocument request,
+            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
+
+        validateNewDocumentText(request.text());
+
+        boolean insertPageNumber = Boolean.TRUE.equals(request.insertPageNumber());
+        LayoutOptions layoutOptions = validateLayoutOptions(
+                request.layoutOptions() == null
+                        ? LayoutOptions.legacy(insertPageNumber)
+                        : request.layoutOptions().withDefaults());
+
+        String footerText = request.footerText() == null || request.footerText().isBlank()
+                ? null : request.footerText().trim();
+        if (footerText != null && footerText.length() > 200) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        if (user.getRole() == com.semojum.backend.domain.auth.enums.Role.ROLE_ORG_ADMIN) {
+            log.warn("기관 관리자 계정의 새 문서 생성 시도 거부: user={}", user.getLoginId());
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        String jobId = "job_" + timestamp + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+
+        String name = resolveNewDocumentName(request);
+
+        log.info("새 문서 생성 시작: {}자, user={}", request.text().length(), user.getLoginId());
+
+        return createFromText(user, jobId, request.text(),
+                resolveFileName(user.getId(), name),
+                insertPageNumber, footerText, layoutOptions, clientInfo);
+    }
+
+    /** TXT 업로드와 「새 문서」가 공유하는 경로 — 둘 다 결과물이 본문 텍스트 하나다 */
+    static final String MODE_TEXT = "b";
+
+    /**
+     * 본문 텍스트로 작업을 만든다.
+     *
+     * <p>TXT 업로드(파일에서 읽은 텍스트)와 「새 문서」(사용자가 직접 친 텍스트)가 같이 쓴다.
+     * 쪽 분리는 <b>구분선 우선, 없으면 30줄 청크</b>로 동일하다.
+     */
+    private JobResponseDto.Create createFromText(
+            com.semojum.backend.domain.auth.entity.User user, String jobId, String fullText,
+            String fileName, boolean insertPageNumber, String footerText,
+            LayoutOptions layoutOptions,
+            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
+
+        List<Page> pages = new ArrayList<>();
+        List<String> tasks = new ArrayList<>();
+    List<String> chunks = splitIntoPages(fullText);
+
+        int totalPages = chunks.size();
+
+        // 6-b. Job 엔티티 생성 및 저장
+        Job job = Job.builder()
+                .id(jobId)
+                .user(user)
+                .mode(MODE_TEXT)
+                .totalPages(totalPages)
+                .originalFileName(fileName)
+                .insertPageNumber(insertPageNumber)
+                .footerText(footerText)
+                .layoutOptions(layoutOptions)
+                .build();
+        // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
+        // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
+        job.updateFooterBraille(
+                footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
+        if (clientInfo != null) {
+            job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
+        }
+        jobRepository.saveAndFlush(job);
+
+        try {
+            byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
+            String thumbnailKey = jobId + "/thumbnail.png";
+            String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
+            job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
+            jobRepository.save(job);
+        } catch (Exception e) {
+            log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+        }
+
+        // total_pages Redis에 저장
+        redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+
+        // 7-b. 청크별 처리
+        for (int i = 0; i < totalPages; i++) {
+            int pageNo = i + 1;
+
+            // S3 업로드 (txt로 통일)
+            String pageKey = jobId + "/pages/page-" + pageNo + ".txt";
+            byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
+            String fullPath = s3Service.uploadFile(pageKey, chunkBytes, "text/plain");
+
+            // Page 엔티티 생성
+            Page page = Page.builder()
+                    .job(job)
+                    .pageNo(pageNo)
+                    .pdfPath(fullPath)
+                    .build();
+            pages.add(page);
+
+            // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
+            String task = String.format(
+                    "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"MODE_TEXT\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                    jobId, pageNo, fullPath, MODE_TEXT, totalPages, user.getId(), layoutOptions.advancedAi()
+            );
+            tasks.add(task);
+
+            // Redis 상태 초기화
+            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+        }
+
+        // 8-b. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
+        pageRepository.saveAll(pages);
+        jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
+
+        log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
+        return new JobResponseDto.Create(jobId, MODE_TEXT, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
+
     }
 
     /**
