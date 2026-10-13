@@ -87,6 +87,23 @@ public class PageWorker {
         return path != null ? path : (String) taskMap.get("gcsPath");
     }
 
+    /**
+     * 이 쪽의 원본이 이미지인지 — 경로 확장자로 가른다 (V3.1 이미지 업로드).
+     *
+     * <p>태스크에 따로 표시를 넣지 않은 이유: 큐는 Redis라 배포로 비워지지 않아서 필드를 늘리면
+     * 그 순간 큐에 남아 있던 구 형식 태스크에는 그 값이 없다. 경로는 어느 형식에나 이미 있다.
+     */
+    static boolean isImageSource(String sourcePath) {
+        if (sourcePath == null) return false;
+        String lower = sourcePath.toLowerCase();
+        return lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png");
+    }
+
+    /** AI에 알려줄 이미지 형식. 확장자로만 정한다 — 업로드 때 확장자로 검증했다 */
+    static String imageMimeOf(String sourcePath) {
+        return sourcePath != null && sourcePath.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+    }
+
     private void runWorker(int workerId) {
         log.info("Worker-{} 시작", workerId);
         while (running) {
@@ -130,7 +147,8 @@ public class PageWorker {
                 // 원본 미리보기 이미지 렌더 (a·c만 — b는 원본이 텍스트).
                 // AI 요청 '전'에 만들어 둔다: 결과가 나오는 순간(page_done) 사용자가 그 쪽을 열어도
                 // 이미지가 이미 준비돼 있어 PDF 폴백으로 떨어지지 않는다. 실패는 서비스가 삼킨다.
-                if (!mode.equals("b")) {
+                // 이미지 업로드는 원본이 이미 미리보기다 — 생성 시점에 imagePath를 채워 뒀다
+                if (!mode.equals("b") && !isImageSource(sourcePath)) {
                     pageImageService.generateAndStore(jobId, pageNo, fileData);
                 }
 
@@ -149,6 +167,10 @@ public class PageWorker {
                     // mode b: 텍스트로 전송
                     String sourceText = new String(fileData);
                     requestBuilder.setSourceText(sourceText);
+                } else if (isImageSource(sourcePath)) {
+                    // 이미지 업로드(V3.1): PDF로 바꾸지 않고 원본 바이트를 그대로 보낸다
+                    requestBuilder.setImageData(com.google.protobuf.ByteString.copyFrom(fileData));
+                    requestBuilder.setImageMime(imageMimeOf(sourcePath));
                 } else {
                     // mode a, c: PDF 바이너리로 전송
                     requestBuilder.setPdfData(com.google.protobuf.ByteString.copyFrom(fileData));
