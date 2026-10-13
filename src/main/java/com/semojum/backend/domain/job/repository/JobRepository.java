@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface JobRepository extends JpaRepository<Job, String>, JobQueryRepository {
+public interface JobRepository extends JpaRepository<Job, String> {
     Optional<Job> findByIdAndUserId(String id, UUID userId);
     List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
 
