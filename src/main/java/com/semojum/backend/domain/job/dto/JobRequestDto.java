@@ -91,4 +91,19 @@ public class JobRequestDto {
             @NotNull String body,
             java.time.LocalDateTime createdAt
     ) {}
+
+    /**
+     * 새 문서 — 파일 없이 본문 텍스트로 작업을 만든다(파일 › 새 문서, Ctrl+N).
+     *
+     * <p>쪽 분리는 TXT 업로드와 같다 — 구분선(하이픈 정확히 40개 줄) 우선, 없으면 30줄 청크.
+     * 결과는 텍스트 · 점자 2패널이고 원본 패널이 없다.
+     */
+    public record NewDocument(
+            @NotBlank String text,
+            String fileName,
+            Boolean insertPageNumber,
+            String footerText,
+            LayoutOptions layoutOptions,
+            java.util.Map<String, Object> brailleOptions
+    ) {}
 }

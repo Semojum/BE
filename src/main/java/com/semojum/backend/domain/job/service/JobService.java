@@ -210,6 +210,70 @@ public class JobService {
     }
 
 
+
+    /** 본문 텍스트 상한 — 업로드 파일과 같은 100MB(UTF-8 기준) */
+    private static final int NEW_DOCUMENT_MAX_BYTES = 100 * 1024 * 1024;
+
+
+    /** 본문 검증 — 빈 글은 400, 100MB 초과는 413(업로드 파일과 같은 상한) */
+    static void validateNewDocumentText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        if (text.getBytes(StandardCharsets.UTF_8).length > NEW_DOCUMENT_MAX_BYTES) {
+            throw new CustomException(ErrorCode.JOB_FILE_TOO_LARGE);
+        }
+    }
+
+    /** 이름을 안 주면 「무제」 — 같은 이름이 있으면 resolveFileName이 (2), (3)을 붙인다 */
+    static String resolveNewDocumentName(JobRequestDto.NewDocument request) {
+        return request.fileName() == null || request.fileName().isBlank()
+                ? "무제" : request.fileName().trim();
+    }
+
+    /**
+     * 새 문서 — 파일 없이 본문 텍스트로 작업을 만든다.
+     *
+     * <p>앞단 검증은 파일 업로드와 같다(조판 옵션 · 꼬리말 200자 · 기관 관리자 차단).
+     * 다른 점은 확장자로 모드를 정하지 않는다는 것뿐이다 — 언제나 텍스트 경로다.
+     */
+    public JobResponseDto.Create createNewDocument(
+            String userId, JobRequestDto.NewDocument request,
+            com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
+
+        validateNewDocumentText(request.text());
+
+        boolean insertPageNumber = Boolean.TRUE.equals(request.insertPageNumber());
+        LayoutOptions layoutOptions = validateLayoutOptions(
+                request.layoutOptions() == null
+                        ? LayoutOptions.legacy(insertPageNumber)
+                        : request.layoutOptions().withDefaults());
+
+        String footerText = request.footerText() == null || request.footerText().isBlank()
+                ? null : request.footerText().trim();
+        if (footerText != null && footerText.length() > 200) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        if (user.getRole() == com.semojum.backend.domain.auth.enums.Role.ROLE_ORG_ADMIN) {
+            log.warn("기관 관리자 계정의 새 문서 생성 시도 거부: user={}", user.getLoginId());
+            throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+        }
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
+        String jobId = "job_" + timestamp + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+
+        String name = resolveNewDocumentName(request);
+
+        log.info("새 문서 생성 시작: {}자, user={}", request.text().length(), user.getLoginId());
+
+        return createFromText(user, jobId, request.text(),
+                resolveFileName(user.getId(), name),
+                insertPageNumber, footerText, layoutOptions, clientInfo);
+    }
+
     /** TXT 업로드와 「새 문서」가 공유하는 경로 — 둘 다 결과물이 본문 텍스트 하나다 */
     static final String MODE_TEXT = "b";
 
