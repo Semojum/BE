@@ -189,11 +189,8 @@ public class JobService {
                     pages.add(page);
 
                     // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
-                    String task = String.format(
-                            "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
-                            jobId, i, fullPath, mode, totalPages, user.getId(), layoutOptions.advancedAi()
-                    );
-                    tasks.add(task);
+                    tasks.add(taskJson(jobId, i, fullPath, mode, totalPages,
+                            user.getId(), layoutOptions.advancedAi()));
 
                     // Redis 상태 초기화
                     redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
@@ -278,6 +275,20 @@ public class JobService {
     static final String MODE_TEXT = "b";
 
     /**
+     * 공정 스케줄러 태스크 JSON — 워커가 읽는 키 이름이 여기 한 곳에만 있다.
+     *
+     * <p>PageWorker는 {@code mode}·{@code sourcePath}로 값을 꺼낸다. 키 이름이 틀리면 null이 되고
+     * 그 쪽은 전부 BLOCKED로 떨어지는데 컴파일로는 안 잡힌다 — 파일 경로와 텍스트 경로가 같은
+     * 포맷 문자열을 따로 들고 있다가 한쪽만 틀린 적이 있어(9d20f81) 한 곳으로 모았다.
+     */
+    static String taskJson(String jobId, int pageNo, String sourcePath, String mode,
+                           int totalPages, UUID userId, boolean advancedAi) {
+        return String.format(
+                "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
+                jobId, pageNo, sourcePath, mode, totalPages, userId, advancedAi);
+    }
+
+    /**
      * 본문 텍스트로 작업을 만든다.
      *
      * <p>TXT 업로드(파일에서 읽은 텍스트)와 「새 문서」(사용자가 직접 친 텍스트)가 같이 쓴다.
@@ -346,11 +357,8 @@ public class JobService {
             pages.add(page);
 
             // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
-            String task = String.format(
-                    "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"MODE_TEXT\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
-                    jobId, pageNo, fullPath, MODE_TEXT, totalPages, user.getId(), layoutOptions.advancedAi()
-            );
-            tasks.add(task);
+            tasks.add(taskJson(jobId, pageNo, fullPath, MODE_TEXT, totalPages,
+                    user.getId(), layoutOptions.advancedAi()));
 
             // Redis 상태 초기화
             redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
