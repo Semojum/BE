@@ -6,7 +6,6 @@ import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.service.JobService;
 import com.semojum.backend.domain.job.service.SseService;
-import com.semojum.backend.domain.result.service.PageSaveService;
 import com.semojum.backend.global.exception.ApiResponse;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
@@ -33,9 +32,8 @@ public class JobController {
     private final com.semojum.backend.global.util.ClientInfoResolver clientInfoResolver;
     private final SseService sseService;
     private final JobRepository jobRepository;
-    private final PageSaveService pageSaveService;
-    private final com.semojum.backend.domain.result.service.PageSaveFacade pageSaveFacade;
     private final com.semojum.backend.domain.job.service.JobCancelService jobCancelService;
+    private final com.semojum.backend.domain.job.service.JobSaveService jobSaveService;
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<JobResponseDto.Create> createJob(
@@ -79,18 +77,25 @@ public class JobController {
         return ApiResponse.success(jobService.getJobOptions(userDetails.getUsername(), jobId));
     }
 
-    // 업로드 후 조판 설정 변경 (V32) — 에디터 "이 파일의 조판 설정" 모달.
-    // 보낸 항목만 바뀐다. 응답은 GET과 같은 모양이라 FE가 그대로 갈아끼우면 된다
-    @PatchMapping("/{jobId}/options")
-    public ApiResponse<JobResponseDto.Options> updateJobOptions(
+    // job 상태 확인 API
+    /**
+     * 작업 저장 — V3.1의 유일한 저장 경로.
+     *
+     * <p>FE가 「저장」을 누를 때 한 번만 부른다(자동 저장 없음). 본문은 작업 최종 상태 전체 —
+     * 조판 설정 · 점역 옵션 · 세 패널 · 줄 메모가 함께 들어온다.
+     *
+     * <p>쪽 단위 트랜잭션이라 일부만 실패할 수 있다. {@code failedPages}가 비어 있으면 전부 성공이다.
+     * 한글 JSON은 7~8배 압축되므로 {@code Content-Encoding: gzip}을 권한다.
+     */
+    @PostMapping("/{jobId}/save")
+    public ApiResponse<JobResponseDto.SaveResult> saveJob(
             @PathVariable String jobId,
-            @AuthenticationPrincipal UserDetails userDetails,
-            @RequestBody JobRequestDto.UpdateOptions request
+            @Valid @RequestBody JobRequestDto.SaveJob request,
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ApiResponse.success(jobService.updateJobOptions(userDetails.getUsername(), jobId, request));
+        return ApiResponse.success(jobSaveService.save(userDetails.getUsername(), jobId, request));
     }
 
-    // job 상태 확인 API
     @GetMapping("/{jobId}/status")
     public ApiResponse<JobResponseDto.Status> getJobStatus(
             @PathVariable String jobId
@@ -119,29 +124,4 @@ public class JobController {
         return sseService.connect(jobId);
     }
 
-    // 페이지 일괄 저장 — FE가 페이지 최종 상태 전체를 보내면 서버가 diff(수정/추가/삭제/순서)를 판정해 적용.
-    // 응답은 최종 배열(요청과 같은 순서) — 새 블록엔 서버 발급 id가 채워진다.
-    @PutMapping("/{jobId}/pages/{pageNo}/elements")
-    public ApiResponse<List<Map<String, Object>>> savePage(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @RequestBody @Valid JobRequestDto.SavePage request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        return ApiResponse.success(pageSaveFacade.save(
-                userDetails.getUsername(), jobId, pageNo, request.target(), request.elements()));
-    }
-
-    // 대체 초안 선택 — selected_idx 갱신 + 본문을 해당 초안으로 교체 (-1이면 AI 원본 복귀)
-    @PatchMapping("/{jobId}/pages/{pageNo}/elements/{elementId}/draft")
-    public ApiResponse<Map<String, Object>> selectDraft(
-            @PathVariable String jobId,
-            @PathVariable int pageNo,
-            @PathVariable String elementId,
-            @RequestBody @Valid JobRequestDto.SelectDraft request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        return ApiResponse.success(pageSaveService.selectDraft(
-                userDetails.getUsername(), jobId, pageNo, elementId, request.selectedIdx()));
-    }
 }

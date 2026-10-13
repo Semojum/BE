@@ -21,10 +21,17 @@ public class JobRequestDto {
             String target
     ) {}
 
-    // id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐)
+    /**
+     * id=null이면 사용자 작성 새 블록(서버가 id 발급, type은 항상 "text" — 사용자가 만들 수 있는 블록은 텍스트뿐).
+     *
+     * <p>{@code selectedIdx}는 대체 초안 중 어느 것을 골랐는지다 — null이면 그대로 두고,
+     * -1은 AI 원본 복귀, 0 이상은 그 초안. 본문({@code contents})은 FE가 이미 그 초안으로 채워 보내므로
+     * 서버는 <b>어느 것을 골랐는지만 기록</b>한다. 조회 응답의 {@code selected_idx}가 이 값이다.
+     */
     public record SaveElement(
             String id,
-            @NotNull List<String> contents
+            @NotNull List<String> contents,
+            Integer selectedIdx
     ) {}
 
     // 대체 초안 선택: 0-based 초안 번호. -1 = 선택 해제(AI 원본 복귀)
@@ -46,5 +53,42 @@ public class JobRequestDto {
             Boolean insertPageNumber,
             String footerText,
             LayoutOptions layoutOptions
+    ) {}
+
+    /**
+     * 작업 저장 — V3.1의 유일한 저장 경로. 본문은 <b>작업 최종 상태 전체</b>다.
+     *
+     * <p>FE 점역 엔진이 텍스트·점자를 모두 만들어 보내므로 저장 경로에서 AI를 부르지 않는다.
+     * 블록 추가·삭제·순서는 서버가 판정한다 — 배열 순서가 곧 읽기 순서고, 배열에서 빠진
+     * 기존 블록은 삭제, id가 null인 항목은 새 블록이다.
+     */
+    public record SaveJob(
+            Boolean insertPageNumber,
+            String footerText,
+            LayoutOptions layoutOptions,
+            java.util.Map<String, Object> brailleOptions,
+            @NotNull List<SaveJobPage> pages
+    ) {}
+
+    /** 한 쪽의 최종 상태. 그 모드에 없는 패널은 null(TXT·새 문서엔 텍스트만) */
+    public record SaveJobPage(
+            int pageNo,
+            List<SaveElement> text,
+            List<SaveElement> braille,
+            List<SaveMemo> memos
+    ) {}
+
+    /**
+     * 줄 메모. {@code lineText}는 <b>그 줄의 원문</b>이지 메모 내용이 아니다 —
+     * 줄이 밀렸을 때 다시 찾기 위한 단서다. {@code memoId}를 보내면 작성 시각이 보존된다.
+     */
+    public record SaveMemo(
+            Long memoId,
+            String panel,
+            String elementId,
+            int lineIndex,
+            String lineText,
+            @NotNull String body,
+            java.time.LocalDateTime createdAt
     ) {}
 }
