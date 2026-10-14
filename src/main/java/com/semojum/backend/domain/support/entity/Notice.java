@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * 공지 — 운영자(T1-10)가 작성, 기관 관리자 화면(T2)에 노출.
+ * 공지 — 운영자(T1-10)가 작성, 기관 관리자 화면(T2)과 게시판 맨 위(V3.1 — 모든 계정)에 노출.
  * targetOrganizationId null = 전체 공지. 노출 기간이 지나면 자동 종료(조회 시 기간 필터).
  */
 @Entity
@@ -43,6 +43,10 @@ public class Notice {
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
+    // 게시판 목록의 조회수 (V39) — 게시판에서 공지를 열 때마다 +1
+    @Column(name = "view_count", nullable = false, insertable = false)
+    private int viewCount;
+
     @Builder
     public Notice(UUID targetOrganizationId, String title, String body,
                   LocalDate startsOn, LocalDate endsOn) {
@@ -51,5 +55,18 @@ public class Notice {
         this.body = body;
         this.startsOn = startsOn;
         this.endsOn = endsOn;
+    }
+
+    /** 운영자 공지 수정 (V3.1) — 등록 창과 같은 항목을 통째로 덮어쓴다 */
+    public void update(UUID targetOrganizationId, String title, String body, LocalDate startsOn, LocalDate endsOn) {
+        this.targetOrganizationId = targetOrganizationId;
+        this.title = title;
+        this.body = body;
+        this.startsOn = startsOn;
+        this.endsOn = endsOn;
+    }
+
+    public void increaseViewCount() {
+        this.viewCount++;
     }
 }

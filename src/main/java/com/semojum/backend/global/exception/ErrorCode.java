@@ -49,7 +49,14 @@ public enum ErrorCode {
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER4001", "존재하지 않는 폴더입니다."),
     FOLDER_NAME_DUPLICATE(HttpStatus.CONFLICT, "FOLDER4002", "같은 위치에 같은 이름의 폴더가 이미 있습니다."),
     FOLDER_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "FOLDER4003", "폴더는 5단계까지만 만들 수 있으며, 자기 자신의 하위로 이동할 수 없습니다."),
-    FOLDER_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "FOLDER4004", "폴더는 계정당 최대 200개까지 만들 수 있습니다.");
+    FOLDER_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "FOLDER4004", "폴더는 계정당 최대 200개까지 만들 수 있습니다."),
+
+    // ========== 게시판 (BOARD, V3.1) ==========
+    BOARD_POST_NOT_FOUND(HttpStatus.NOT_FOUND, "BOARD4001", "존재하지 않는 글입니다."),
+    BOARD_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND, "BOARD4002", "존재하지 않는 공지입니다."),
+    BOARD_ANSWER_NOT_FOUND(HttpStatus.NOT_FOUND, "BOARD4003", "존재하지 않는 답변입니다."),
+    BOARD_ATTACHMENT_INVALID(HttpStatus.BAD_REQUEST, "BOARD4004", "첨부할 수 없는 파일입니다. 최대 5개, 이미지·문서·zip만 올릴 수 있습니다."),
+    BOARD_ATTACHMENT_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "BOARD4130", "첨부 파일은 한 개에 10MB까지 올릴 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

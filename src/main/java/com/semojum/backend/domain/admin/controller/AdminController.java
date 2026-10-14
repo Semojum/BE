@@ -38,6 +38,7 @@ public class AdminController {
     private final com.semojum.backend.domain.app.service.AppVersionService appVersionService;
     private final com.semojum.backend.domain.user.service.UserService userService;
     private final com.semojum.backend.domain.auth.repository.UserRepository userRepository;
+    private final com.semojum.backend.domain.board.service.BoardService boardService;
 
     // ── 기관·계정 통합 표 (T1-6) — 기관별 계정 + 소계(월 사용량·관리자 마지막 로그인) ──
     @GetMapping("/orgs")
@@ -196,6 +197,79 @@ public class AdminController {
         return ApiResponse.success(adminSupportService.listNotices());
     }
 
+    /** 공지 수정 (V3.1) — 등록과 같은 항목을 통째로 */
+    @PatchMapping("/notices/{noticeId}")
+    public ApiResponse<SupportDto.NoticeItem> updateNotice(
+            @PathVariable java.util.UUID noticeId,
+            @RequestBody @Valid SupportDto.CreateNotice request
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.updateNotice(noticeId, request));
+    }
+
+    @DeleteMapping("/notices/{noticeId}")
+    public ApiResponse<Void> deleteNotice(@PathVariable java.util.UUID noticeId) {
+        validateAdminRole();
+        adminSupportService.deleteNotice(noticeId);
+        return ApiResponse.success(null);
+    }
+
+    // ── QnA 게시판 (V3.1, 피그마 D8-2 운영자 콘솔) ──
+    /** 글 목록 — 숨긴 글까지. waitingOnly = 「대기만 보기」(답변 없는 글) */
+    @GetMapping("/board/posts")
+    public ApiResponse<com.semojum.backend.domain.board.dto.BoardDto.PostList> listBoardPosts(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) String field,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false, defaultValue = "false") boolean waitingOnly
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(boardService.listForAdmin(currentUserId(), page, field, keyword, waitingOnly));
+    }
+
+    @PostMapping("/board/posts/{postId}/answers")
+    public ApiResponse<com.semojum.backend.domain.board.dto.BoardDto.Answer> createBoardAnswer(
+            @PathVariable Long postId,
+            @RequestBody com.semojum.backend.domain.board.dto.BoardDto.CreateAnswer request
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(boardService.createAnswer(currentUserId(), postId, request));
+    }
+
+    /** 답변 수정 — 그 답변을 쓴 운영자만 */
+    @PatchMapping("/board/answers/{answerId}")
+    public ApiResponse<com.semojum.backend.domain.board.dto.BoardDto.Answer> updateBoardAnswer(
+            @PathVariable Long answerId,
+            @RequestBody com.semojum.backend.domain.board.dto.BoardDto.UpdateAnswer request
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(boardService.updateAnswer(currentUserId(), answerId, request));
+    }
+
+    @DeleteMapping("/board/answers/{answerId}")
+    public ApiResponse<Void> deleteBoardAnswer(@PathVariable Long answerId) {
+        validateAdminRole();
+        boardService.deleteAnswer(currentUserId(), answerId);
+        return ApiResponse.success(null);
+    }
+
+    @PatchMapping("/board/posts/{postId}/hidden")
+    public ApiResponse<Void> updateBoardPostHidden(
+            @PathVariable Long postId,
+            @RequestBody com.semojum.backend.domain.board.dto.BoardDto.UpdateHidden request
+    ) {
+        validateAdminRole();
+        boardService.updateHidden(postId, request);
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/board/posts/{postId}")
+    public ApiResponse<Void> deleteBoardPost(@PathVariable Long postId) {
+        validateAdminRole();
+        boardService.deleteByAdmin(postId);
+        return ApiResponse.success(null);
+    }
+
     // ── 문의 (T1-9) ──
     @GetMapping("/inquiries")
     public ApiResponse<SupportDto.InquiryPage> listInquiries(
@@ -347,6 +421,10 @@ public class AdminController {
 
     // 운영자 검증 — JWT(ROLE_ADMIN) 전용 (X-Admin-Key는 2026-08-19 폐기, 감사는 액세스 로그의 user= 필드가 담당).
     // SecurityConfig의 hasRole과 이중 방어. 앱 관리자(admin_scope=APP)는 에디터 전용이라 운영자 API도 차단 (2026-08-21)
+    private String currentUserId() {
+        return org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
+    }
+
     private void validateAdminRole() {
         var auth = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();

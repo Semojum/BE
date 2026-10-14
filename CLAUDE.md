@@ -200,6 +200,17 @@ com.semojum.backend
 - ⚠️ **기관 관리자는 에디터 사용 불가** — ROLE_ORG_ADMIN의 Job 생성은 COMMON4003(`JobService.createJob` 가드)
 - 문의는 메일함 IMAP **읽기 전용** 폴링(5분)으로도 들어온다. 자격증명 미설정이면 폴러 비활성(fail-safe)
 
+## QnA 게시판 (`/api/board`, V39)
+
+- 기획 6-2 · 피그마 게시판 화면. 로그인한 모든 계정(기관 관리자 포함). 운영자 기능(답변 · 숨김 · 삭제)은 `/api/admin/board/**`
+- **글과 답변은 쓴 사람 본인만 고치고 지운다** — 운영자도 남의 글 본문은 못 고친다(숨김 · 삭제만). 다른 운영자의 답변도 못 고친다
+- 비밀글: 목록엔 제목이 보이고 열람은 작성자 · 운영자만. **비밀글 본문은 남의 내용 검색에 안 걸린다**(걸리면 목록만 보고 본문 낱말을 알 수 있다)
+- ⚠️ **아이디는 서버가 가린다**(앞 절반 + `***`). 원래 아이디를 응답에 싣지 않는다 — 운영자 콘솔 목록만 예외
+- **공지는 따로 없다 — 운영자 공지(`notices`)가 게시판 맨 위에 뜬다**(기간 안 · 전체 또는 내 기관). 검색 · 「내 글 보기」에는 안 붙는다. 「고정 해제」는 UI가 없어 보류
+- 글 번호 = `board_posts.id`. 삭제는 `deleted_at` 표시만(번호 안 당김). 숨긴 글은 운영자에게만 보인다
+- 조회수는 열 때마다 +1(본인 · 반복 포함, 기획 결정). 알림은 글 하나에 하나 — 「글쓴이에게 알림 보내기」 답변만 만들거나 다시 안 읽음으로 돌리고, 작성자가 글을 열면 읽음
+- 첨부: 5개 · 한 개 10MB · 이미지 · 문서 · zip만. 「현재 작업 정보」는 앱이 만든 파일을 일반 첨부로 받는다. S3 키에 원래 이름을 쓰지 않는다(`board/{postId}/{uuid}.{ext}`)
+
 ## 사용량·원가·크레딧
 
 - **AI는 측정값만 보낸다**(토큰·gpu_time·layout_type) — **금액·크레딧은 BE가 계산**한다
@@ -237,7 +248,7 @@ com.semojum.backend
 
 users / organizations / user_sessions / jobs / pages / page_results / text_elements /
 braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags /
-folders / page_edit_histories / page_edit_logs(V33부터 미사용) / pricing_configs / credit_transactions / coupons / notices /
+folders / board_posts / board_attachments / board_answers / board_notifications / page_edit_histories / page_edit_logs(V33부터 미사용) / pricing_configs / credit_transactions / coupons / notices /
 inquiries / inquiry_attachments / orders / app_versions
 
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)

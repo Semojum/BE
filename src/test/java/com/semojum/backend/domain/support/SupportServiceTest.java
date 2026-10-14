@@ -146,6 +146,34 @@ class SupportServiceTest {
         assertEquals(ErrorCode.ORG_NOT_FOUND, e.getErrorCode());
     }
 
+    /** 공지 수정 (V3.1) — 등록과 같은 항목을 통째로 덮어쓴다 */
+    @Test
+    void 공지_수정은_항목을_통째로_바꾼다() throws Exception {
+        Notice n = Notice.builder().title("옛 제목").body("옛 본문")
+                .startsOn(LocalDate.of(2026, 10, 1)).endsOn(LocalDate.of(2026, 10, 31)).build();
+        UUID id = UUID.randomUUID();
+        setId(n, id);
+        when(noticeRepository.findById(id)).thenReturn(Optional.of(n));
+
+        SupportDto.NoticeItem item = adminService.updateNotice(id, new SupportDto.CreateNotice(null, "10월 정기 점검 안내",
+                "새 본문", LocalDate.of(2026, 10, 2), LocalDate.of(2026, 10, 9)));
+
+        assertEquals("10월 정기 점검 안내", item.title());
+        assertEquals(LocalDate.of(2026, 10, 9), n.getEndsOn());
+    }
+
+    @Test
+    void 없는_공지는_고치거나_지울_수_없다() {
+        UUID ghost = UUID.randomUUID();
+        when(noticeRepository.findById(ghost)).thenReturn(Optional.empty());
+
+        CustomException e = assertThrows(CustomException.class, () -> adminService.updateNotice(ghost,
+                new SupportDto.CreateNotice(null, "제목", "본문", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 2))));
+        assertEquals(ErrorCode.BOARD_NOTICE_NOT_FOUND, e.getErrorCode());
+        e = assertThrows(CustomException.class, () -> adminService.deleteNotice(ghost));
+        assertEquals(ErrorCode.BOARD_NOTICE_NOT_FOUND, e.getErrorCode());
+    }
+
     @Test
     void 문의_상태값_검증() {
         CustomException e = assertThrows(CustomException.class,
