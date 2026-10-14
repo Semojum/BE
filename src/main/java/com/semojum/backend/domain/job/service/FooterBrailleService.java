@@ -2,24 +2,22 @@ package com.semojum.backend.domain.job.service;
 
 import com.semojum.backend.domain.job.dto.LayoutOptions;
 import com.semojum.backend.domain.job.entity.Job;
-import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
-import com.semojum.backend.global.grpc.BrailleGrpcClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 꼬리말 점역을 한 곳에서 맡는다 (FE 요청 S-4·S-9, 2026-09-03).
+ * 점역된 꼬리말({@code jobs.footer_braille})을 한 곳에서 다룬다.
  *
- * <p>종전엔 다운로드하는 순간에만 점역해서 ① 에디터 화면이 점역된 꼬리말을 볼 방법이 없었고
- * (페이지행의 꼬리말 자리가 늘 빈칸) ② 내려받을 때마다 AI를 다시 불렀다. 이제 업로드 때 한 번
- * 점역해 {@code jobs.footer_braille}에 담고, 화면·SSE·다운로드가 모두 그 값을 읽는다.
+ * <p><b>V3.1부터 서버는 꼬리말을 점역하지 않는다.</b> proto에서 TranslateText가 삭제됐다 —
+ * 점역은 앱이 엔진으로 직접 한다. 그래서 새 작업의 {@code footer_braille}은 늘 null이고,
+ * 이 클래스는 <b>예전에 점역해 둔 값을 돌려주는 일</b>만 남았다(V31~V3.0 작업).
  *
- * <p>{@code footer_text}는 업로드 후 수정 경로가 없어(2026-09-03 확인) 캐시 무효화를 걱정하지 않는다.
+ * <p>종전(2026-09-03, FE 요청 S-4·S-9)엔 업로드 때 한 번 점역해 담고 화면·SSE·다운로드가
+ * 그 값을 읽었다. 점역 결과가 판면에 안 들어가면 업로드에서 막았는데(S-9), 점역을 못 하니
+ * 새 작업에서는 그 검사도 할 수 없다 — 앱이 점역할 때 판단한다.
  */
 @Slf4j
 @Service
@@ -29,50 +27,15 @@ public class FooterBrailleService {
     /** 항목 사이 두 칸 이상 (지침 1장3-1) — 쪽 번호와 꼬리말 사이 간격 */
     private static final int GAP = 2;
 
-    private final BrailleGrpcClient grpcClient;
-    private final JobRepository jobRepository;
 
     /**
-     * 업로드 시점 점역. <b>AI 호출이 실패해도 예외를 던지지 않는다</b> — 썸네일과 같은 취급으로,
-     * 꼬리말 하나 때문에 업로드 전체가 실패하면 안 된다. 실패하면 null을 담고 조회 때 다시 시도한다.
+     * 화면·SSE가 쓸 점역 꼬리말 — 저장된 값을 그대로 준다. 없으면 null.
      *
-     * @throws CustomException 점역 결과가 판면에 들어갈 수 없을 만큼 길면 COMMON4000 (S-9)
+     * <p>종전엔 비어 있으면 이 자리에서 AI로 채웠지만, V3.1부터 서버가 점역하지 않으므로
+     * 새 작업은 늘 null이다. 앱이 꼬리말 묵자({@code footerText})로 직접 점역한다.
      */
-    public String translateForUpload(String footerText, LayoutOptions options, int totalPages) {
-        if (footerText == null || footerText.isBlank()) return null;
-
-        String braille;
-        try {
-            braille = grpcClient.translateText(footerText);
-        } catch (Exception e) {
-            log.warn("꼬리말 점역 실패(업로드는 계속): text={}, error={}", footerText, e.getMessage());
-            return null;
-        }
-        validateFits(braille, options, totalPages);
-        return braille;
-    }
-
-    /**
-     * 조회·조판이 쓸 점역 꼬리말. 이미 있으면 그대로, 없는데 꼬리말은 있으면(업로드 때 실패했거나
-     * V31 이전에 만든 작업) 이 자리에서 채운다. 여기서도 실패는 삼킨다 — 꼬리말 때문에 화면이나
-     * 다운로드가 죽으면 안 된다.
-     *
-     * <p>새 트랜잭션으로 저장한다 — 호출부가 읽기 전용 트랜잭션(페이지 조회)일 수 있다.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String resolve(Job job) {
-        if (job.getFooterBraille() != null) return job.getFooterBraille();
-        if (job.getFooterText() == null || job.getFooterText().isBlank()) return null;
-
-        try {
-            String braille = grpcClient.translateText(job.getFooterText());
-            jobRepository.findById(job.getId()).ifPresent(fresh -> fresh.updateFooterBraille(braille));
-            log.info("꼬리말 점역 보충: jobId={}", job.getId());
-            return braille;
-        } catch (Exception e) {
-            log.warn("꼬리말 점역 실패(계속): jobId={}, error={}", job.getId(), e.getMessage());
-            return null;
-        }
+        return job.getFooterBraille();
     }
 
     /**
@@ -85,8 +48,8 @@ public class FooterBrailleService {
      * <p>남는 자리는 면마다 조금씩 다르다(쪽 번호 자릿수·걸침 순번). 여기서는 <b>가장 빠듯한 경우</b>로
      * 잡는다 — 원본 쪽·점자 면 번호가 모두 이 문서에서 가장 긴 자릿수일 때.
      *
-     * <p>package-private인 이유: 조판 설정 변경({@code PATCH …/options}, V32)은 꼬리말을 그대로 둔 채
-     * <b>판면만 좁힐 수 있어</b>(32칸→20칸, 쪽 번호 켜기 등) 재점역 없이 이 검사만 다시 돌려야 한다.
+     * <p>V3.1에서 쓰는 곳은 하나다 — 예전에 점역해 둔 꼬리말이 있는 작업을 저장하면서 판면을
+     * 좁힐 때(32칸→20칸 등) 그 값이 여전히 들어가는지 다시 본다. 새 작업은 점역 값이 없어 건너뛴다.
      */
     void validateFits(String braille, LayoutOptions options, int totalPages) {
         LayoutOptions opts = options == null ? LayoutOptions.legacy(false) : options.withDefaults();

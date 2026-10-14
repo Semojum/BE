@@ -145,33 +145,12 @@ public class ResultService {
             }
         }
 
-        // BrailleElement 저장 (braille_text_list)
-        for (com.semojum.backend.grpc.TextElement protoBraille : response.getBrailleTextListList()) {
-            List<Map<String, Object>> draftsJson = serializeDrafts(protoBraille);
-            BrailleElement brailleElement = BrailleElement.builder()
-                    .pageResult(pageResult)
-                    .elementId(protoBraille.getId())
-                    .type(protoBraille.getType().isEmpty() ? "text" : protoBraille.getType())
-                    .readingOrder(protoBraille.getOrder() > 0 ? protoBraille.getOrder() : null)
-                    .headingLevel(protoBraille.getHeadingLevel() > 0 ? protoBraille.getHeadingLevel() : null)
-                    .ocrConfidence(protoBraille.getOcrConfidence() > 0 ? (double) protoBraille.getOcrConfidence() : null)
-                    .tnText(protoBraille.getTnText().isEmpty() ? null : protoBraille.getTnText())
-                    .latexString(protoBraille.getLatexString().isEmpty() ? null : protoBraille.getLatexString())
-                    .selectedIdx(protoBraille.getSelectedIdx())
-                    .renderMode(protoBraille.getRenderMode().isEmpty() ? null : protoBraille.getRenderMode())
-                    .visualSubtype(protoBraille.getVisualSubtype().isEmpty() ? null : protoBraille.getVisualSubtype())
-                    .subtypeConfidence(protoBraille.getSubtypeConfidence() > 0 ? (double) protoBraille.getSubtypeConfidence() : null)
-                    .content(new ArrayList<>(protoBraille.getContentsList()))
-                    .drafts(draftsJson)
-                    .isBlocked(protoBraille.getIsBlocked())
-                    .build();
-            brailleElementRepository.save(brailleElement);
-
-            // RuleTrail 저장
-            for (com.semojum.backend.grpc.RuleTrail protoRule : protoBraille.getRuleTrailList()) {
-                ruleTrailRepository.save(buildRuleTrail(protoRule, brailleElement.getId(), "BRAILLE"));
-            }
-        }
+        // 점자(braille_text_list)는 저장하지 않는다 — proto V3.1에서 삭제됐다(reserved 9).
+        // AI는 교열한 묵자만 돌려주고 점역은 앱이 엔진으로 직접 한다. 그래서 새 작업의
+        // braille_elements는 비어 있고 화면·SSE의 점자 배열도 빈 채로 나간다. 기존 작업의 점자는 그대로다.
+        //
+        // table_source · table_box_level(17·18)은 칼럼을 아직 만들지 않았다. 응답 전체를
+        // raw_response에 JSON으로 담고 있어 값은 버려지지 않는다 — 앱이 쓰겠다고 하면 그때 꺼낸다.
 
         // BoundingBox 저장 (mode a, c)
         for (com.semojum.backend.grpc.BoundingBox protoBbox : response.getBoundingBoxListList()) {
@@ -330,16 +309,18 @@ public class ResultService {
         if (value != null && !value.isEmpty()) map.put(key, value);
     }
 
-    // Drafts 변환 헬퍼: proto Draft(text/contents/label) → List<Map>.
+    // Drafts 변환 헬퍼: proto Draft(text/label/tn_text) → List<Map>.
     // jsonb 배열로 저장되고 조회 시 그대로 배열로 응답됨(문자열 이중 인코딩 방지).
+    // V3.1: 점자 contents(2)가 빠지고(reserved) 점역 태그가 든 묵자 tn_text(4)가 생겼다 —
+    // 앱이 그 묵자로 직접 점역한다. 예전 행의 contents는 그대로 남아 있다.
     private List<Map<String, Object>> serializeDrafts(com.semojum.backend.grpc.TextElement protoText) {
         if (protoText.getDraftsList().isEmpty()) return null;
         List<Map<String, Object>> drafts = new ArrayList<>();
         for (com.semojum.backend.grpc.Draft draft : protoText.getDraftsList()) {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("text", draft.getText());
-            map.put("contents", new ArrayList<>(draft.getContentsList()));
             map.put("label", draft.getLabel());
+            map.put("tn_text", draft.getTnText());
             drafts.add(map);
         }
         return drafts;

@@ -9,7 +9,8 @@
 | c | 이미지 → 텍스트 + 점자 (3패널) | PDF, HWP, HWPX, 이미지(JPG·JPEG·PNG) |
 
 - **모드는 사용자가 고르지 않는다(3패널 통합, 2026-09-30)** — 파일 종류가 정한다(`JobService.modeForExtension`). 구 클라이언트의 `mode`는 받기만 하고 무시(a를 보내도 c)
-- c는 원본 | 텍스트(`text_list`, a와 같은 전체 필드) | 점자(`braille_text_list`)를 한 번에 준다. AI는 원래 c에도 text_list를 줬고 DB에도 있었다 — 응답에서만 빼던 것
+- c는 원본 | 텍스트 | 점자 3패널이다. **proto V3.1(2026-10-14)부터 AI는 교열한 묵자(`text_list`)만 주고 점자를 안 준다**(`braille_text_list` reserved) — 점역은 앱이 엔진으로 한다. 새 작업의 `braille_elements`는 비어 있고, 기존 작업의 점자는 그대로다
+- ⚠️ **AI의 mode는 `a`(PDF·이미지) | `b`(글) 둘뿐이다.** BE는 c 작업을 **보낼 때만** `a`로 옮긴다(`PageWorker.aiModeOf`). DB의 `jobs.mode = 'c'`는 바꾸지 않는다 — 기존 작업 전부와 FE 분기가 흔들린다
 
 > **API 상세(요청·응답·에러)는 노션 `Development / Dev. DB / [V3] API 명세서`가 정본**이다.
 > 이 문서에는 코드만 봐서는 알 수 없는 것 — 설계 제약, 결정의 근거, 지뢰 — 만 적는다.
@@ -139,7 +140,7 @@ com.semojum.backend
 - **c는 body `format`으로 `.txt`/`.brf` 선택**(기본 `.brf`). a의 brf·b의 txt는 COMMON4000 — a엔 점자가 없고 b의 텍스트는 사용자가 올린 원문이다
 - ⚠️ **`com.semojum.brailleassist`는 원 레포(Semojum/braille-assist) 복사본 — 수정 금지.** 규칙 변경은 원 레포에서
 - ⚠️ **동기화할 때는 본체·테스트·벡터 3종을 함께** 갈아끼운다(`BrailleAssist.java` + `VectorsTest.java` + `vectors.json`). 본체만 바꾸면 `VectorsTest`가 깨진다. 단 `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지한다
-- **꼬리말은 업로드 때 한 번 점역**해 `jobs.footer_braille`에 담고 화면·SSE·다운로드가 같은 값을 쓴다. AI 실패는 삼키고(null이면 조회 시점에 채움), SSE는 저장된 값만 읽는다(**방출 경로에서 gRPC 금지**)
+- **꼬리말은 서버가 점역하지 않는다(proto V3.1, TranslateText 삭제)** — 새 작업의 `jobs.footer_braille`은 null이고 앱이 `footerText`로 점역한다. V3.0 이전 작업의 점역 값은 그대로 돌려준다. 판면 길이 검증(S-9)은 점역 값이 있는 예전 작업에서만 돈다. 저장 때 묵자가 바뀌면 예전 점자를 비운다(어긋난 꼬리말 방지)
 - ⚠️ **꼬리말 길이 검증** — 점역 결과가 페이지행에 안 들어가면 COMMON4000. 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문이다
 
 ## 원본 페이지 삭제 (`DELETE .../pages/{pageNo}` · 벌크 `?nos=5,6,7,8`)
@@ -220,6 +221,9 @@ com.semojum.backend
 - `grpc.ai.servers` = `host:port:슬롯수[,…]` — 증설·슬롯 조정은 환경변수 + 재시작으로 끝
 - deadline 400s (AI 하드 타임아웃 180s × 최악 케이스를 감쌈)
 - ⚠️ TLS `authority: semo-jum.com` — SAN에 IP가 없어도 이 설정으로 검증된다. **제거하면 연결이 깨진다**
+- **proto는 AI 팀이 정본이다** — 공유받은 파일을 그대로 넣는다(BE가 필드를 더하거나 고치지 않는다). V3.1(2026-10-14): RPC는 `ProcessPage` 하나뿐(TranslateText 삭제), 응답은 교열 묵자만
+- 점역 옵션은 요청 10·12번(`korean_grade`·`split_choices`)으로 간다 — 업로드 때 정해져 **태스크 JSON에 실린다**(`JobService.taskJson`). 구 태스크엔 칸이 없어 0·false = 서버 기본. `english_grade`(11)는 우리 점역 옵션에 항목이 없어 안 보낸다
+- ⚠️ `mode` 값 변경처럼 **양쪽이 동시에 맞아야 하는 변경**은 배포 순서가 곧 장애 여부다. AI가 먼저 바뀌면 운영 BE 요청이 전부 거절된다
 
 ## HWP 페이지 분리 (HwpPageExtractor — 프로덕션 미사용, 도구·이력으로 유지)
 

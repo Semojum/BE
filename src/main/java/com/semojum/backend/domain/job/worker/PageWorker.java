@@ -88,6 +88,23 @@ public class PageWorker {
     }
 
     /**
+     * 작업 mode → AI에 보낼 mode (proto V3.1: {@code "a"} PDF·이미지 | {@code "b"} 글).
+     *
+     * <p><b>DB의 {@code jobs.mode}는 바꾸지 않고 보낼 때만 옮긴다.</b> BE는 PDF·HWP·이미지 작업을
+     * {@code c}(원본 | 텍스트 | 점자 3패널)로 저장하는데, AI 쪽에서 {@code c}가 없어졌고 그 자리를
+     * {@code a}가 맡는다. DB를 바꾸면 기존 작업 전부와 FE의 모드 분기가 흔들린다.
+     * 구 {@code a} 작업(2026-09-30 이전)도 PDF 입력이라 그대로 {@code a}다.
+     */
+    static String aiModeOf(String jobMode) {
+        return "b".equals(jobMode) ? "b" : "a";
+    }
+
+    /** 태스크 JSON의 숫자 칸 — 없거나(구 태스크) 숫자가 아니면 0 */
+    static int intOf(Object value) {
+        return value instanceof Number n ? n.intValue() : 0;
+    }
+
+    /**
      * 이 쪽의 원본이 이미지인지 — 경로 확장자로 가른다 (V3.1 이미지 업로드).
      *
      * <p>태스크에 따로 표시를 넣지 않은 이유: 큐는 Redis라 배포로 비워지지 않아서 필드를 늘리면
@@ -160,26 +177,31 @@ public class PageWorker {
                 }
 
                 // gRPC 요청 빌드
-                // 고급 점역 여부는 업로드 옵션에서 정해져 태스크에 실려 온다 (구 태스크엔 없어 기본 false)
+                // 고급 교열 여부는 업로드 옵션에서 정해져 태스크에 실려 온다 (구 태스크엔 없어 기본 false)
                 boolean advancedAi = Boolean.TRUE.equals(taskMap.get("advancedAi"));
 
                 BrailleRequest.Builder requestBuilder = BrailleRequest.newBuilder()
                         .setJobId(jobId)
                         .setPageNo(pageNo)
                         .setTotalPages(totalPages)
-                        .setMode(mode)
-                        .setAdvancedAi(advancedAi);
+                        .setMode(aiModeOf(mode))
+                        .setAdvancedAi(advancedAi)
+                        // 점역 옵션(V3.1 proto 10·12) — 업로드 때 정해져 태스크에 실려 온다.
+                        // 구 태스크엔 없어 0·false = AI 서버 기본값(약자·짧은 선택지 합치기)
+                        .setKoreanGrade(intOf(taskMap.get("koreanGrade")))
+                        .setSplitChoices(Boolean.TRUE.equals(taskMap.get("splitChoices")));
+                // english_grade(11)는 보내지 않는다 — 우리 점역 옵션에 영어 급수 항목이 없어 0(서버 기본)
 
                 if (mode.equals("b")) {
-                    // mode b: 텍스트로 전송
+                    // mode b: 글 원문으로 전송 (V3.1 proto: source_text → text_data, 번호 같음)
                     String sourceText = new String(fileData);
-                    requestBuilder.setSourceText(sourceText);
+                    requestBuilder.setTextData(sourceText);
                 } else if (isImageSource(sourcePath)) {
                     // 이미지 업로드(V3.1): PDF로 바꾸지 않고 원본 바이트를 그대로 보낸다
                     requestBuilder.setImageData(com.google.protobuf.ByteString.copyFrom(fileData));
                     requestBuilder.setImageMimeType(imageMimeTypeOf(sourcePath));
                 } else {
-                    // mode a, c: PDF 바이너리로 전송
+                    // PDF 1쪽으로 전송 (작업 mode a·c — AI에는 둘 다 "a"로 간다)
                     requestBuilder.setPdfData(com.google.protobuf.ByteString.copyFrom(fileData));
                 }
 
