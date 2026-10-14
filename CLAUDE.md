@@ -12,7 +12,7 @@
 - c는 원본 | 텍스트 | 점자 3패널이다. **proto V3.1(2026-10-14)부터 AI는 교열한 묵자(`text_list`)만 주고 점자를 안 준다**(`braille_text_list` reserved) — 점역은 앱이 엔진으로 한다. 새 작업의 `braille_elements`는 비어 있고, 기존 작업의 점자는 그대로다
 - ⚠️ **AI의 mode는 `a`(PDF·이미지) | `b`(글) 둘뿐이다.** BE는 c 작업을 **보낼 때만** `a`로 옮긴다(`PageWorker.aiModeOf`). DB의 `jobs.mode = 'c'`는 바꾸지 않는다 — 기존 작업 전부와 FE 분기가 흔들린다
 
-> **API 상세(요청·응답·에러)는 노션 `Development / Dev. DB / [V3] API 명세서`가 정본**이다.
+> **API 상세(요청·응답·에러)는 노션 `Development / Dev. DB / [V3.1] API 명세서`가 정본**이다.
 > 이 문서에는 코드만 봐서는 알 수 없는 것 — 설계 제약, 결정의 근거, 지뢰 — 만 적는다.
 
 ## 기술 스택
@@ -56,13 +56,12 @@ com.semojum.backend
 │   ├── auth      로그인/로그아웃/refresh, User·UserSession
 │   ├── admin     운영자 API (ROLE_ADMIN 전용)
 │   ├── org       Organization (기관, 계약)
-│   ├── user      마이페이지 목록·페이지 조회
-│   ├── folder    폴더 CRUD·트리·contents (FolderTouch)
-│   ├── trash     휴지통 + TrashPurgeScheduler(04시)
+│   ├── user      계정 기본 점역 옵션 · 점역 양식 · 쪽 조회 · 사용량(T3)
 │   ├── job       Job 생성·설정·취소·SSE
 │   │   ├── scheduler   JobDispatcher(공정 큐), StaleJobScheduler
 │   │   └── worker      PageWorker
-│   ├── result    AI 결과 저장(ResultService), 페이지 일괄 저장
+│   ├── board     QnA 게시판
+│   ├── result    AI 결과 저장(ResultService), 쪽 내용 저장(PageContentSaver)
 │   └── rule      점자 규정 검색 (인메모리)
 ├── global        config · jwt · exception · grpc · s3 · hwp · thumbnail · logging
 └── grpc          proto 생성 클래스
@@ -76,7 +75,7 @@ com.semojum.backend
 
 에러 코드는 `global/exception/ErrorCode.java`가 정본이다. 자주 쓰는 것:
 `COMMON4000`(잘못된 요청) · `COMMON4003`(권한 없음 — 타인 Job 포함) · `AUTH4005`(로그인 채널 위반) ·
-`JOB4001`(없는 작업) · `JOB4010`(변환 중 조작 불가) · `JOB4013`(HWP→PDF 실패) · `JOB5030`(텍스트 저장의 재점역 실패)
+`JOB4001`(없는 작업) · `JOB4010`(변환 중 조작 불가) · `JOB4013`(HWP→PDF 실패)
 
 ---
 
@@ -98,7 +97,7 @@ com.semojum.backend
 ## Job 생성 (`POST /api/jobs`)
 
 - multipart. **조판 옵션 12개**(칸 수·줄 수·페이지행·꼬리말 정렬 등)를 함께 받아 **`jobs.layout_options`(jsonb) 한 칸**에 저장한다 — 기획 확정 전이라 컬럼을 쪼개지 않았다. 항목·기본값은 노션 명세 참조
-- **설정은 업로드 후에도 바꿀 수 있다** — `PATCH /api/jobs/{jobId}/options`(에디터 조판 설정 모달·원본 쪽번호 버튼). 부분 갱신이고, **변환 중이면 JOB4010**(`advancedAi`가 gRPC 요청에 실려서 — 중간에 바뀌면 쪽마다 다른 설정으로 처리된다). ⚠️ `last_modified_at`을 갱신하지 않는다(설정은 내용이 아니다)
+- **설정은 업로드 후에도 바꿀 수 있다** — 별도 API 없이 최종 저장(`POST /api/jobs/{jobId}/save`) 본문에 실려 온다(보낸 항목만 덮어쓰기). **변환 중이면 JOB4010**(`advancedAi`가 gRPC 요청에 실려서 — 중간에 바뀌면 쪽마다 다른 설정으로 처리된다). ⚠️ 설정만 바뀌면 `last_modified_at`을 갱신하지 않는다(설정은 내용이 아니다)
 - 페이지 분리: a/c는 PDF 쪽별 / **이미지는 분리 없음 — 한 장이 한 쪽, 쪽 번호는 받은 순서** / **b(텍스트)는 서버가 나누지 않는다**
 - **텍스트 작업(TXT · 새 문서)은 AI를 거치지 않는다(기획 확정 2026-10-14).** AI가 점자를 주지 않게 됐고 텍스트에서 해 줄 일이 없다 — 점역·쪽 나누기·조판은 앱이 원문으로 한다. 생성은 **작업 기록만** 남기고 즉시 COMPLETED(S3·큐·쪽 없음, 크레딧 0). 그래도 만드는 건 최종 저장이 jobId를 요구해서다
   - ⚠️ **쪽은 첫 저장이 앱이 보낸 쪽 번호대로 만든다**(`PageContentSaver.createTextPage`). 쪽 결과 상태는 **`SAVED`** — 운영 통계가 `COMPLETED`·`NEEDS_REVIEW`를 변환 쪽수로 세므로, AI가 돌지 않은 쪽이 섞이면 변환량·원가가 틀어진다. **새 집계 쿼리를 짤 때도 이 구분을 지킬 것**
@@ -146,45 +145,28 @@ com.semojum.backend
 - **꼬리말은 서버가 점역하지 않는다(proto V3.1, TranslateText 삭제)** — 새 작업의 `jobs.footer_braille`은 null이고 앱이 `footerText`로 점역한다. V3.0 이전 작업의 점역 값은 그대로 돌려준다. 꼬리말이 판면에 들어가는지 보는 길이 검증은 점역 값이 있는 예전 작업에서만 돈다. 저장 때 묵자가 바뀌면 예전 점자를 비운다(어긋난 꼬리말 방지)
 - ⚠️ **꼬리말 길이 검증** — 점역 결과가 페이지행에 안 들어가면 COMMON4000. 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문이다
 
-## 원본 페이지 삭제 (`DELETE .../pages/{pageNo}` · 벌크 `?nos=5,6,7,8`)
-
-- **영구 삭제 + 뒤 번호 자동 당김.** 휴지통을 안 거치고 되돌릴 수 없다
-- **크레딧 환불 없음**(이미 원가가 났고 장부는 일어난 일을 적는 곳) · **편집 이력 보존**(RLHF 자료)
-- ⚠️ 남기는 두 표는 **번호를 당기지 않는다** — 그때의 기록이라 사실이 달라진다. 삭제 뒤 page_no가 현재 쪽 번호와 어긋날 수 있다(의도)
-- ⚠️ **S3 키는 옮기지 않는다** — 경로가 DB 컬럼이라 읽는 쪽이 그 값을 쓴다. 옮기면 삭제 한 번에 남은 쪽 수만큼 복사+삭제가 난다(205쪽이면 400회)
-- ⚠️ **벌크는 큰 번호부터 지운다** — 단건을 반복 호출하면 지울 때마다 뒤 번호가 당겨져 두 번째부터 엉뚱한 쪽을 지운다. 하나라도 없는 쪽이 섞이면 아무것도 지우지 않는다
-
 ## 취소 (`POST /api/jobs/{jobId}/cancel`)
 
 즉시가 아닌 **수렴**: 플래그 → 큐 배수 → 인플라이트 마무리 → 확정. 완료 0건이면 전부 BLOCKED+FAILED. 이미 끝난 작업 취소는 멱등.
 
-## 마이페이지
+## 쪽 조회 (`GET /api/users/jobs/{jobId}/pages/{pageNo}`)
 
-- **탐색 vs 검색 분리**: 폴더 진입은 `/api/folders/{id}/contents`·`/api/folders/contents`(루트) / 전역·검색은 `/api/users/jobs` / 최신순 스트립은 `/api/users/jobs/recent`
-- 세 경로 모두 응답이 `{folders, files:{items, nextCursor, hasMore}}`로 같다. 커서 요청(2페이지~)에는 `folders` 빈 배열(FE 누적 중복 방지)
-- 검색은 현재 위치 **서브트리 전체**, 비검색은 한 층만
-- ⚠️ **`jobs.last_modified_at`(내용이 바뀐 시각)과 `updated_at`(변환 진행, StaleJobScheduler 전용)을 섞지 말 것.** 카드 날짜·정렬·커서 기준은 전자이고 페이지 편집에서만 갱신된다 — 이름변경·이동·복원·즐겨찾기는 갱신하지 않는다
-- ⚠️ `folders.last_modified_at`은 **직속 항목의 추가·삭제·이름변경만** 갱신(윈도우 탐색기 규칙). 상위 전파 없음. 갱신은 `FolderTouch`에 집약 — **폴더 안 항목을 바꾸는 코드를 추가하면 호출할 것**. V12 SQL 주석은 현재 동작과 다르다
-- ⚠️ JobCard의 `folderId`/`folderPath` **제거 금지** — 위치 표시와 "폴더로 이동"에 쓴다
+- V3.1 앱에는 작업 목록 · 폴더 · 휴지통이 없다(작업물은 로컬 `.smj`). 서버에 남은 조회는 쪽 하나와 재시작 복구용 진행 중 작업(`/api/users/jobs/active`)뿐이다
+- ⚠️ **`jobs.last_modified_at`(내용이 바뀐 시각)과 `updated_at`(변환 진행, StaleJobScheduler 전용)을 섞지 말 것.** 전자는 쪽 내용 저장에서만 갱신된다
+- `jobs.deleted_at`이 있는 작업은 V3.0 때 휴지통에 넣은 것 — 휴지통은 없앴지만 계속 지운 것으로 본다
 - **원본 미리보기는 서버가 미리 렌더한 JPEG**다(`PageWorker`가 AI 요청 직전에 생성). `original`은 `{type, url}` 하나로 통일 — `image`(정상) / `pdf`(렌더 실패 폴백) / `text`(b). **FE는 type으로 분기한다.** presigned URL은 15분이라 **장기 캐시 금지**
   - 근거(실측): pdf.js로 스캔본을 그리면 1,807~2,853ms(JPEG 2000은 브라우저 네이티브 디코더가 없다) vs `<img>` 6~9ms. 스위치 `page-image.enabled`
 
-## 편집
+## 저장 (`POST /api/jobs/{jobId}/save`)
 
-- **유일한 편집 경로는 `PUT /api/jobs/{jobId}/pages/{pageNo}/elements`** — body는 페이지 최종 상태 전체. diff(EDIT/ADD/삭제/reorder)는 서버가 판정한다
-- 편집 대상은 body `target`(`text`|`braille`) — 생략하면 mode 기본(a=text, b·c=braille). **c만 둘 다** 받는다. **`current`만 갱신, `original` 절대 보존**
-- **c의 텍스트 저장은 같은 id 점자를 끌고 간다** — 바뀐·새 텍스트는 AI `TranslateText`로 재점역(이전 점자의 앞뒤 여백을 입힘), 지운 텍스트는 짝 점자도 삭제, 순서도 따라간다. 점자 패널에서만 추가한 블록은 원래 앞 블록 뒤에 붙어 다닌다
-  - ⚠️ **재점역은 트랜잭션 밖**(`PageSaveFacade`) — AI 슬롯을 변환 워커와 같이 써서 수십 초 기다릴 수 있다. 커넥션을 쥔 채 기다리면 풀이 마른다. 슬롯 대기 20초 초과·AI 오류면 **JOB5030, 아무것도 저장 안 함**(텍스트만 저장돼 점자와 어긋나는 것을 막는다)
-  - ⚠️ TranslateText는 **200자 상한** — 줄 단위 + 띄어쓰기에서 끊고 점자 빈칸(⠀)으로 잇는다. 띄어쓰기 없는 200자 초과 덩어리만 강제로 자른다(빈칸 없이)
-  - ⚠️ **재점역은 줄 단위다**(운영 실측 2026-09-30). c의 텍스트에는 AI 조판 표식이 있고(`<!2칸>` 들여쓰기, 표 틀 `┌`·`└`, 표 열 간격 두 칸 공백), 점자 들여쓰기는 **일반 공백이 아니라 점자 빈칸 U+2800**이다. TranslateText는 표식을 버린다. 그래서 텍스트 줄 ↔ 점자 줄 1:1 대응을 이용해 **안 바뀐 줄은 AI 원래 점자를 재사용**하고, 바뀐 줄만 점역해 표식을 점자 빈칸으로 바꾼다. 표식 없는 줄은 이전 점자 같은 줄의 들여쓰기를 빌린다(표 행). 줄 수가 안 맞으면 대응을 믿지 않는다
-  - 점자 저장은 텍스트를 건드리지 않는다(점자만 손보는 경우)
-- 대체 초안 선택(`PATCH .../draft`)은 포인터+복사 — drafts·original 불변. `selectedIdx=-1`이면 원본 복귀. **c는 같은 id 텍스트도 그 초안의 `text`로 맞춘다**(응답 `textContents`)
-- **수정 이력 `page_edit_histories`(V33, 2026-10-08): 쪽당 1행** — 원본 쪽(PDF 경로·이미지 크기 / b는 `source_text`) · AI 초안(`ai_text`·`ai_braille`) · 이전 수정(`prev_*`) · 최근 수정(`latest_*`), 각 칸은 텍스트·점자 두 패널 스냅샷(블록마다 `ai_original`). 저장하면 최근 → 이전, 새 상태 → 최근. **첫 수정의 이전 = AI 초안**(기획 확정). RLHF 학습용이라 삭제하지 않는다
-  - ⚠️ **행 키는 `pages.id`, 쪽 번호가 아니다** — 원본 쪽 삭제가 뒤 번호를 당겨서 page_no로 찾으면 다른 쪽 행을 덮는다. FK도 없다(쪽을 지워도 이력은 남긴다)
-  - AI 초안은 행을 만들 때 `findAiDraft`(AI가 준 블록 전부 — 사용자가 지운 것 포함)의 AI 원본으로 고정한다. 현재 내용이 아니다 — V33 이전에 고친 쪽도 초안이 맞게 들어간다. 단 순서는 reading_order라 그 전에 블록 순서를 바꾼 쪽은 AI 원래 순서와 다를 수 있다
-  - 중간 수정은 남지 않는다(직전 · 최근 한 쌍만) — 기획 결정
-  - 그 모드에 없는 패널은 null(TXT 텍스트는 `source_text`, 구 mode a엔 점자 없음)
-- `page_edit_logs`(저장 1번 = 1행, V13·V32)는 **V33부터 쓰지 않는다.** 블루그린 공존·공유 RDS 때문에 테이블은 남겼다. 구 행 정리·테이블 삭제는 후속
+- **V3.1의 유일한 저장 경로.** 앱이 「저장」을 누를 때 한 번 — 자동 저장 없음. 본문은 작업 최종 상태 전체(설정 · 세 패널 · 줄 메모)이고 블록 추가 · 삭제 · 순서는 서버가 판정한다
+- **점역은 앱이 해서 보낸다** — 저장 경로에서 AI를 부르지 않는다. 텍스트 · 점자 패널을 각각 받고 `current`만 갱신, `original`은 보존
+- **쪽 단위 트랜잭션**(`JobSaveService` → `PageContentSaver`, `REQUIRES_NEW`) — 한 쪽이 실패해도 나머지는 저장하고 실패한 쪽 번호만 돌려준다. 둘을 나눈 건 같은 클래스 호출은 프록시를 안 타 트랜잭션이 안 걸려서다
+- 설정(조판 · 점역 옵션 · 꼬리말)은 보낸 항목만 덮어쓴다. 변환 중이면 저장 자체가 JOB4010
+- 대체 초안은 `selectedIdx`로 무엇을 골랐는지만 기록한다(본문은 앱이 이미 그 초안으로 채워 보낸다)
+- 줄 메모(`page_memos`, V34)는 쪽 단위 전체 교체
+- **수정 이력은 남기지 않는다**(2026-10-12 기획 결정) — 쓰던 `page_edit_histories` · `page_edit_logs`는 코드에서 지웠다(#181). 테이블 정리는 후속
+- 텍스트 작업(mode b)은 저장이 쪽을 만든다 — 「Job 생성」 참조
 
 ## 점자 규정 검색 (`GET /api/rules`)
 
@@ -236,7 +218,7 @@ com.semojum.backend
 - deadline 400s (AI 하드 타임아웃 180s × 최악 케이스를 감쌈)
 - ⚠️ TLS `authority: semo-jum.com` — SAN에 IP가 없어도 이 설정으로 검증된다. **제거하면 연결이 깨진다**
 - **proto는 AI 팀이 정본이다** — 공유받은 파일을 그대로 넣는다(BE가 필드를 더하거나 고치지 않는다). V3.1(2026-10-14): RPC는 `ProcessPage` 하나뿐(TranslateText 삭제), 응답은 교열 묵자만
-- 점역 옵션은 요청 10·12번(`korean_grade`·`split_choices`)으로 간다 — 업로드 때 정해져 **태스크 JSON에 실린다**(`JobService.taskJson`). 구 태스크엔 칸이 없어 0·false = 서버 기본. `english_grade`(11)는 우리 점역 옵션에 항목이 없어 안 보낸다
+- 점역 옵션은 요청 10·11·12번(`korean_grade`·`english_grade`·`split_choices`)으로 간다 — 업로드 때 정해져 **태스크 JSON에 실린다**(`JobService.taskJson`). 구 태스크엔 칸이 없어 0·false = 서버 기본
 - ⚠️ `mode` 값 변경처럼 **양쪽이 동시에 맞아야 하는 변경**은 배포 순서가 곧 장애 여부다. AI가 먼저 바뀌면 운영 BE 요청이 전부 거절된다
 
 ## HWP 페이지 분리 (HwpPageExtractor — 프로덕션 미사용, 도구·이력으로 유지)
@@ -250,8 +232,10 @@ com.semojum.backend
 
 users / organizations / user_sessions / jobs / pages / page_results / text_elements /
 braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags /
-folders / board_posts / board_attachments / board_answers / board_notifications / page_edit_histories / page_edit_logs(V33부터 미사용) / pricing_configs / credit_transactions / coupons / notices /
+board_posts / board_attachments / board_answers / board_notifications / page_memos / braille_forms / pricing_configs / credit_transactions / coupons / notices /
 inquiries / inquiry_attachments / orders / app_versions
+
+- 코드가 쓰지 않는 테이블(삭제 대기): `folders` · `page_edit_histories` · `page_edit_logs`. `jobs`의 `folder_id` · `is_favorite` 칼럼도 같다
 
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)
