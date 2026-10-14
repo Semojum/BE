@@ -13,8 +13,6 @@ import java.util.UUID;
 
 public interface JobRepository extends JpaRepository<Job, String> {
     Optional<Job> findByIdAndUserId(String id, UUID userId);
-    List<Job> findByUserIdOrderByStartedAtDesc(UUID userId);
-
     // T1-3 실시간 모니터링 — 전 기관 최근 작업 (user·organization 즉시 로딩으로 N+1 방지)
     // 상태 필터 유무로 쿼리를 나눈다 — ":param IS NULL OR" 패턴은 PG 파라미터 타입 추론이 깨질 수 있음
     @Query("SELECT j FROM Job j JOIN FETCH j.user u LEFT JOIN FETCH u.organization " +
@@ -43,33 +41,6 @@ public interface JobRepository extends JpaRepository<Job, String> {
             + " AND j.deletedAt IS NULL ORDER BY j.lastModifiedAt DESC, j.id DESC")
     List<Job> findActiveByUserIdAndStatusIn(@Param("userId") UUID userId,
                                             @Param("statuses") List<String> statuses);
-
-    // ===== V3 마이페이지 디렉토리 =====
-    // 벌크 이동·삭제 대상 조회 (활성만). 검증은 서비스에서 수행
-    @Query("SELECT j FROM Job j WHERE j.id IN :ids AND j.user.id = :userId AND j.deletedAt IS NULL")
-    List<Job> findActiveByIdsAndUserId(@Param("ids") List<String> ids, @Param("userId") UUID userId);
-
-    @Query("SELECT j FROM Job j WHERE j.id = :id AND j.user.id = :userId AND j.deletedAt IS NULL")
-    Optional<Job> findActiveByIdAndUserId(@Param("id") String id, @Param("userId") UUID userId);
-
-    // 폴더 안 활성 작업 (폴더 삭제 캐스케이드·목록용)
-    @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.folderId IN :folderIds AND j.deletedAt IS NULL")
-    List<Job> findActiveByUserIdAndFolderIds(@Param("userId") UUID userId, @Param("folderIds") List<UUID> folderIds);
-
-    // 휴지통 목록: 직접 삭제된 작업만 한 줄로 (폴더째 삭제된 작업은 폴더 행에 묶임 → 같은 deleted_at 배치로 판별)
-    @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NOT NULL ORDER BY j.deletedAt DESC")
-    List<Job> findTrashedByUserId(@Param("userId") UUID userId);
-
-    @Query("SELECT j FROM Job j WHERE j.id = :id AND j.user.id = :userId AND j.deletedAt IS NOT NULL")
-    Optional<Job> findTrashedByIdAndUserId(@Param("id") String id, @Param("userId") UUID userId);
-
-    // 폴더째 삭제/복원 시 같은 배치(deleted_at 동일)의 작업들
-    @Query("SELECT j FROM Job j WHERE j.user.id = :userId AND j.deletedAt = :deletedAt")
-    List<Job> findByUserIdAndDeletedAt(@Param("userId") UUID userId, @Param("deletedAt") java.time.LocalDateTime deletedAt);
-
-    // 30일 경과 완전 삭제 대상
-    @Query("SELECT j FROM Job j WHERE j.deletedAt IS NOT NULL AND j.deletedAt < :cutoff")
-    List<Job> findExpired(@Param("cutoff") java.time.LocalDateTime cutoff);
 
     // 파일 이름 중복 시 "(2)" 부여 판단용
     @Query("SELECT COUNT(j) > 0 FROM Job j WHERE j.user.id = :userId AND j.deletedAt IS NULL AND j.originalFileName = :fileName")

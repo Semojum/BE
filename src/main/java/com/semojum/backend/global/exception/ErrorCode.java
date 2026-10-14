@@ -44,8 +44,6 @@ public enum ErrorCode {
     JOB_IN_PROGRESS(HttpStatus.CONFLICT, "JOB4010", "변환 중인 작업은 이동·이름변경·삭제·다운로드할 수 없습니다."),
     JOB_BRAILLE_EXISTS(HttpStatus.CONFLICT, "JOB4011", "이미 연결된 점역 문서가 있습니다. 덮어쓰기 여부를 확인해 주세요."),
     JOB_HWP_CONVERT_FAILED(HttpStatus.BAD_REQUEST, "JOB4013", "HWP를 PDF로 변환하지 못했습니다. 파일을 확인해 주세요."),
-    // 텍스트 패널 저장 시 점자 재점역 실패(AI 혼잡·오류) — 아무것도 저장하지 않는다(텍스트·점자가 어긋나지 않게)
-    JOB_RETRANSLATE_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "JOB5030", "점자 변환 서버가 바빠 저장하지 못했습니다. 잠시 후 다시 저장해 주세요."),
 
     // ========== 폴더 (FOLDER) ==========
     FOLDER_NOT_FOUND(HttpStatus.NOT_FOUND, "FOLDER4001", "존재하지 않는 폴더입니다."),

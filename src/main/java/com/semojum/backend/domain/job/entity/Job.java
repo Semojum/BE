@@ -49,15 +49,9 @@ public class Job {
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
-    // ===== V3 마이페이지 디렉토리 =====
-    // 파일 이름은 originalFileName 하나만 사용한다 (팀 결정: 파일 하나 = 이름 하나).
-    // 카드 표시·이름 변경 모두 이 컬럼 대상이며, 업로드 시 중복이면 "(2)"가 자동 부여된다.
+    // 파일 이름은 originalFileName 하나만 사용한다 (팀 결정: 파일 하나 = 이름 하나). 업로드 시 중복이면 "(2)"가 붙는다.
 
-    // 소속 폴더. NULL = 루트(전체)
-    @Column(name = "folder_id")
-    private UUID folderId;
-
-    // 값이 있으면 휴지통 (30일 후 완전 삭제)
+    // 값이 있으면 V3.0 때 휴지통에 넣은 작업 — 휴지통은 V3.1에서 없앴지만(2026-10-13) 그 작업들은 지운 것으로 본다
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -118,10 +112,6 @@ public class Job {
     @Column(name = "client_user_agent", length = 300)
     private String clientUserAgent;
 
-    // 마이페이지 즐겨찾기 (목록 필터·정렬용)
-    @Column(name = "is_favorite", nullable = false)
-    private boolean isFavorite;
-
     // 관리자 사본(send-to-mypage) 표식 (V28) — 실제 변환이 아니므로 통계(건수·쪽수·원가)에서 제외.
     // 기능은 2026-10-14에 없앴지만 그 전에 만든 사본이 DB에 남아 있어 칼럼과 통계 제외는 그대로 둔다
     @Column(name = "admin_copy", nullable = false)
@@ -143,7 +133,6 @@ public class Job {
         this.layoutOptions = layoutOptions;
         this.brailleOptions = brailleOptions;
         this.adminCopy = adminCopy;
-        this.isFavorite = false;
         this.status = "PENDING";
         this.failedPages = new int[]{};
         this.startedAt = LocalDateTime.now();
@@ -164,34 +153,10 @@ public class Job {
         return "PENDING".equals(status) || "IN_PROGRESS".equals(status);
     }
 
-    public boolean isTrashed() {
-        return deletedAt != null;
-    }
-
-    // 이름·위치 변경은 파일 내용이 바뀌는 게 아니므로 카드 날짜를 건드리지 않는다(윈도우 탐색기와 동일)
-    public void rename(String fileName) {
-        this.originalFileName = fileName;
-    }
-
-    public void moveToFolder(UUID folderId) {
-        this.folderId = folderId;
-    }
-
-    // 폴더째 삭제 시 폴더와 같은 시각을 공유해야 배치 복원이 가능하므로 시각을 받는다
-    public void moveToTrash(LocalDateTime at) {
-        this.deletedAt = at;
-    }
-
-    public void restoreTo(UUID folderId) {
-        this.deletedAt = null;
-        this.folderId = folderId;
-    }
-
     /**
      * 점역사가 페이지 내용을 편집했을 때 카드 날짜·마지막 편집 페이지를 갱신한다.
      *
-     * <p>{@code last_modified_at}은 "파일 내용이 마지막으로 바뀐 시각"이다. 이름 변경·폴더 이동·
-     * 휴지통 복원처럼 내용이 그대로인 동작은 갱신하지 않는다. 변환 진행 상황은 별도로
+     * <p>{@code last_modified_at}은 "파일 내용이 마지막으로 바뀐 시각"이다. 변환 진행 상황은 별도로
      * {@code updated_at}이 담당하므로 여기서 건드리지 않는다.
      *
      * <p>{@code last_edited_page}는 재시작 복구용이다 — FE는 가장 최근에 수정한 작업의
@@ -250,32 +215,8 @@ public class Job {
         this.originalTotalPages = originalTotalPages;
     }
 
-    // 즐겨찾기 토글 — 카드 날짜(last_modified_at)는 건드리지 않는다(내용 변경이 아니므로)
-    public boolean toggleFavorite() {
-        this.isFavorite = !this.isFavorite;
-        return this.isFavorite;
-    }
-
     public void updateThumbnailUrl(String thumbnailUrl) {
         this.thumbnailUrl = thumbnailUrl;
-    }
-
-    /**
-     * 원본 페이지 한 장을 지운 뒤 쪽 관련 값을 맞춘다 (X-1).
-     * lastEditedPage는 삭제된 쪽을 가리키거나 범위를 넘을 수 있어 함께 보정한다 —
-     * 에디터가 "마지막 편집 위치"로 없는 쪽을 열지 않게.
-     */
-    public void applyPageDeleted(int deletedPageNo, int remainingPages, int[] shiftedFailedPages) {
-        this.totalPages = remainingPages;
-        this.failedPages = shiftedFailedPages;
-        if (lastEditedPage != null) {
-            if (lastEditedPage == deletedPageNo) {
-                this.lastEditedPage = Math.min(deletedPageNo, remainingPages);
-            } else if (lastEditedPage > deletedPageNo) {
-                this.lastEditedPage = lastEditedPage - 1;
-            }
-        }
-        this.lastModifiedAt = LocalDateTime.now();   // 내용이 바뀌었다 — 카드 날짜·정렬 기준
     }
 
     /**
