@@ -74,6 +74,13 @@ public class User {
     @Column(name = "braille_options", columnDefinition = "jsonb")
     private com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions;
 
+    // D6에만 있는 계정 기본값 둘 (V38) — 점역 양식 드롭다운 · 페이지행 면. null이면 공장 기본값
+    @Column(name = "default_form_id", length = 64)
+    private String defaultFormId;
+
+    @Column(name = "default_page_number_line", length = 8)
+    private String defaultPageNumberLine;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -116,6 +123,12 @@ public class User {
     /** D6 「확인」 — 창이 항목 전부를 보여주므로 통째로 덮어쓴다(부분 갱신이 아니다) */
     public void updateBrailleOptions(com.semojum.backend.domain.job.dto.BrailleOptions options) {
         this.brailleOptions = options;
+    }
+
+    /** D6 「확인」의 나머지 둘 — 점역 양식과 페이지행 면 */
+    public void updateDefaults(String formId, String pageNumberLine) {
+        this.defaultFormId = formId;
+        this.defaultPageNumberLine = pageNumberLine;
     }
 
     /** 저장한 적 없는 계정도 완전한 형태를 받는다 — 읽는 쪽에 null 분기를 안 남긴다 */

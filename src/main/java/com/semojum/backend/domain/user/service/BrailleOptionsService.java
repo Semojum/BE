@@ -3,6 +3,7 @@ package com.semojum.backend.domain.user.service;
 import com.semojum.backend.domain.auth.entity.User;
 import com.semojum.backend.domain.auth.repository.UserRepository;
 import com.semojum.backend.domain.job.dto.BrailleOptions;
+import com.semojum.backend.domain.user.dto.DefaultOptions;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -27,11 +28,15 @@ import java.util.UUID;
 public class BrailleOptionsService {
 
     private final UserRepository userRepository;
+    private final com.semojum.backend.domain.user.repository.BrailleFormRepository brailleFormRepository;
+    private final BuiltinBrailleForms builtinForms;
 
     /** 저장한 적 없는 계정은 공장 기본값을 받는다 — FE가 빈 화면을 그리지 않게 */
     @Transactional(readOnly = true)
-    public BrailleOptions get(String userId) {
-        return find(userId).resolveBrailleOptions();
+    public DefaultOptions get(String userId) {
+        User user = find(userId);
+        return DefaultOptions.of(user.resolveBrailleOptions(),
+                user.getDefaultFormId(), user.getDefaultPageNumberLine());
     }
 
     /**
@@ -39,14 +44,41 @@ public class BrailleOptionsService {
      *
      * <p>빠진 항목은 기본값으로 채운다. 부분 갱신이 아니라서 "안 보낸 항목은 그대로"가 아니다 —
      * 화면이 전부를 들고 있으니 서버가 이전 값을 기억할 이유가 없다.
+     *
+     * <p>점역 양식은 <b>있는 양식이어야 한다</b>(기본 양식 또는 내 양식). 지운 양식을 기본으로 남기면
+     * 「열기」 창이 없는 양식을 골라 둔 채 열린다. 페이지행 면은 홀수·모든 둘뿐이다 — 조판 옵션의
+     * {@code none}(넣지 않음)은 D6에 없는 선택지다.
      */
     @Transactional
-    public BrailleOptions update(String userId, BrailleOptions requested) {
+    public DefaultOptions update(String userId, DefaultOptions requested) {
         User user = find(userId);
-        BrailleOptions options = (requested == null ? BrailleOptions.defaults() : requested).validated();
-        user.updateBrailleOptions(options);
-        log.info("기본 점역 옵션 저장: user={}", user.getLoginId());
-        return options;
+        BrailleOptions braille = (requested == null ? BrailleOptions.defaults() : requested.braille()).validated();
+
+        String formId = requested == null || requested.formId() == null || requested.formId().isBlank()
+                ? DefaultOptions.DEFAULT_FORM_ID : requested.formId();
+        if (!formExists(user, formId)) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+
+        String pageNumberLine = requested == null || requested.pageNumberLine() == null
+                ? DefaultOptions.DEFAULT_PAGE_NUMBER_LINE : requested.pageNumberLine();
+        if (!java.util.List.of("odd", "every").contains(pageNumberLine)) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+
+        user.updateBrailleOptions(braille);
+        user.updateDefaults(formId, pageNumberLine);
+        log.info("기본 점역 옵션 저장: user={}, 양식={}", user.getLoginId(), formId);
+        return DefaultOptions.of(braille, formId, pageNumberLine);
+    }
+
+    private boolean formExists(User user, String formId) {
+        if (BuiltinBrailleForms.isBuiltin(formId)) {
+            return builtinForms.all().stream().anyMatch(f -> f.formId().equals(formId));
+        }
+        try {
+            return brailleFormRepository.findByIdAndUserId(UUID.fromString(formId), user.getId()).isPresent();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private User find(String userId) {

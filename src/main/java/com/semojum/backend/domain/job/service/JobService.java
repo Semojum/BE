@@ -139,7 +139,7 @@ public class JobService {
         // 조판·점역 옵션 — 양식이 바탕, 개별 항목이 그 위에 덮인다(UploadOptionsResolver).
         // 빠진 값은 기본값으로 채워 항상 완전한 형태로 저장한다(읽는 쪽에 null 분기를 안 남긴다)
         UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
-                user, formId, requestedOptions, requestedBrailleOptions, insertPageNumber);
+                user, formId, requestedOptions, requestedBrailleOptions);
         LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
         BrailleOptions brailleOptions = resolved.brailleOptions();
 
@@ -385,7 +385,7 @@ public class JobService {
 
         // 업로드와 같은 규칙 — 양식이 바탕, 개별 항목이 그 위에 덮인다
         UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
-                user, request.formId(), request.layoutOptions(), request.brailleOptions(), insertPageNumber);
+                user, request.formId(), request.layoutOptions(), request.brailleOptions());
         LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
 
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
@@ -413,9 +413,9 @@ public class JobService {
     static String taskJson(String jobId, int pageNo, String sourcePath, String mode,
                            int totalPages, UUID userId, boolean advancedAi, BrailleOptions braille) {
         return String.format(
-                "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b,\"koreanGrade\":%d,\"splitChoices\":%b}",
+                "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b,\"koreanGrade\":%d,\"englishGrade\":%d,\"splitChoices\":%b}",
                 jobId, pageNo, sourcePath, mode, totalPages, userId, advancedAi,
-                koreanGradeOf(braille), splitChoicesOf(braille));
+                koreanGradeOf(braille), englishGradeOf(braille), splitChoicesOf(braille));
     }
 
     /**
@@ -425,8 +425,16 @@ public class JobService {
      * 한 작업의 모든 쪽이 같은 값으로 처리된다.
      */
     static int koreanGradeOf(BrailleOptions braille) {
-        if (braille == null) return 0;
-        return switch (String.valueOf(braille.hangulGrade())) {
+        return braille == null ? 0 : gradeNumber(braille.hangulGrade());
+    }
+
+    /** 점역 옵션 → proto {@code english_grade}(11). 1 정자 · 2 약자 · 0 서버 기본(약자) */
+    static int englishGradeOf(BrailleOptions braille) {
+        return braille == null ? 0 : gradeNumber(braille.englishGrade());
+    }
+
+    private static int gradeNumber(String grade) {
+        return switch (String.valueOf(grade)) {
             case "grade1" -> 1;
             case "grade2" -> 2;
             default -> 0;

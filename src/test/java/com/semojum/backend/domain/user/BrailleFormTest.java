@@ -52,7 +52,7 @@ class BrailleFormTest {
     private BrailleFormDto.SaveForm request(String name) {
         return new BrailleFormDto.SaveForm(name, "builtin:MIDHIGH_TEXTBOOK",
                 new LayoutOptions(32, 28, null, null, null, null, null, null, null, null, null, null),
-                new BrailleOptions("grade1", null, null, null, "word", null, null, null));
+                new BrailleOptions("grade1", null, null, null, null, "word", null, null));
     }
 
     // ── 기본 양식 ────────────────────────────────────────────────

@@ -81,6 +81,12 @@ public record LayoutOptions(
         ).withDefaults();
     }
 
+    /** 공장 기본값 — 32칸 × 26줄 · 홀수 면 페이지행 … (아무 항목도 지정하지 않은 상태) */
+    public static LayoutOptions defaults() {
+        return new LayoutOptions(null, null, null, null, null, null,
+                null, null, null, null, null, null).withDefaults();
+    }
+
     /** 옵션 없이 만들어진 기존 작업용 — 구 insert_page_number만 반영한 기본값 */
     public static LayoutOptions legacy(boolean insertPageNumber) {
         return new LayoutOptions(null, null, insertPageNumber ? "odd" : "none",

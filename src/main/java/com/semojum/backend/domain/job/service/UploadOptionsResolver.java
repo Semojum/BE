@@ -20,9 +20,13 @@ import java.util.UUID;
  *
  * <pre>
  *   ① 양식을 골랐으면 그 양식의 값이 바탕      (조판·점역 둘 다)
- *   ② 안 골랐으면 계정 기본값이 바탕            (점역만 — 조판은 계정 기본값 개념이 없다)
+ *   ② 안 골랐으면 계정 기본값이 바탕            (점역 전부 + 조판은 페이지행 면 하나 — D6에 있는 것만)
+ *      그 밖의 조판은 공장 기본값(32칸 × 26줄 …)
  *   ③ 개별 항목을 보냈으면 그 위에 덮는다
  * </pre>
+ *
+ * <p>⚠️ 바탕은 <b>공장 기본값</b>이지 구 {@code insert_page_number} 환산값이 아니다. 한때 그걸 바탕으로
+ * 써서(2026-10-13) 앱이 {@code pageNumberLine}을 안 보내면 페이지행이 {@code none}으로 빠졌다.
  *
  * <p><b>결과는 작업에 사본으로 저장된다.</b> 양식이나 계정 기본값을 나중에 고쳐도, 양식을 지워도
  * 이미 만든 작업의 설정은 그대로여야 한다 — 작업은 그때의 설정으로 점역된 결과물이기 때문이다.
@@ -37,10 +41,13 @@ public class UploadOptionsResolver {
     public record Resolved(LayoutOptions layoutOptions, BrailleOptions brailleOptions) {}
 
     public Resolved resolve(User user, String formId,
-                            LayoutOptions requestedLayout, BrailleOptions requestedBraille,
-                            boolean insertPageNumber) {
+                            LayoutOptions requestedLayout, BrailleOptions requestedBraille) {
 
-        LayoutOptions baseLayout = LayoutOptions.legacy(insertPageNumber);
+        // 양식을 안 골랐을 때의 바탕 — 공장 기본값 위에 계정 기본 페이지행 면(D6)
+        LayoutOptions baseLayout = user.getDefaultPageNumberLine() == null
+                ? LayoutOptions.defaults()
+                : LayoutOptions.defaults().merge(new LayoutOptions(null, null, user.getDefaultPageNumberLine(),
+                        null, null, null, null, null, null, null, null, null));
         BrailleOptions baseBraille = user.resolveBrailleOptions();
 
         if (formId != null && !formId.isBlank()) {
