@@ -186,11 +186,11 @@ public class PageWorker {
                         .setTotalPages(totalPages)
                         .setMode(aiModeOf(mode))
                         .setAdvancedAi(advancedAi)
-                        // 점역 옵션(V3.1 proto 10·12) — 업로드 때 정해져 태스크에 실려 온다.
+                        // 점역 옵션(V3.1 proto 10·11·12) — 업로드 때 정해져 태스크에 실려 온다.
                         // 구 태스크엔 없어 0·false = AI 서버 기본값(약자·짧은 선택지 합치기)
                         .setKoreanGrade(intOf(taskMap.get("koreanGrade")))
+                        .setEnglishGrade(intOf(taskMap.get("englishGrade")))
                         .setSplitChoices(Boolean.TRUE.equals(taskMap.get("splitChoices")));
-                // english_grade(11)는 보내지 않는다 — 우리 점역 옵션에 영어 급수 항목이 없어 0(서버 기본)
 
                 if (mode.equals("b")) {
                     // mode b: 글 원문으로 전송 (V3.1 proto: source_text → text_data, 번호 같음)

@@ -70,21 +70,22 @@ public class JobController {
             @RequestParam(value = "formId", required = false) String formId,
             // 점역 옵션 (V3.1) — D2 「열기」 창에서 이 작업만 따로 바꾼 항목. 안 보낸 항목은 바탕 값 그대로
             @RequestParam(value = "hangulGrade", required = false) String hangulGrade,
+            @RequestParam(value = "englishGrade", required = false) String englishGrade,
             @RequestParam(value = "brailleRule", required = false) String brailleRule,
             @RequestParam(value = "mixedRule", required = false) String mixedRule,
             @RequestParam(value = "consecutiveSpace", required = false) String consecutiveSpace,
             @RequestParam(value = "lineBreakUnit", required = false) String lineBreakUnit,
             @RequestParam(value = "choiceLayout", required = false) String choiceLayout,
-            @RequestParam(value = "brailleFormat", required = false) String brailleFormat,
-            @RequestParam(value = "textFormat", required = false) String textFormat,
             jakarta.servlet.http.HttpServletRequest request
     ) throws Exception {
         LayoutOptions options = new LayoutOptions(cellsPerLine, linesPerPage, pageNumberLine, coverPages,
                 sourcePageStart, braillePageStart, showSourcePageNumber, showBraillePageNumber,
                 showChangeLine, footerAlign, editScope, advancedAi);
         com.semojum.backend.domain.job.dto.BrailleOptions brailleOptions =
-                new com.semojum.backend.domain.job.dto.BrailleOptions(hangulGrade, brailleRule, mixedRule,
-                        consecutiveSpace, lineBreakUnit, choiceLayout, brailleFormat, textFormat);
+                // 시각 자료 설명 유형은 폼 필드로 받지 않는다 — 구조가 있고 업로드 창(D2)에 없는 항목이라
+                // 양식이나 계정 기본값에서 온다
+                new com.semojum.backend.domain.job.dto.BrailleOptions(hangulGrade, englishGrade, brailleRule,
+                        mixedRule, consecutiveSpace, lineBreakUnit, choiceLayout, null);
         return ApiResponse.success(
                 jobService.createJob(userDetails.getUsername(), files, mode, insertPageNumber, footerText,
                         options, formId, brailleOptions, clientInfoResolver.resolve(request)));

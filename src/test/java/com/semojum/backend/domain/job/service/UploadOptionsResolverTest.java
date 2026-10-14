@@ -91,7 +91,7 @@ class UploadOptionsResolverTest {
                 .userId(user.getId()).name("중학 수학 (28줄)")
                 .layoutOptions(new LayoutOptions(32, 28, null, null, null, null, null, null, null, null, null, null)
                         .withDefaults())
-                .brailleOptions(new BrailleOptions(null, null, null, null, "word", null, null, null).withDefaults())
+                .brailleOptions(new BrailleOptions(null, null, null, null, null, "word", null, null).withDefaults())
                 .build();
         UUID formId = UUID.randomUUID();
         ReflectionTestUtils.setField(form, "id", formId);

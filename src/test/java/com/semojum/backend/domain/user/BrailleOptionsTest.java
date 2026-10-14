@@ -36,8 +36,8 @@ class BrailleOptionsTest {
     }
 
     private BrailleOptions full(String hangulGrade) {
-        return new BrailleOptions(hangulGrade, "korean", "korean", "single",
-                "syllable", "merge", ".brf", ".txt");
+        return new BrailleOptions(hangulGrade, "grade2", "korean", "korean", "single",
+                "syllable", "merge", null);
     }
 
     /** 한 번도 저장하지 않은 계정 — null을 주면 FE가 빈 화면을 그린다 */
@@ -51,8 +51,8 @@ class BrailleOptionsTest {
         assertEquals("single", o.consecutiveSpace()); // 하나로
         assertEquals("syllable", o.lineBreakUnit());  // 음절
         assertEquals("merge", o.choiceLayout());      // 짧으면 합쳐 적기
-        assertEquals(".brf", o.brailleFormat());
-        assertEquals(".txt", o.textFormat());
+        assertEquals("grade2", o.englishGrade());     // 영문 약자 (2026-10-14 P0)
+        assertEquals(5, o.visualDescriptions().size()); // 시각 자료 설명 유형 다섯
     }
 
     @Test
@@ -85,9 +85,9 @@ class BrailleOptionsTest {
 
         for (BrailleOptions bad : new BrailleOptions[]{
                 full("grade3"),
-                new BrailleOptions("grade2", "japanese", "korean", "single", "syllable", "merge", ".brf", ".txt"),
-                new BrailleOptions("grade2", "korean", "korean", "single", "sentence", "merge", ".brf", ".txt"),
-                new BrailleOptions("grade2", "korean", "korean", "single", "syllable", "merge", ".bbf", ".txt"),
+                new BrailleOptions("grade2", null, "japanese", "korean", "single", "syllable", "merge", null),
+                new BrailleOptions("grade2", null, "korean", "korean", "single", "sentence", "merge", null),
+                new BrailleOptions("grade2", "grade3", "korean", "korean", "single", "syllable", "merge", null),
         }) {
             CustomException e = assertThrows(CustomException.class,
                     () -> service.update(UUID.randomUUID().toString(), bad));

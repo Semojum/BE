@@ -25,7 +25,7 @@ class TaskJsonTest {
         return MAPPER.readValue(
                 JobService.taskJson("job-1", 3, sourcePath, mode, 7, USER, true,
                         new com.semojum.backend.domain.job.dto.BrailleOptions(
-                                "grade1", null, null, null, null, "onePerLine", null, null)), Map.class);
+                                "grade1", "grade2", null, null, null, null, "onePerLine", null)), Map.class);
     }
 
     /** 워커가 꺼내는 키가 하나라도 빠지면 그 쪽은 처리되지 않는다 */
@@ -34,7 +34,7 @@ class TaskJsonTest {
         Map<String, Object> task = parse("c", "job-1/pages/page-3.pdf");
 
         for (String key : new String[]{"jobId", "pageNo", "sourcePath", "mode", "totalPages", "userId", "advancedAi",
-                "koreanGrade", "splitChoices"}) {
+                "koreanGrade", "englishGrade", "splitChoices"}) {
             assertTrue(task.containsKey(key), "태스크에 " + key + " 키가 없다");
         }
     }
@@ -61,6 +61,7 @@ class TaskJsonTest {
         assertEquals(USER.toString(), task.get("userId"));
         assertEquals(true, task.get("advancedAi"));
         assertEquals(1, task.get("koreanGrade"));      // grade1 → 1
+        assertEquals(2, task.get("englishGrade"));     // grade2 → 2 (proto english_grade)
         assertEquals(true, task.get("splitChoices"));  // onePerLine → true
     }
 
@@ -68,7 +69,7 @@ class TaskJsonTest {
     @Test
     void 점역_옵션을_AI_값으로_옮긴다() {
         var grade1 = new com.semojum.backend.domain.job.dto.BrailleOptions("grade1", null, null, null, null, null, null, null);
-        var grade2 = new com.semojum.backend.domain.job.dto.BrailleOptions("grade2", null, null, null, null, "merge", null, null);
+        var grade2 = new com.semojum.backend.domain.job.dto.BrailleOptions("grade2", null, null, null, null, null, "merge", null);
 
         assertEquals(1, JobService.koreanGradeOf(grade1));
         assertEquals(2, JobService.koreanGradeOf(grade2));
