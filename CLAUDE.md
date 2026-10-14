@@ -165,7 +165,7 @@ com.semojum.backend
 - 설정(조판 · 점역 옵션 · 꼬리말)은 보낸 항목만 덮어쓴다. 변환 중이면 저장 자체가 JOB4010
 - 대체 초안은 `selectedIdx`로 무엇을 골랐는지만 기록한다(본문은 앱이 이미 그 초안으로 채워 보낸다)
 - 줄 메모(`page_memos`, V34)는 쪽 단위 전체 교체
-- **수정 이력은 남기지 않는다**(2026-10-12 기획 결정) — 쓰던 `page_edit_histories` · `page_edit_logs`는 코드에서 지웠다(#181). 테이블 정리는 후속
+- **수정 이력은 남기지 않는다**(2026-10-12 기획 결정) — 쓰던 `page_edit_histories` · `page_edit_logs`는 코드(#181)와 테이블(V41) 모두 지웠다
 - 텍스트 작업(mode b)은 저장이 쪽을 만든다 — 「Job 생성」 참조
 
 ## 점자 규정 검색 (`GET /api/rules`)
@@ -235,7 +235,7 @@ braille_elements / bounding_boxes / rule_trails / quality_critical_errors / qual
 board_posts / board_attachments / board_answers / board_notifications / page_memos / braille_forms / pricing_configs / credit_transactions / coupons / notices /
 inquiries / inquiry_attachments / orders / app_versions
 
-- 코드가 쓰지 않는 테이블(삭제 대기): `folders` · `page_edit_histories` · `page_edit_logs`. `jobs`의 `folder_id` · `is_favorite` 칼럼도 같다
+- V41(2026-10-14)에서 `folders` · `page_edit_histories` · `page_edit_logs` 테이블과 `jobs.folder_id` · `is_favorite` 칼럼을 지웠다(백업 없음)
 
 - Page 상태: PENDING / RUNNING / COMPLETED / NEEDS_REVIEW / BLOCKED (+취소 창 동안만 CANCELED)
 - Job 상태: PENDING → IN_PROGRESS → COMPLETED / FAILED (plain String)
