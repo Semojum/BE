@@ -162,6 +162,25 @@ class SupportServiceTest {
         assertEquals(LocalDate.of(2026, 10, 9), n.getEndsOn());
     }
 
+    /** 고정 해제 (V40) — 게시판 맨 위에서 내려간다. 다시 고정할 수도 있다 */
+    @Test
+    void 공지_고정을_풀고_다시_건다() throws Exception {
+        Notice n = Notice.builder().title("10월 정기 점검 안내").body("본문")
+                .startsOn(LocalDate.of(2026, 10, 1)).endsOn(LocalDate.of(2026, 10, 31)).build();
+        UUID id = UUID.randomUUID();
+        setId(n, id);
+        when(noticeRepository.findById(id)).thenReturn(Optional.of(n));
+        assertTrue(n.isPinned(), "새 공지는 고정 상태로 시작한다");
+
+        assertFalse(adminService.updateNoticePinned(id, new SupportDto.UpdatePinned(false)).pinned());
+        assertFalse(n.isPinned());
+        assertTrue(adminService.updateNoticePinned(id, new SupportDto.UpdatePinned(true)).pinned());
+
+        CustomException e = assertThrows(CustomException.class,
+                () -> adminService.updateNoticePinned(id, new SupportDto.UpdatePinned(null)));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+    }
+
     @Test
     void 없는_공지는_고치거나_지울_수_없다() {
         UUID ghost = UUID.randomUUID();

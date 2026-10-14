@@ -47,6 +47,10 @@ public class Notice {
     @Column(name = "view_count", nullable = false, insertable = false)
     private int viewCount;
 
+    // 게시판 맨 위 고정 (V40) — 운영자 콘솔 「고정 해제」면 false, 게시판에서 내려간다. 기관 관리자 화면과는 무관
+    @Column(nullable = false, insertable = false)
+    private boolean pinned = true;
+
     @Builder
     public Notice(UUID targetOrganizationId, String title, String body,
                   LocalDate startsOn, LocalDate endsOn) {
@@ -64,6 +68,10 @@ public class Notice {
         this.body = body;
         this.startsOn = startsOn;
         this.endsOn = endsOn;
+    }
+
+    public void updatePinned(boolean pinned) {
+        this.pinned = pinned;
     }
 
     public void increaseViewCount() {

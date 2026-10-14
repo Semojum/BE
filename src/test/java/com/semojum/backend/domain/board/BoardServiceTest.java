@@ -358,10 +358,10 @@ class BoardServiceTest {
 
         service.list(id(author), 1, null, "크레딧", false);
         service.list(id(author), 1, null, null, true);
-        verify(noticeRepository, never()).findVisibleForOrganization(any(), any());
+        verify(noticeRepository, never()).findPinnedForBoard(any(), any());
 
         service.list(id(author), 1, null, null, false);
-        verify(noticeRepository).findVisibleForOrganization(any(), any());
+        verify(noticeRepository).findPinnedForBoard(any(), any());
     }
 
     /** 일반 사용자 목록엔 숨긴 글이 빠진다(admin=false), 운영자 콘솔은 포함 */

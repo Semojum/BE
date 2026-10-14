@@ -92,6 +92,22 @@ public class AdminSupportService {
         return toNoticeItem(notice, orgName);
     }
 
+    /**
+     * 게시판 고정 · 고정 해제 (V40, 피그마 운영자 콘솔 「고정 해제」).
+     * 해제하면 게시판 맨 위에서 내려가고 게시판에서 안 보인다. 기관 관리자 공지 화면은 그대로다.
+     */
+    @Transactional
+    public SupportDto.NoticeItem updateNoticePinned(UUID noticeId, SupportDto.UpdatePinned request) {
+        if (request == null || request.pinned() == null) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new CustomException(ErrorCode.BOARD_NOTICE_NOT_FOUND));
+        notice.updatePinned(request.pinned());
+        log.info("공지 게시판 고정 변경: noticeId={}, pinned={}", noticeId, request.pinned());
+        String orgName = notice.getTargetOrganizationId() == null ? null
+                : organizationRepository.findById(notice.getTargetOrganizationId()).map(o -> o.getName()).orElse(null);
+        return toNoticeItem(notice, orgName);
+    }
+
     @Transactional
     public void deleteNotice(UUID noticeId) {
         Notice notice = noticeRepository.findById(noticeId)
@@ -114,7 +130,7 @@ public class AdminSupportService {
         String displayStatus = today.isBefore(n.getStartsOn()) ? "SCHEDULED"
                 : today.isAfter(n.getEndsOn()) ? "ENDED" : "ACTIVE";
         return new SupportDto.NoticeItem(n.getId(), n.getTargetOrganizationId(), orgName,
-                n.getTitle(), n.getBody(), n.getStartsOn(), n.getEndsOn(), displayStatus, n.getCreatedAt());
+                n.getTitle(), n.getBody(), n.getStartsOn(), n.getEndsOn(), displayStatus, n.getCreatedAt(), n.isPinned());
     }
 
     // ── 문의 ──

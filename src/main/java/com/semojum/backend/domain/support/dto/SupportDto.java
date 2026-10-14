@@ -32,8 +32,12 @@ public class SupportDto {
             LocalDate startsOn,
             LocalDate endsOn,
             String displayStatus,      // SCHEDULED(예정) | ACTIVE(노출 중) | ENDED(종료)
-            Instant createdAt
+            Instant createdAt,
+            boolean pinned             // 게시판 맨 위 고정 (V40). 운영자 콘솔 「고정 · 고정 해제」
     ) {}
+
+    /** 게시판 고정 · 고정 해제 (V40) */
+    public record UpdatePinned(Boolean pinned) {}
 
     // 로그인 전 공개 공지 (무인증) — 전체 대상 공지만, 기관 정보 미포함
     public record PublicNotice(
