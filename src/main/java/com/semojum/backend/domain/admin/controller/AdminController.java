@@ -207,6 +207,16 @@ public class AdminController {
         return ApiResponse.success(adminSupportService.updateNotice(noticeId, request));
     }
 
+    /** 게시판 고정 · 고정 해제 (V40) — 해제하면 게시판 맨 위에서 내려간다 */
+    @PatchMapping("/notices/{noticeId}/pinned")
+    public ApiResponse<SupportDto.NoticeItem> updateNoticePinned(
+            @PathVariable java.util.UUID noticeId,
+            @RequestBody SupportDto.UpdatePinned request
+    ) {
+        validateAdminRole();
+        return ApiResponse.success(adminSupportService.updateNoticePinned(noticeId, request));
+    }
+
     @DeleteMapping("/notices/{noticeId}")
     public ApiResponse<Void> deleteNotice(@PathVariable java.util.UUID noticeId) {
         validateAdminRole();

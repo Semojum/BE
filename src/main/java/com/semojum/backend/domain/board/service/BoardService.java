@@ -147,7 +147,7 @@ public class BoardService {
                 post.getCreatedAt(), post.getUpdatedAt(), post.getViewCount(), attachments, answers);
     }
 
-    /** 공지 상세 — 게시판에서 열 때마다 조회수 +1. 내게 보이지 않는 공지(기간 밖 · 남의 기관)는 없는 것으로 본다 */
+    /** 공지 상세 — 게시판에서 열 때마다 조회수 +1. 게시판에 안 뜨는 공지(고정 해제 · 기간 밖 · 남의 기관)는 없는 것으로 본다 */
     @Transactional
     public BoardDto.NoticeDetail getNotice(String userId, UUID noticeId) {
         User me = user(userId);
@@ -342,10 +342,10 @@ public class BoardService {
         return answer;
     }
 
-    /** 내게 보이는 공지 — 노출 기간 안이고, 전체 공지이거나 내 기관 대상 */
+    /** 게시판에 뜨는 공지 — 고정돼 있고, 노출 기간 안이고, 전체 공지이거나 내 기관 대상 */
     private List<Notice> visibleNotices(User me) {
         UUID orgId = me.getOrganization() == null ? null : me.getOrganization().getId();
-        return noticeRepository.findVisibleForOrganization(orgId, LocalDate.now(KST));
+        return noticeRepository.findPinnedForBoard(orgId, LocalDate.now(KST));
     }
 
     private void validateText(String title, String content) {
