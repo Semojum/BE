@@ -122,7 +122,8 @@ public class Job {
     @Column(name = "is_favorite", nullable = false)
     private boolean isFavorite;
 
-    // 관리자 사본(send-to-mypage) 표식 (V28) — 실제 변환이 아니므로 통계(건수·쪽수·원가)에서 제외
+    // 관리자 사본(send-to-mypage) 표식 (V28) — 실제 변환이 아니므로 통계(건수·쪽수·원가)에서 제외.
+    // 기능은 2026-10-14에 없앴지만 그 전에 만든 사본이 DB에 남아 있어 칼럼과 통계 제외는 그대로 둔다
     @Column(name = "admin_copy", nullable = false)
     private boolean adminCopy;
 

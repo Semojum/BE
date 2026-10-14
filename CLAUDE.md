@@ -93,7 +93,7 @@ com.semojum.backend
   - `admin.console-origins`(env `ADMIN_CONSOLE_ORIGINS`) — compose가 빈 값을 넘기면 yaml 기본값을 덮으므로 **compose에도 기본값이 있어야 한다**
 - ⚠️ **CORS는 전면 허용(`allowedOriginPatterns *`) 유지** — Bearer라 origin 제한이 무의미하고, **좁히면 데스크톱 앱(Origin: null)이 403으로 깨진다**(2026-08-20 회귀 실측)
 - ⚠️ adminPage(콘솔 FE)·`~/semojum/FE`는 **FE 영역, BE가 수정 금지**
-- ⚠️ 운영자 "마이페이지로 보내기"(`send-to-mypage`) 사본은 **`jobs.admin_copy=true` + 원가 0**이다. **통계·수익성·layout-cost 등 집계 쿼리에서 반드시 제외할 것** — 새 쿼리를 짤 때 빼먹으면 숫자가 조용히 틀린다
+- ⚠️ 운영자 "마이페이지로 보내기" 사본은 **`jobs.admin_copy=true` + 원가 0**이다. **기능은 2026-10-14에 없앴지만 그 전 사본이 DB에 남아 있다** — 통계·수익성·layout-cost·사용량 등 집계 쿼리에서 계속 제외할 것(빼먹으면 숫자가 조용히 틀린다)
 
 ## Job 생성 (`POST /api/jobs`)
 

@@ -9,7 +9,6 @@ import com.semojum.backend.domain.admin.dto.AdminMonitorDto;
 import com.semojum.backend.domain.admin.dto.AdminOrgDto;
 import com.semojum.backend.domain.admin.service.AdminOrgManageService;
 import com.semojum.backend.domain.admin.dto.AdminStatsDto;
-import com.semojum.backend.domain.admin.service.AdminCopyService;
 import com.semojum.backend.domain.admin.service.AdminMonitorService;
 import com.semojum.backend.domain.admin.service.AdminStatsService;
 import com.semojum.backend.domain.support.dto.SupportDto;
@@ -34,7 +33,6 @@ public class AdminController {
     private final AdminMonitorService adminMonitorService;
     private final AdminStatsService adminStatsService;
     private final AdminOrgManageService adminOrgManageService;
-    private final AdminCopyService adminCopyService;
     private final com.semojum.backend.domain.app.service.AppVersionService appVersionService;
     private final com.semojum.backend.domain.user.service.UserService userService;
     private final com.semojum.backend.domain.auth.repository.UserRepository userRepository;
@@ -157,20 +155,6 @@ public class AdminController {
     ) {
         validateAdminRole();
         return ApiResponse.success(userService.getJobPageAsAdmin(jobId, pageNo));
-    }
-
-    // ── 마이페이지로 보내기 (T1-5) — 사본을 운영자 계정으로. targetLoginId 없으면 JWT 본인 ──
-    @PostMapping("/jobs/{jobId}/send-to-mypage")
-    public ApiResponse<java.util.Map<String, Object>> sendToMypage(
-            @PathVariable String jobId,
-            @RequestBody(required = false) java.util.Map<String, String> body,
-            @org.springframework.security.core.annotation.AuthenticationPrincipal
-            org.springframework.security.core.userdetails.UserDetails userDetails
-    ) {
-        validateAdminRole();
-        String targetLoginId = body == null ? null : body.get("targetLoginId");
-        return ApiResponse.success(adminCopyService.copyToMypage(jobId, targetLoginId,
-                userDetails == null ? null : userDetails.getUsername()));
     }
 
     // ── 작업 상세 (T1-4) — 요청 정보(접속 메타데이터)·처리 비용·쪽별 결과 ──

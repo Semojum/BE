@@ -47,7 +47,7 @@ public class User {
     private Role role;
 
     // ROLE_ADMIN 사용처 구분 (V28) — WEB: 운영자 콘솔 전용(Origin이 콘솔 주소일 때만 로그인, 앱 불가)
-    //                              APP: 에디터 앱용(웹 관리자의 "마이페이지로 보내기" 수신 대상)
+    //                              APP: 에디터 앱용(관리자 계정으로 에디터를 쓴다)
     // null = 스코프 미지정. 콘솔 로그인만 막히고 나머지는 종전과 동일하게 동작하며, 현재 보유 계정은 없다.
     //        ROLE_ADMIN 외 계정에선 의미 없음
     @Column(name = "admin_scope", length = 10)
