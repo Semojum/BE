@@ -31,6 +31,15 @@ public class UsageController {
         return ApiResponse.success(usageService.getSummary(userDetails.getUsername(), month));
     }
 
+    /** 마이페이지 [사용량] — 일별 막대 · 입력 종류별 내역 · 상단 카드. period: MONTH(기본) · QUARTER · YEAR */
+    @GetMapping("/daily")
+    public ApiResponse<UsageDto.Daily> getDaily(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false) String period
+    ) {
+        return ApiResponse.success(usageService.getDaily(userDetails.getUsername(), period));
+    }
+
     /** 내 작업별 크레딧 — 기본 최근 30일. 진행 중 작업은 크레딧 null(끝나야 확정) */
     @GetMapping("/jobs")
     public ApiResponse<UsageDto.Jobs> getJobs(

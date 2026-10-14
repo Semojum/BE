@@ -33,6 +33,13 @@ public interface CreditTransactionRepository extends JpaRepository<CreditTransac
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t WHERE t.couponId = :couponId")
     long sumByCoupon(@Param("couponId") UUID couponId);
 
+    // 계정의 기간 차감 내역 — 일별 · 입력 종류별 사용량(V3.1). [created_at, amount, job_id]
+    @Query("SELECT t.createdAt, t.amount, t.jobId FROM CreditTransaction t " +
+            "WHERE t.userId = :userId AND t.createdAt >= :from AND t.createdAt < :to")
+    List<Object[]> findUsageRowsByUserBetween(@Param("userId") UUID userId,
+                                              @Param("from") java.time.Instant from,
+                                              @Param("to") java.time.Instant to);
+
     // 계정의 기간 사용량 (T3 이번 달/지난달)
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t " +
             "WHERE t.userId = :userId AND t.createdAt >= :from AND t.createdAt < :to")
