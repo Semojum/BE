@@ -51,6 +51,7 @@ public class JobService {
     private final FooterBrailleService footerBrailleService;
     private final UploadOptionsResolver uploadOptionsResolver;
 
+    private static final int LINES_PER_PAGE = 30;
 
     @Transactional
     /**
@@ -173,9 +174,8 @@ public class JobService {
                     insertPageNumber, footerText, layoutOptions, brailleOptions, clientInfo);
 
         } else if (mode.equals("b")) {
-            // TXT 내용은 쓰지 않는다 — 앱이 이미 파일을 쥐고 있고 점역·쪽 나누기를 직접 한다(V3.1).
-            // 구 클라이언트 호환으로 받기만 한다. 새 클라이언트는 POST /api/jobs/text로 부르면 올릴 필요도 없다
-            return createFromText(user, jobId,
+            String fullText = new String(file.getBytes(), StandardCharsets.UTF_8);
+            return createFromText(user, jobId, fullText,
                     resolveFileName(user.getId(), file.getOriginalFilename()),
                     insertPageNumber, footerText, layoutOptions, brailleOptions, clientInfo);
 
@@ -352,6 +352,20 @@ public class JobService {
         return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
     }
 
+    /** 본문 텍스트 상한 — 업로드 파일과 같은 100MB(UTF-8 기준) */
+    private static final int NEW_DOCUMENT_MAX_BYTES = 100 * 1024 * 1024;
+
+
+    /** 본문 검증 — 빈 글은 400, 100MB 초과는 413(업로드 파일과 같은 상한) */
+    static void validateNewDocumentText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
+        if (text.getBytes(StandardCharsets.UTF_8).length > NEW_DOCUMENT_MAX_BYTES) {
+            throw new CustomException(ErrorCode.JOB_FILE_TOO_LARGE);
+        }
+    }
+
     /** 이름을 안 주면 「무제」 — 같은 이름이 있으면 resolveFileName이 (2), (3)을 붙인다 */
     static String resolveNewDocumentName(JobRequestDto.NewDocument request) {
         return request.fileName() == null || request.fileName().isBlank()
@@ -367,6 +381,8 @@ public class JobService {
     public JobResponseDto.Create createNewDocument(
             String userId, JobRequestDto.NewDocument request,
             com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
+
+        validateNewDocumentText(request.text());
 
         boolean insertPageNumber = Boolean.TRUE.equals(request.insertPageNumber());
 
@@ -393,9 +409,9 @@ public class JobService {
 
         String name = resolveNewDocumentName(request);
 
-        log.info("새 문서 생성 시작: user={}", user.getLoginId());
+        log.info("새 문서 생성 시작: {}자, user={}", request.text().length(), user.getLoginId());
 
-        return createFromText(user, jobId,
+        return createFromText(user, jobId, request.text(),
                 resolveFileName(user.getId(), name),
                 insertPageNumber, footerText, layoutOptions, resolved.brailleOptions(), clientInfo);
     }
@@ -447,43 +463,90 @@ public class JobService {
     }
 
     /**
-     * 텍스트 작업(TXT 업로드 · 「새 문서」)을 만든다 — <b>작업 기록만</b> 남긴다.
+     * 본문 텍스트로 작업을 만든다.
      *
-     * <p>V3.1부터 AI는 글을 받아도 점자를 주지 않고(proto에서 점역 결과 삭제), 텍스트 작업에서
-     * AI가 해 줄 일이 없다(기획 확정 2026-10-14). 점역·쪽 나누기·조판은 전부 앱이 원문으로 한다.
-     * 그래서 쪽 나누기 · S3 업로드 · AI 큐 적재가 없고, 만들자마자 COMPLETED다 — 기다릴 변환이 없다.
+     * <p>TXT 업로드(파일에서 읽은 텍스트)와 「새 문서」(사용자가 직접 친 텍스트)가 같이 쓴다.
+     * 쪽 분리는 <b>구분선 우선, 없으면 30줄 청크</b>로 동일하다.
      *
-     * <p>그래도 작업을 만드는 이유: 최종 저장({@code POST /api/jobs/{jobId}/save})이 jobId를 요구한다.
-     * 쪽과 쪽 결과는 <b>첫 저장 때 앱이 보낸 쪽 번호대로 만들어진다</b>({@code PageContentSaver}).
-     * 서버가 미리 자르면 앱과 쪽 번호가 어긋날 위험만 생긴다.
-     *
-     * <p>크레딧은 차감하지 않는다 — 차감은 AI 결과가 올 때만 일어난다.
+     * <p>쪽마다 AI(mode b, {@code text_data})로 보낸다 — AI는 글을 정리하고 점역 태그를 달아
+     * 돌려줄 뿐 점역하지 않는다(V3.1). 점역은 앱이 한다. 2026-10-14에 잠시 AI를 건너뛰게 했다가
+     * 같은 날 되돌렸다 — 파일로 올린 글과 직접 쓴 글이 같은 길을 타게 하기 위해서다.
      */
     private JobResponseDto.Create createFromText(
-            com.semojum.backend.domain.auth.entity.User user, String jobId,
+            com.semojum.backend.domain.auth.entity.User user, String jobId, String fullText,
             String fileName, boolean insertPageNumber, String footerText,
             LayoutOptions layoutOptions, BrailleOptions brailleOptions,
             com.semojum.backend.global.util.ClientInfoResolver.ClientInfo clientInfo) {
 
+        List<Page> pages = new ArrayList<>();
+        List<String> tasks = new ArrayList<>();
+    List<String> chunks = splitIntoPages(fullText);
+
+        int totalPages = chunks.size();
+
+        // 6-b. Job 엔티티 생성 및 저장
         Job job = Job.builder()
                 .id(jobId)
                 .user(user)
                 .mode(MODE_TEXT)
-                .totalPages(0)          // 첫 저장이 앱이 보낸 쪽 수로 채운다
+                .totalPages(totalPages)
                 .originalFileName(fileName)
                 .insertPageNumber(insertPageNumber)
                 .footerText(footerText)
                 .layoutOptions(layoutOptions)
                 .brailleOptions(brailleOptions)
                 .build();
+        // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
         if (clientInfo != null) {
             job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
         }
-        job.complete(new int[]{});
-        jobRepository.save(job);
+        jobRepository.saveAndFlush(job);
 
-        log.info("텍스트 작업 생성(변환 없음): jobId={}, name={}", jobId, fileName);
-        return new JobResponseDto.Create(jobId, MODE_TEXT, 0, "COMPLETED", insertPageNumber, footerText, layoutOptions);
+        try {
+            byte[] thumbnailBytes = thumbnailService.generateTextThumbnail(chunks.get(0));
+            String thumbnailKey = jobId + "/thumbnail.png";
+            String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
+            job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
+            jobRepository.save(job);
+        } catch (Exception e) {
+            log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+        }
+
+        // total_pages Redis에 저장
+        redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+
+        // 7-b. 청크별 처리
+        for (int i = 0; i < totalPages; i++) {
+            int pageNo = i + 1;
+
+            // S3 업로드 (txt로 통일)
+            String pageKey = jobId + "/pages/page-" + pageNo + ".txt";
+            byte[] chunkBytes = chunks.get(i).getBytes(StandardCharsets.UTF_8);
+            String fullPath = s3Service.uploadFile(pageKey, chunkBytes, "text/plain");
+
+            // Page 엔티티 생성
+            Page page = Page.builder()
+                    .job(job)
+                    .pageNo(pageNo)
+                    .pdfPath(fullPath)
+                    .build();
+            pages.add(page);
+
+            // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
+            tasks.add(taskJson(jobId, pageNo, fullPath, MODE_TEXT, totalPages,
+                    user.getId(), layoutOptions.advancedAi(), brailleOptions));
+
+            // Redis 상태 초기화
+            redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
+        }
+
+        // 8-b. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
+        pageRepository.saveAll(pages);
+        jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
+
+        log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
+        return new JobResponseDto.Create(jobId, MODE_TEXT, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
+
     }
 
     /**
@@ -586,6 +649,52 @@ public class JobService {
         return new JobResponseDto.Options(jobId, insertPageNumber, footerText, footerBraille, merged, braille);
     }
 
+
+    /** 원본 쪽 경계 구분선 — 하이픈 정확히 40개인 줄. TXT 업로드의 쪽 분리 기준이다 */
+    private static final String PAGE_SEPARATOR = "-".repeat(40);
+
+    /**
+     * mode b 입력 텍스트를 쪽 단위로 자른다.
+     *
+     * <p><b>구분선이 있으면 그 경계를 쓰고, 없으면 30줄씩</b> 자른다.
+     *
+     * <p>mode a 결과(.txt)는 원본 쪽 사이에 {@link #PAGE_SEPARATOR}를 넣는다 — "점역으로 보내기"로
+     * mode b에 넘길 것을 전제한 포맷이다. 종전엔 mode b가 이 표식을 못 알아보고 무조건 30줄로 잘라
+     * ① 하이픈 40개가 본문으로 점역되고 ② 쪽 경계가 원문과 무관해져 <b>페이지행의 원본 쪽 번호가
+     * 실제 원문과 어긋났다</b>(FE 요청 B-1). 이제 구분선을 경계로 쓰고 그 줄은 본문에서 뺀다.
+     *
+     * <p>구분선이 없는 보통 TXT는 종전과 똑같이 30줄씩 — 이 30이라는 값은 원문 쪽과 아무 관계가
+     * 없는 임의값이라, 그 경우 페이지행의 "원본 쪽 번호"는 청크 번호일 뿐이다.
+     *
+     * <p>⚠️ mode a는 <b>내용이 전부 빈 쪽에는 구분선도 남기지 않는다</b>. 그래서 원문 중간에 빈
+     * 쪽이 있었다면 그만큼 번호가 앞으로 당겨진다 — .txt 자체에 그 쪽이 없으므로 복원할 수 없다.
+     */
+    static List<String> splitIntoPages(String fullText) {
+        String[] lines = fullText.split("\n", -1);
+        boolean hasSeparator = Arrays.stream(lines).anyMatch(PAGE_SEPARATOR::equals);
+
+        List<String> chunks = new ArrayList<>();
+        if (hasSeparator) {
+            List<String> current = new ArrayList<>();
+            for (String line : lines) {
+                if (PAGE_SEPARATOR.equals(line)) {     // 경계 — 구분선 자체는 버린다
+                    chunks.add(String.join("\n", current));
+                    current.clear();
+                } else {
+                    current.add(line);
+                }
+            }
+            chunks.add(String.join("\n", current));   // 마지막 쪽
+            chunks.removeIf(String::isBlank);          // 구분선이 연달아 있거나 끝에 붙은 경우
+        } else {
+            for (int i = 0; i < lines.length; i += LINES_PER_PAGE) {
+                int end = Math.min(i + LINES_PER_PAGE, lines.length);
+                chunks.add(String.join("\n", Arrays.copyOfRange(lines, i, end)));
+            }
+        }
+        if (chunks.isEmpty()) chunks.add(fullText);
+        return chunks;
+    }
 
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)
     public JobResponseDto.Status getJobStatus(String jobId) {
