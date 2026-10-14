@@ -210,10 +210,7 @@ public class JobService {
                         .layoutOptions(layoutOptions)
                         .brailleOptions(brailleOptions)
                         .build();
-                // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
-                // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
-                job.updateFooterBraille(
-                        footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
+                // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
                 if (clientInfo != null) {
                     job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
                 }
@@ -254,7 +251,7 @@ public class JobService {
 
                     // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
                     tasks.add(taskJson(jobId, i, fullPath, mode, totalPages,
-                            user.getId(), layoutOptions.advancedAi()));
+                            user.getId(), layoutOptions.advancedAi(), brailleOptions));
 
                     // Redis 상태 초기화
                     redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
@@ -303,8 +300,7 @@ public class JobService {
                 .layoutOptions(layoutOptions)
                 .brailleOptions(brailleOptions)
                 .build();
-        job.updateFooterBraille(
-                footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
+        // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
         if (clientInfo != null) {
             job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
         }
@@ -344,7 +340,7 @@ public class JobService {
             pages.add(page);
 
             tasks.add(taskJson(jobId, pageNo, fullPath, mode, totalPages,
-                    user.getId(), layoutOptions.advancedAi()));
+                    user.getId(), layoutOptions.advancedAi(), brailleOptions));
 
             redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
         }
@@ -431,10 +427,31 @@ public class JobService {
      * 포맷 문자열을 따로 들고 있다가 한쪽만 틀린 적이 있어(9d20f81) 한 곳으로 모았다.
      */
     static String taskJson(String jobId, int pageNo, String sourcePath, String mode,
-                           int totalPages, UUID userId, boolean advancedAi) {
+                           int totalPages, UUID userId, boolean advancedAi, BrailleOptions braille) {
         return String.format(
-                "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b}",
-                jobId, pageNo, sourcePath, mode, totalPages, userId, advancedAi);
+                "{\"jobId\":\"%s\",\"pageNo\":%d,\"sourcePath\":\"%s\",\"mode\":\"%s\",\"totalPages\":%d,\"userId\":\"%s\",\"advancedAi\":%b,\"koreanGrade\":%d,\"splitChoices\":%b}",
+                jobId, pageNo, sourcePath, mode, totalPages, userId, advancedAi,
+                koreanGradeOf(braille), splitChoicesOf(braille));
+    }
+
+    /**
+     * 점역 옵션 → proto {@code korean_grade}(10). 1 정자 · 2 약자 · 0 서버 기본(약자).
+     *
+     * <p>업로드 때 정해진 값이 태스크에 실린다 — 변환 중에는 저장이 막혀(JOB4010) 바뀔 수 없으므로
+     * 한 작업의 모든 쪽이 같은 값으로 처리된다.
+     */
+    static int koreanGradeOf(BrailleOptions braille) {
+        if (braille == null) return 0;
+        return switch (String.valueOf(braille.hangulGrade())) {
+            case "grade1" -> 1;
+            case "grade2" -> 2;
+            default -> 0;
+        };
+    }
+
+    /** 점역 옵션 → proto {@code split_choices}(12). 「한 줄에 하나씩」이면 true */
+    static boolean splitChoicesOf(BrailleOptions braille) {
+        return braille != null && "onePerLine".equals(braille.choiceLayout());
     }
 
     /**
@@ -467,10 +484,7 @@ public class JobService {
                 .layoutOptions(layoutOptions)
                 .brailleOptions(brailleOptions)
                 .build();
-        // 꼬리말 점역 (V31) — 화면·SSE·다운로드가 같은 값을 쓰도록 여기서 한 번만 한다.
-        // AI 호출 실패는 삼키고(썸네일과 같은 취급), 판면에 안 들어갈 길이면 COMMON4000
-        job.updateFooterBraille(
-                footerBrailleService.translateForUpload(footerText, layoutOptions, totalPages));
+        // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
         if (clientInfo != null) {
             job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
         }
@@ -508,7 +522,7 @@ public class JobService {
 
             // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
             tasks.add(taskJson(jobId, pageNo, fullPath, MODE_TEXT, totalPages,
-                    user.getId(), layoutOptions.advancedAi()));
+                    user.getId(), layoutOptions.advancedAi(), brailleOptions));
 
             // Redis 상태 초기화
             redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "PENDING");
@@ -607,8 +621,9 @@ public class JobService {
             footerBraille = job.getFooterBraille();                 // 묵자 그대로 — 새 판면에 들어가는지만 본다
             footerBrailleService.validateFits(footerBraille, merged, job.getTotalPages());
         } else {
-            footerBraille = footerBrailleService                    // 바뀌었거나 아직 점역 전 — 다시 점역(길이 검증 포함)
-                    .translateForUpload(footerText, merged, job.getTotalPages());
+            // 바뀌었거나 점역 값이 없다 — V3.1부터 서버가 점역하지 않으므로 비운다(앱이 점역한다).
+            // 예전 점자를 남겨 두면 새 묵자와 어긋난 꼬리말이 화면에 뜬다
+            footerBraille = null;
         }
 
         // 점역 옵션도 같은 규칙 — 보낸 항목만 덮는다. 조판과 달리 판면 검증이 없어 값 검증만 한다

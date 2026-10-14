@@ -23,7 +23,9 @@ class TaskJsonTest {
 
     private Map<String, Object> parse(String mode, String sourcePath) throws Exception {
         return MAPPER.readValue(
-                JobService.taskJson("job-1", 3, sourcePath, mode, 7, USER, true), Map.class);
+                JobService.taskJson("job-1", 3, sourcePath, mode, 7, USER, true,
+                        new com.semojum.backend.domain.job.dto.BrailleOptions(
+                                "grade1", null, null, null, null, "onePerLine", null, null)), Map.class);
     }
 
     /** 워커가 꺼내는 키가 하나라도 빠지면 그 쪽은 처리되지 않는다 */
@@ -31,7 +33,8 @@ class TaskJsonTest {
     void 워커가_읽는_키를_모두_담는다() throws Exception {
         Map<String, Object> task = parse("c", "job-1/pages/page-3.pdf");
 
-        for (String key : new String[]{"jobId", "pageNo", "sourcePath", "mode", "totalPages", "userId", "advancedAi"}) {
+        for (String key : new String[]{"jobId", "pageNo", "sourcePath", "mode", "totalPages", "userId", "advancedAi",
+                "koreanGrade", "splitChoices"}) {
             assertTrue(task.containsKey(key), "태스크에 " + key + " 키가 없다");
         }
     }
@@ -57,5 +60,20 @@ class TaskJsonTest {
         assertEquals(7, task.get("totalPages"));
         assertEquals(USER.toString(), task.get("userId"));
         assertEquals(true, task.get("advancedAi"));
+        assertEquals(1, task.get("koreanGrade"));      // grade1 → 1
+        assertEquals(true, task.get("splitChoices"));  // onePerLine → true
+    }
+
+    /** 점역 옵션 → proto korean_grade · split_choices. 모르는 값이나 null은 서버 기본(0·false) */
+    @Test
+    void 점역_옵션을_AI_값으로_옮긴다() {
+        var grade1 = new com.semojum.backend.domain.job.dto.BrailleOptions("grade1", null, null, null, null, null, null, null);
+        var grade2 = new com.semojum.backend.domain.job.dto.BrailleOptions("grade2", null, null, null, null, "merge", null, null);
+
+        assertEquals(1, JobService.koreanGradeOf(grade1));
+        assertEquals(2, JobService.koreanGradeOf(grade2));
+        assertEquals(0, JobService.koreanGradeOf(null));
+        assertEquals(false, JobService.splitChoicesOf(grade2));
+        assertEquals(false, JobService.splitChoicesOf(null));
     }
 }

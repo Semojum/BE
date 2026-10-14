@@ -6,146 +6,145 @@ option java_outer_classname = "BrailleServiceProto";
 option java_multiple_files = true;
 
 service BrailleService {
-  rpc ProcessPage   (BrailleRequest)       returns (BrailleResponse);       // 원본 1쪽 점역
-  rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);    // 꼬리말 점역. 200자 초과 거절
+  rpc ProcessPage (BrailleRequest) returns (BrailleResponse);   // 원본 1쪽 교열
 }
 
 // ── 요청 (BE → AI) ──────────────────────────────────────────────
 message BrailleRequest {
   string job_id      = 1;   // 작업 식별자
   int32  page_no     = 2;   // 원본 쪽 번호 (1-based)
-  int32  total_pages = 3;   // 헤더·푸터 cross-page 감지용
-  bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
-  string mode        = 5;   // "a" | "b" | "c"
-  string source_text = 6;   // mode b 전용
-  bool   advanced_ai = 7;   // 고급 점역 사용 여부 (업로드 옵션)
-  // [추가 1013] 이미지 업로드 (V3.1). mode c의 입력이 pdf_data 또는 image_data 둘 중 하나가 된다 —
-  // 이미지는 PDF로 바꾸지 않고 올라온 바이트를 그대로 보낸다. 한 장이 한 쪽이라 쪽 분리도 없다.
-  bytes  image_data      = 8;   // 원본 이미지 바이트. pdf_data와 동시에 채우지 않는다
-  string image_mime_type = 9;   // "image/jpeg" | "image/png". image_data가 있을 때만
-}
+  int32  total_pages = 3;   // 머리글·꼬리글 쪽 넘김 감지용
+  bytes  pdf_data    = 4;   // 단일 페이지 PDF. mode a 의 입력
+  string mode        = 5;   // "a" PDF·이미지 | "b" 글
+  string text_data   = 6;   // 글 원문. mode b 의 입력. hwp·docx·txt 에서 뽑은 글, 표는 HTML <table>
+  bool   advanced_ai = 7;   // 고급 교열. MinerU 대신 고성능 외부 API 가 지면을 직접 읽는다
+  bytes  image_data      = 8;   // 원본 이미지 바이트. mode a 의 입력. pdf_data 와 동시에 채우지 않는다
+  string image_mime_type = 9;   // "image/jpeg" | "image/png". image_data 가 있을 때만
 
-message TranslateTextRequest {
-  string text = 1;          // 묵자 (예: "수특 사회문화 2")
+  int32  korean_grade  = 10;  // 한글 점자 급수. 1 정자 · 2 약자. 0 = 서버 기본(2)
+  int32  english_grade = 11;  // 영어 점자 급수. 1 정자 · 2 약자. 0 = 서버 기본(2)
+  bool   split_choices = 12;  // 선택지를 한 줄이 하나씩 적는다. 안 보내면 짧은 선택지를 합친다. (기본 false)
 }
 
 // ── 서브메시지 ───────────────────────────────────────────────────
 message BoundingBox {
-  string          id            = 1;   // 요소 식별자. TextElement.id와 동일
+  string          id            = 1;   // 요소 식별자. TextElement.id 와 같다
   int32           x             = 2;   // 좌상단 x (픽셀)
   int32           y             = 3;   // 좌상단 y (픽셀)
   int32           x2            = 4;   // 우하단 x (픽셀)
   int32           y2            = 5;   // 우하단 y (픽셀)
   string          type          = 6;   // 요소 유형 13종
-  int32           heading_level = 7;   // 제목 단계. 0 = null
-  string          caption_ref   = 8;   // 참조 element_id. "" = null
+  int32           heading_level = 7;   // 제목 단계. 0 = 본문
+  string          caption_ref   = 8;   // 이 요소가 가리키는 그림의 element_id. "" = 없음
   repeated string flags         = 9;   // 요소 단위 경고
 }
 
-// [변경 0901] title→rule_name, excerpt→contents로 개명(필드 번호는 그대로라 전선 형식은 동일).
-// publisher·version·path 신설 — 규정 출처를 발행처·판·조문 경로까지 특정한다.
 message RuleTrail {
-  string rule_id     = 1;   // 예: "MCST-한글-6.13.56"
-  string source      = 2;
+  string rule_id     = 1;   // 조항 식별자. 예 "MCST-한글-6.13.56"
+  string source      = 2;   // 규정 이름
   string section     = 3;   // path 를 " · " 로 합친 표시용 한 줄
-  string rule_name   = 4;   // 옛 title
-  string contents    = 5;   // 옛 excerpt
-  string priority    = 6;
-  int32  line_no     = 7;
-  int32  col_start   = 8;
-  int32  col_end     = 9;
-  string tag         = 10;
+  string rule_name   = 4;   // 조항 이름
+  string contents    = 5;   // 조항 본문에서 뽑은 대목
+  string priority    = 6;   // 적용 우선순위
+  int32  line_no     = 7;   // 원문 행 번호
+  int32  col_start   = 8;   // 적용된 글의 시작 자리
+  int32  col_end     = 9;   // 적용된 글의 끝 자리
+  string tag         = 10;  // 분류 꼬리표
   string publisher   = 11;  // 문화체육관광부 · 국립장애인도서관 · 국립특수교육원
-  int32  version     = 12;  // 2024 · 2025
-  SectionPath path   = 13;
+  int32  version     = 12;  // 발행 연도. 2024 · 2025
+  SectionPath path   = 13;  // 조문 경로
 }
 
 message SectionPath {
-  string part = 1;
-  string chapter = 2;
-  string section = 3;
-  string paragraph = 4;
-  string subparagraph = 5;
-  string item = 6;   // 없는 단계는 ""
+  string part         = 1;  // 편
+  string chapter      = 2;  // 장
+  string section      = 3;  // 절
+  string paragraph    = 4;  // 항
+  string subparagraph = 5;  // 호
+  string item         = 6;  // 목. 없는 단계는 ""
 }
 
-message TactileGraphic {           // 미사용. 2차 PoC 이후
-  string ascii_braille = 1;
-  string svg_path      = 2;
-  string target_tool   = 3;
+message TactileGraphic {
+  string ascii_braille = 1;  // 촉각 그래픽 점자. 미사용
+  string svg_path      = 2;  // 촉각 그래픽 벡터. 미사용
+  string target_tool   = 3;  // 출력 장비 이름. 미사용
 }
 
 message CriticalError {
-  string type       = 1;    // 현재 발생: C1·C5·C7. 나머지는 예약 — 오기 전까지 분기 만들지 말 것
+  string type       = 1;    // 치명 오류 갈래. 현재 C1 · C7
   string element_id = 2;    // 원인 요소. 쪽 전체면 ""
   string message    = 3;    // 한국어 사유 문구
 }
 
 message ReviewFlag {
-  string type       = 1;    // 현재 발생: R1·R10~R14. R13은 경고가 아니라 등급(요소 40%에 붙음)
+  string type       = 1;    // 검토 권고 갈래. 현재 R1 · R10~R19
   string element_id = 2;    // 대상 요소
   string message    = 3;    // 한국어 사유 문구
 }
 
 message QualityReport {
-  float                   ocr_confidence_avg = 1;   // 쪽 평균 OCR 신뢰도
+  float                   ocr_confidence_avg = 1;   // 쪽 평균 추출 신뢰도
   repeated CriticalError  critical_errors    = 2;   // 치명 오류. 비면 정상
   repeated ReviewFlag     review_flags       = 3;   // 검토 권고
 }
 
 message ProcessingMeta {
   int32  processing_time_ms   = 1;   // 처리 시간
-  float  pdf_layer_confidence = 2;   // PDF 텍스트 레이어 신뢰도
-  string routing_tier_used    = 3;   // ZERO|STANDARD|QUALITY|FALLBACK
-  bool   scan_only            = 4;   // 텍스트 레이어 없는 스캔본
+  float  pdf_layer_confidence = 2;   // PDF 글자층 신뢰도
+  string routing_tier_used    = 3;   // ZERO | STANDARD | QUALITY | FALLBACK
+  bool   scan_only            = 4;   // 글자층 없는 스캔본
 }
 
-message Draft {                     // 시각 6안(기본 selected_idx=2 개조식)·표 4안. 개수 하드코딩 금지
-  string          text     = 1;     // 초안 묵자. 내부 태그 제거됨
-  repeated string contents = 2;     // 초안 점자. mode a는 빈 배열
-  string          label    = 3;     // 피커 표시명 ("생략" / "개조식 설명" / "행↔열 전치" ...)
+message Draft {
+  string text  = 1;   // 시각 자료 대체 설명 초안. 묵자. 내부 태그 없음
+  reserved 2;         // 쓰지 않는다
+  string label = 3;   // 고르기 창에 뜨는 이름. "생략" · "짧은 제목" · "개조식" · "줄글" 등
+  string tn_text = 4;   // 이 초안의 점역 태그가 든 묵자.
 }
 
 message TextElement {
   string          id                 = 1;    // 요소 식별자
   string          type               = 2;    // 요소 유형 13종
-  int32           order              = 3;    // 읽기 순서. mode b는 원본 줄 번호
-  int32           heading_level      = 4;    // 제목 단계. 0 = null
-  float           ocr_confidence     = 5;    // 요소 OCR 신뢰도
+  int32           order              = 3;    // 읽기 순서. mode b 는 원본 줄 번호
+  int32           heading_level      = 4;    // 제목 단계. 0 = 본문
+  float           ocr_confidence     = 5;    // 요소 추출 신뢰도
   string          tn_text            = 6;    // 점역자 주. 없으면 ""
   bool            is_blocked         = 7;    // 이 요소만 처리 실패
-  string          render_mode        = 8;    // 조판 방식 (table_grid / linear / narrative ...)
-  string          visual_subtype     = 9;    // 도표 세분류 (개념도 / 흐름도 ...)
+  string          render_mode        = 8;    // 조판 방식. table_grid · linear · numbered …
+                                            // 추출이 주는 값이 아니라 서버가 정한다. 표 요소는 늘 채워진다
+  string          visual_subtype     = 9;    // 시각 자료 세분류. 개념도 · 흐름도 …
   float           subtype_confidence = 10;   // 세분류 신뢰도
-  string          latex_string       = 11;   // formula 전용 원본 LaTeX
-  TactileGraphic  tactile            = 12;   // 미사용. 2차 PoC 이후
-  repeated string    contents        = 13;   // 본문. 통 문자열 1항목, 조판 규칙 포함
+  string          latex_string       = 11;   // 수식 요소의 LaTeX 원문
+  TactileGraphic  tactile            = 12;   // 촉각 그래픽. 미사용
+  repeated string    contents        = 13;   // 본문 묵자. 통 문자열 1항목, 점역 태그 포함
   repeated RuleTrail rule_trail      = 14;   // 적용된 규정 목록
-  repeated Draft     drafts          = 15;   // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
-  int32              selected_idx    = 16;   // 기본 초안 번호 (0-based)
+  repeated Draft     drafts          = 15;   // 시각 자료 대체 설명 초안들. 글·수식 요소는 빈 배열
+  int32              selected_idx    = 16;   // 기본으로 고른 초안 번호 (0-based)
+
+  string             table_source    = 17;   // 표 요소의 칸 글. <!표><!행><!칸> 태그 꼴. 표 요소에만 채운다
+  int32              table_box_level = 18;   // 표를 감싼 글상자 단계. 0 = 상자 밖. 표 요소에만 채운다
 }
 
 // ── 사용량 ──────────────────────────────────────────────────────
-// [변경 0817] AI는 측정값(토큰·시간·유형)만 보냄. 금액·크레딧은 BE가 관리 변수로 계산
-enum PageLayoutType {               // 쪽 대표 유형. 원가 통계와 크레딧 배율의 축
-  PAGE_LAYOUT_UNSPECIFIED = 0;      // 판정 불가. 요소 없는 쪽 (크레딧 0 — 차감 0도 로그에 남길 것)
+enum PageLayoutType {
+  PAGE_LAYOUT_UNSPECIFIED = 0;      // 판정 불가. 요소 없는 쪽
   PAGE_LAYOUT_TEXT        = 1;      // 본문 위주
   PAGE_LAYOUT_FORMULA     = 2;      // 수식 포함
   PAGE_LAYOUT_TABLE       = 3;      // 표 포함
   PAGE_LAYOUT_VISUAL      = 4;      // 그림·만화·차트·도표 포함
 }
 
-message ModelUsage {                // 모델별 LLM 사용량. BE 원가 계산의 원본
-  string model         = 1;         // 모델 ID ("claude-sonnet-5" / "gpt-4o" ...). 단가표에 없으면 0원 아닌 "미확인 모델" 표시
+message ModelUsage {
+  string model         = 1;         // 모델 ID. 단가표에 없으면 "미확인 모델"
   int32  calls         = 2;         // 호출 횟수
-  int64  input_tokens  = 3;         // 입력 토큰 합계 (응답 usage 실값)
-  int64  output_tokens = 4;         // 출력 토큰 합계 (응답 usage 실값)
+  int64  input_tokens  = 3;         // 입력 토큰 합계
+  int64  output_tokens = 4;         // 출력 토큰 합계
 }
 
-message UsageReport {               // [변경 0817] 구 CostReport. 이 호출 1회의 사용량 — 전부 측정값이라 안 바뀜
-  PageLayoutType layout_type = 1;   // 쪽 대표 유형. 섞이면 비싼 쪽이 이김 (그림>표>수식>본문)
+message UsageReport {
+  PageLayoutType layout_type = 1;   // 쪽 대표 유형. 섞이면 비싼 쪽. 그림 > 표 > 수식 > 본문
   repeated ModelUsage models = 2;   // 모델별 토큰. LLM 미사용 시 빈 배열
-  int64 gpu_time_ms          = 3;   // 로컬 GPU 점유 시간 합계(ms). GPU 원가 = 이 값 × BE 시간당 단가
+  int64 gpu_time_ms          = 3;   // 로컬 GPU 점유 시간 합계(ms)
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────────────
@@ -153,16 +152,12 @@ message BrailleResponse {
   string job_id      = 1;   // 요청 job_id 반환
   string status      = 2;   // COMPLETED | NEEDS_REVIEW | BLOCKED
   int32  page_number = 3;   // 원본 쪽 번호
-  ProcessingMeta          processing_meta     = 4;   // 처리 시간·라우팅 정보
-  int32                   image_width         = 5;   // 원본 쪽 가로 픽셀. mode a, c
-  int32                   image_height        = 6;   // 원본 쪽 세로 픽셀. mode a, c
-  repeated BoundingBox    bounding_box_list   = 7;   // 요소 좌표. mode a, c
-  repeated TextElement    text_list           = 8;   // 원문(묵자). mode a, b, c
-  repeated TextElement    braille_text_list   = 9;   // 점역 결과. mode b, c
-  QualityReport           quality_report      = 10;  // 품질 검사 결과
-  UsageReport             usage_report        = 11;  // 사용량 관련 정보
-}
-
-message TranslateTextReply {
-  string braille = 1;       // 유니코드 점자
+  ProcessingMeta       processing_meta   = 4;   // 처리 시간·라우팅 정보
+  int32                image_width       = 5;   // 원본 쪽 가로 픽셀
+  int32                image_height      = 6;   // 원본 쪽 세로 픽셀
+  repeated BoundingBox bounding_box_list = 7;   // 요소 좌표
+  repeated TextElement text_list         = 8;   // 교열 결과. 묵자 요소 목록
+  reserved 9;                                   // 쓰지 않는다
+  QualityReport        quality_report    = 10;  // 품질 검사 결과
+  UsageReport          usage_report      = 11;  // 사용량
 }

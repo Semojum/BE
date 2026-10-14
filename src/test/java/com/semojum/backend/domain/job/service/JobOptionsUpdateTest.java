@@ -132,29 +132,31 @@ class JobOptionsUpdateTest {
 
     // ── 꼬리말 ──────────────────────────────────────────────────────────
 
+    /**
+     * V3.1부터 서버는 꼬리말을 점역하지 않는다(TranslateText 삭제). 묵자가 바뀌면 예전 점자를
+     * 비운다 — 남겨 두면 새 묵자와 어긋난 꼬리말이 화면에 뜬다. 점역은 앱이 한다.
+     */
     @Test
-    void 꼬리말이_바뀌면_다시_점역한다() {
-        job("COMPLETED", "안녕", "⠣⠒⠉⠻");
-        when(footerBrailleService.translateForUpload(anyString(), any(), anyInt())).thenReturn("⠨⠎⠢⠨");
+    void 꼬리말이_바뀌면_예전_점역_값을_비운다() {
+        Job job = job("COMPLETED", "안녕", "⠣⠒⠉⠻");
 
         JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1",
                 new JobRequestDto.UpdateOptions(null, "제1장", null, null));
 
         assertEquals("제1장", result.footerText());
-        assertEquals("⠨⠎⠢⠨", result.footerBraille());
-        verify(footerBrailleService).translateForUpload(eq("제1장"), any(), eq(8));
+        assertNull(result.footerBraille(), "새 묵자와 어긋난 예전 점자가 남으면 안 된다");
+        assertNull(job.getFooterBraille());
     }
 
-    /** 판면만 바꾼 경우 — AI를 다시 부르면 느리고 값도 같다 */
+    /** 판면만 바꾼 경우 — 묵자가 그대로면 예전 점역 값도 그대로 쓴다 */
     @Test
-    void 꼬리말이_그대로면_다시_점역하지_않는다() {
+    void 꼬리말이_그대로면_예전_점역_값을_유지한다() {
         job("COMPLETED", "안녕", "⠣⠒⠉⠻");
 
         JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1",
                 patch(onlyCellsPerLine(36)));
 
         assertEquals("⠣⠒⠉⠻", result.footerBraille());
-        verify(footerBrailleService, never()).translateForUpload(anyString(), any(), anyInt());
     }
 
     /**
@@ -183,7 +185,6 @@ class JobOptionsUpdateTest {
         assertNull(result.footerText());
         assertNull(result.footerBraille(), "묵자를 지웠으면 점자도 남으면 안 된다");
         assertNull(job.getFooterBraille());
-        verify(footerBrailleService, never()).translateForUpload(anyString(), any(), anyInt());
     }
 
     @Test
