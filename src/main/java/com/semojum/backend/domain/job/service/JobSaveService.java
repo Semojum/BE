@@ -50,25 +50,17 @@ public class JobSaveService {
         // 2. 쪽마다 독립 트랜잭션 — 실패한 쪽만 걷어낸다
         List<Integer> failed = new ArrayList<>();
         int saved = 0;
-        int lastSavedPage = 0;
         for (JobRequestDto.SaveJobPage page : request.pages()) {
             try {
                 pageContentSaver.savePage(job, page);
                 saved++;
-                lastSavedPage = Math.max(lastSavedPage, page.pageNo());
             } catch (Exception e) {
                 failed.add(page.pageNo());
                 log.warn("쪽 저장 실패: jobId={}, pageNo={}, error={}", jobId, page.pageNo(), e.toString());
             }
         }
 
-        // 3. 텍스트 작업(TXT · 새 문서)은 쪽 나누기를 앱이 정한다 — 쪽 수를 저장된 마지막 쪽 번호로 맞춘다.
-        //    본문이 최종 상태라 앱이 쪽을 줄였으면 쪽 수도 준다. PDF 작업은 변환이 정한 쪽 수 그대로
-        if ("b".equals(job.getMode()) && lastSavedPage > 0) {
-            job.updateTotalPages(lastSavedPage);
-        }
-
-        // 4. 내용이 바뀌었으면 카드 날짜·복구 지점은 쪽 저장이 이미 갱신했다. 여기선 확정만.
+        // 3. 내용이 바뀌었으면 카드 날짜·복구 지점은 쪽 저장이 이미 갱신했다. 여기선 확정만.
         jobRepository.save(job);
 
         log.info("작업 저장: jobId={}, 저장 {}쪽, 실패 {}쪽{}", jobId, saved, failed.size(),
