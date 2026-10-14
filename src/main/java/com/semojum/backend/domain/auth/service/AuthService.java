@@ -29,22 +29,27 @@ public class AuthService {
     private final JwtProvider jwtProvider;
     private final PasswordEncoder passwordEncoder;
     private final ConsoleOrigins consoleOrigins;
+    private final LoginAttemptService loginAttemptService;
 
     @Transactional
     public AuthResponseDto.Login login(AuthRequestDto.Login request, String origin) {
-        // 발급 ID로 유저 조회
+        // 5회 실패 잠금(V3.1) — 잠긴 동안은 비밀번호가 맞아도 들어가지 못한다. 없는 ID도 같은 규칙
+        loginAttemptService.checkNotLocked(request.loginId());
+
+        // 발급 ID로 유저 조회 — 없는 ID도 틀린 횟수를 센다(응답이 같아야 ID 존재 여부가 드러나지 않는다)
         User user = userRepository.findByLoginId(request.loginId())
                 .orElseThrow(() -> {
                     log.warn("로그인 실패: loginId={} (존재하지 않는 ID)", request.loginId());
-                    return new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+                    return loginAttemptService.fail(request.loginId());
                 });
 
         // 비밀번호 검증
         if (user.getPassword() == null
                 || !passwordEncoder.matches(request.password(), user.getPassword())) {
             log.warn("로그인 실패: loginId={} (비밀번호 불일치)", request.loginId());
-            throw new CustomException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+            throw loginAttemptService.fail(request.loginId());
         }
+        loginAttemptService.reset(request.loginId());
 
         // 비활성 계정 차단 (계약 만료·퇴사 등 운영자 조치)
         if (!user.isActive()) {

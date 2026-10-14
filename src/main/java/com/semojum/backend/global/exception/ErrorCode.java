@@ -20,6 +20,8 @@ public enum ErrorCode {
     AUTH_DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "AUTH4002", "이미 사용 중인 로그인 ID입니다."),
     AUTH_INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH4003", "액세스 토큰이 만료되었거나 유효하지 않습니다."),
     AUTH_WRONG_CHANNEL(HttpStatus.FORBIDDEN, "AUTH4005", "이 환경에서는 로그인할 수 없는 계정입니다."),
+    // 로그인 5회 실패 → 10분 잠금 (V3.1, 기획 9-4) — result.unlockAt에 해제 시각
+    AUTH_LOGIN_LOCKED(HttpStatus.TOO_MANY_REQUESTS, "AUTH4006", "로그인을 5회 실패해 10분 동안 잠겼습니다. 잠시 후 다시 시도해 주세요."),
 
     // ========== 유저 (USER) ==========
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER4001", "존재하지 않는 회원입니다."),

@@ -85,6 +85,8 @@ com.semojum.backend
 ## 인증
 
 - 자체 가입 없음 — 운영자가 기관별 계정 발급, 1인 1계정. 로그인 시 기존 세션 전부 revoke(중복 로그인 금지)
+- **로그인 5회 실패 → 10분 잠금**(V3.1, 기획 9-4) — `LoginAttemptService`, Redis `auth:login-fail:{loginId}`(마지막 실패 후 10분 TTL) · `auth:login-lock:{loginId}`. 틀리면 AUTH4001 + `result.remainingAttempts`, 5번째와 잠긴 동안은 AUTH4006 + `result.unlockAt`. **잠긴 동안은 비밀번호가 맞아도 거절**, 맞으면 센 것을 지운다
+  - ⚠️ **없는 ID도 똑같이 센다** — 응답이 달라지면 ID 존재 여부가 드러난다. 그래서 운영 E2E는 없는 ID로 할 것(실계정으로 하면 그 계정이 10분 잠긴다)
 - **역할 3단**: ROLE_ADMIN(운영자) / ROLE_ORG_ADMIN(기관 관리자, `/api/org/**`) / ROLE_USER(점역사)
 - **ROLE_ADMIN 웹/앱 분리** (`users.admin_scope` = WEB·APP·null): 로그인 시 브라우저가 붙이는 **Origin이 콘솔 주소면 콘솔 로그인**으로 보고 WEB 계정만 허용, 아니면 AUTH4005. WEB 계정은 콘솔 밖에서 로그인 불가
   - ⚠️ **curl로 `/api/admin/**`를 부를 때는 `Origin: https://admin.semo-jum.com` 헤더 필수** — 안 붙이면 AUTH4005
@@ -264,6 +266,8 @@ inquiries / inquiry_attachments / orders / app_versions
 | `sched:job:{jobId}:fg` | FG 리스 (TTL 30s) |
 | `job:{jobId}:pages` | 쪽별 상태 Hash + total_pages (**종료 시 TTL 1h**) |
 | `job:{jobId}:canceled` | 취소 플래그 (TTL 1h) |
+| `auth:login-fail:{loginId}` | 로그인 틀린 횟수 (마지막 실패 후 TTL 10분) |
+| `auth:login-lock:{loginId}` | 로그인 잠금, 값 = 해제 시각 epoch ms (TTL 10분) |
 
 # 컨벤션
 
