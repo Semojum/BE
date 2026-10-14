@@ -25,7 +25,7 @@ public record LayoutOptions(
         // 원본 쪽이 바뀌는 자리의 변경선 (기본 true). 끄면 화면과 .brf 둘 다에서 사라진다 —
         // 종전엔 이 스위치가 없어 showSourcePageNumber를 꺼야만 덩달아 꺼졌다(2026-09-03 추가)
         Boolean showChangeLine,
-        String footerAlign,             // 꼬리말 정렬: center(가운데) | right(우측). 기본 center
+        String footerAlign,             // 꼬리말 정렬: left(왼쪽) | center(가운데) | right(우측). 기본 center (left는 2026-10-14 추가)
         String editScope,               // 판면 수정 시 기본 적용 범위: all(이후 전부) | page(그 면만). 기본 all
         Boolean advancedAi              // 고급 점역 사용 여부 (기본 false) — AI 요청에 실린다
 ) {

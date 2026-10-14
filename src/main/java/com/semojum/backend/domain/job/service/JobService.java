@@ -495,7 +495,7 @@ public class JobService {
                 && o.linesPerPage() >= 4 && o.linesPerPage() <= 100
                 && o.coverPages() >= 0 && o.sourcePageStart() >= 0 && o.braillePageStart() >= 1
                 && List.of("odd", "every", "none").contains(o.pageNumberLine())
-                && List.of("center", "right").contains(o.footerAlign())
+                && List.of("left", "center", "right").contains(o.footerAlign())
                 && List.of("all", "page").contains(o.editScope());
         if (!valid) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
         return o;
