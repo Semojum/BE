@@ -94,13 +94,14 @@ public class JobRequestDto {
     ) {}
 
     /**
-     * 새 문서 — 파일 없이 본문 텍스트로 작업을 만든다(파일 › 새 문서, Ctrl+N).
+     * 새 문서 — 파일 없이 작업을 만든다(파일 › 새 문서, Ctrl+N). TXT 업로드도 이걸 쓰면 된다.
      *
-     * <p>쪽 분리는 TXT 업로드와 같다 — 구분선(하이픈 정확히 40개 줄) 우선, 없으면 30줄 청크.
+     * <p>V3.1부터 서버는 본문을 쓰지 않는다 — 점역·쪽 나누기는 앱이 하고, 내용은 첫 저장에 실려 온다.
+     * {@code text}는 구 클라이언트 호환으로 받기만 한다(보내지 않아도 된다).
      * 결과는 텍스트 · 점자 2패널이고 원본 패널이 없다.
      */
     public record NewDocument(
-            @NotBlank String text,
+            String text,
             String fileName,
             Boolean insertPageNumber,
             String footerText,

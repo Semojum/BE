@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
@@ -125,5 +126,50 @@ class JobSaveServiceTest {
         verify(jobService).updateJobOptions(eq(USER_ID), eq("job1"),
                 argThat(o -> Boolean.TRUE.equals(o.insertPageNumber())
                         && "수특 사회문화 2".equals(o.footerText())));
+    }
+
+    // ── 텍스트 작업의 쪽 수 (V3.1) ──────────────────────────────────
+    // 텍스트 작업은 쪽 나누기를 앱이 정한다. 생성 땐 0이고 저장된 마지막 쪽 번호가 쪽 수가 된다.
+
+    @Test
+    void 텍스트_작업은_저장된_마지막_쪽이_쪽_수가_된다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+
+        service.save(USER_ID, "job-t", request(1, 2, 3));
+
+        assertEquals(3, textJob.getTotalPages());
+    }
+
+    /** 본문이 최종 상태라 앱이 쪽을 줄였으면 쪽 수도 준다 */
+    @Test
+    void 텍스트_작업에서_쪽이_줄면_쪽_수도_준다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(5).originalFileName("무제").build();
+        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+
+        service.save(USER_ID, "job-t", request(1, 2));
+
+        assertEquals(2, textJob.getTotalPages());
+    }
+
+    /** 실패한 쪽은 쪽 수에 넣지 않는다 — 없는 쪽을 가리키게 되면 조회가 404다 */
+    @Test
+    void 텍스트_작업의_실패한_마지막_쪽은_쪽_수에_넣지_않는다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+        doThrow(new RuntimeException("쪽 3 실패")).when(pageContentSaver)
+                .savePage(any(), argThat(pg -> pg != null && pg.pageNo() == 3));
+
+        service.save(USER_ID, "job-t", request(1, 2, 3));
+
+        assertEquals(2, textJob.getTotalPages());
+    }
+
+    /** PDF 작업의 쪽 수는 변환이 정한다 — 저장이 건드리지 않는다 */
+    @Test
+    void PDF_작업의_쪽_수는_저장이_바꾸지_않는다() {
+        service.save(USER_ID, "job1", request(1));
+
+        assertEquals(3, job.getTotalPages());
     }
 }
