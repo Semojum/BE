@@ -277,6 +277,16 @@ public class Job {
         this.lastModifiedAt = LocalDateTime.now();   // 내용이 바뀌었다 — 카드 날짜·정렬 기준
     }
 
+    /**
+     * 텍스트 작업의 쪽 수를 저장된 쪽으로 맞춘다 (V3.1).
+     *
+     * <p>텍스트 작업은 쪽 나누기를 앱이 정하므로 생성 땐 0이고, 저장할 때마다 앱이 보낸 마지막 쪽
+     * 번호가 쪽 수가 된다. PDF 작업은 쪽 수가 변환으로 정해져 이 메서드를 쓰지 않는다.
+     */
+    public void updateTotalPages(int totalPages) {
+        this.totalPages = totalPages;
+    }
+
     public void complete(int[] failedPages) {
         this.status = "COMPLETED";
         this.failedPages = failedPages;

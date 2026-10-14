@@ -47,7 +47,7 @@ public class PageContentSaver {
         int pageNo = page.pageNo();
         PageResult pageResult = pageResultRepository
                 .findByJobIdAndPageNumber(job.getId(), pageNo)
-                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+                .orElseGet(() -> createTextPage(job, pageNo));
 
         boolean changed = false;
         if (page.text() != null) changed |= saveText(pageResult, page.text());
@@ -62,6 +62,41 @@ public class PageContentSaver {
 
         if (changed) job.markContentEdited(pageNo);
         return changed;
+    }
+
+    /** 텍스트 작업의 쪽 결과 상태 — AI 결과가 아니라 저장으로 생긴 행이다 */
+    public static final String STATUS_SAVED = "SAVED";
+
+    /**
+     * 텍스트 작업(TXT · 새 문서)의 쪽을 <b>앱이 보낸 쪽 번호대로</b> 처음 만든다 (V3.1).
+     *
+     * <p>텍스트 작업은 AI를 거치지 않아 생성 때 쪽이 하나도 없다 — 쪽 나누기는 앱이 정한다.
+     * 그래서 첫 저장이 쪽과 빈 쪽 결과를 만들고, 그 위에 받은 블록을 붙인다.
+     *
+     * <p>PDF·HWP·이미지 작업은 쪽이 AI 변환으로 만들어지므로 <b>여기서 만들지 않는다</b> —
+     * 없는 쪽 번호가 오면 종전대로 JOB4001이다(앱 버그를 그대로 드러낸다).
+     *
+     * <p>쪽 결과 상태를 {@link #STATUS_SAVED}로 두는 이유: 운영 통계가 쪽 결과의
+     * COMPLETED·NEEDS_REVIEW를 <b>변환 쪽수</b>로 센다. AI가 돌지 않은 쪽을 거기 넣으면
+     * 변환량·쪽당 원가가 조용히 틀어진다. 쪽({@code pages}) 상태는 COMPLETED라 화면은 정상이다.
+     *
+     * <p>{@code pdf_path}는 빈 문자열이다 — 칼럼이 NOT NULL인데 원본 파일이 없다.
+     * 쪽 조회는 빈 경로면 원본을 내려주지 않는다({@code UserService.buildOriginal}).
+     */
+    private PageResult createTextPage(Job job, int pageNo) {
+        if (!"b".equals(job.getMode())) throw new CustomException(ErrorCode.JOB_NOT_FOUND);
+        if (pageNo < 1) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+
+        Page p = pageRepository.findByJobAndPageNo(job, pageNo).orElseGet(() -> {
+            Page created = Page.builder().job(job).pageNo(pageNo).pdfPath("").build();
+            created.updateStatus("COMPLETED");
+            return pageRepository.save(created);
+        });
+        log.info("텍스트 작업 쪽 생성: jobId={}, pageNo={}", job.getId(), pageNo);
+        return pageResultRepository.save(PageResult.builder()
+                .job(job).page(p).pageNumber(pageNo).mode("b")
+                .status(STATUS_SAVED).rawResponse("{}")
+                .build());
     }
 
     // ── 패널별 diff ──────────────────────────────────────────────────
