@@ -75,6 +75,31 @@ public class AdminSupportService {
         return toNoticeItem(noticeRepository.findById(saved.getId()).orElse(saved), orgName);
     }
 
+    /** 공지 수정 (V3.1) — 등록과 같은 검증. 게시판 조회수는 그대로 둔다 */
+    @Transactional
+    public SupportDto.NoticeItem updateNotice(UUID noticeId, SupportDto.CreateNotice request) {
+        if (request.endsOn().isBefore(request.startsOn())) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new CustomException(ErrorCode.BOARD_NOTICE_NOT_FOUND));
+        String orgName = null;
+        if (request.targetOrganizationId() != null) {
+            orgName = organizationRepository.findById(request.targetOrganizationId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.ORG_NOT_FOUND)).getName();
+        }
+        notice.update(request.targetOrganizationId(), request.title(), request.body(),
+                request.startsOn(), request.endsOn());
+        log.info("공지 수정: noticeId={}", noticeId);
+        return toNoticeItem(notice, orgName);
+    }
+
+    @Transactional
+    public void deleteNotice(UUID noticeId) {
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new CustomException(ErrorCode.BOARD_NOTICE_NOT_FOUND));
+        noticeRepository.delete(notice);
+        log.info("공지 삭제: noticeId={}", noticeId);
+    }
+
     @Transactional(readOnly = true)
     public List<SupportDto.NoticeItem> listNotices() {
         Map<UUID, String> orgNames = orgNameMap();
