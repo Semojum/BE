@@ -20,7 +20,8 @@ import java.util.UUID;
  *
  * <pre>
  *   ① 양식을 골랐으면 그 양식의 값이 바탕      (조판·점역 둘 다)
- *   ② 안 골랐으면 계정 기본값이 바탕            (점역만 — 조판은 계정 기본값 개념이 없다)
+ *   ② 안 골랐으면 계정 기본값이 바탕            (점역 전부 + 조판은 페이지행 면 하나 — D6에 있는 것만)
+ *      그 밖의 조판은 공장 기본값(32칸 × 26줄 …)
  *   ③ 개별 항목을 보냈으면 그 위에 덮는다
  * </pre>
  *
@@ -42,7 +43,11 @@ public class UploadOptionsResolver {
     public Resolved resolve(User user, String formId,
                             LayoutOptions requestedLayout, BrailleOptions requestedBraille) {
 
-        LayoutOptions baseLayout = LayoutOptions.defaults();
+        // 양식을 안 골랐을 때의 바탕 — 공장 기본값 위에 계정 기본 페이지행 면(D6)
+        LayoutOptions baseLayout = user.getDefaultPageNumberLine() == null
+                ? LayoutOptions.defaults()
+                : LayoutOptions.defaults().merge(new LayoutOptions(null, null, user.getDefaultPageNumberLine(),
+                        null, null, null, null, null, null, null, null, null));
         BrailleOptions baseBraille = user.resolveBrailleOptions();
 
         if (formId != null && !formId.isBlank()) {

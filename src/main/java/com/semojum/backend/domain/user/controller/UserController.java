@@ -36,7 +36,7 @@ public class UserController {
      * <p>저장한 적 없으면 공장 기본값이 내려온다. 작업이 아니라 계정에 딸린 값이다.
      */
     @GetMapping("/braille-options")
-    public ApiResponse<com.semojum.backend.domain.job.dto.BrailleOptions> getBrailleOptions(
+    public ApiResponse<com.semojum.backend.domain.user.dto.DefaultOptions> getBrailleOptions(
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         return ApiResponse.success(brailleOptionsService.get(userDetails.getUsername()));
@@ -97,9 +97,9 @@ public class UserController {
      * 조용히 무시되는 것보다 여기서 막는 편이 낫다.
      */
     @PutMapping("/braille-options")
-    public ApiResponse<com.semojum.backend.domain.job.dto.BrailleOptions> updateBrailleOptions(
+    public ApiResponse<com.semojum.backend.domain.user.dto.DefaultOptions> updateBrailleOptions(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestBody(required = false) com.semojum.backend.domain.job.dto.BrailleOptions request
+            @RequestBody(required = false) com.semojum.backend.domain.user.dto.DefaultOptions request
     ) {
         return ApiResponse.success(brailleOptionsService.update(userDetails.getUsername(), request));
     }

@@ -161,6 +161,8 @@ class UploadOptionsResolverTest {
         assertEquals("grade1", r.brailleOptions().hangulGrade());
     }
 
+    // ── 페이지행 면 (2026-10-14) ─────────────────────────────────────
+
     /**
      * 회귀: 바탕을 구 insert_page_number 환산값으로 잡아(2026-10-13), 앱이 pageNumberLine을 안 보내면
      * 페이지행이 none으로 빠졌다. 바탕은 공장 기본값(홀수)이어야 한다.
@@ -171,5 +173,36 @@ class UploadOptionsResolverTest {
                 new LayoutOptions(null, null, null, null, null, null, null, null, null, null, null, null), null);
 
         assertEquals("odd", r.layoutOptions().pageNumberLine());
+    }
+
+    /** D6 「페이지행 면」은 양식을 안 고른 업로드의 바탕이 된다 */
+    @Test
+    void 계정_기본_페이지행_면이_바탕이_된다() {
+        User user = userWithDefault("grade2");
+        user.updateDefaults("builtin:MIDHIGH_TEXTBOOK", "every");
+
+        assertEquals("every", resolver.resolve(user, null, null, null).layoutOptions().pageNumberLine());
+    }
+
+    /** 양식을 고르면 양식의 조판이 이긴다 — 고른 쪽이 더 구체적인 의사표시다 */
+    @Test
+    void 양식을_고르면_계정_페이지행보다_양식이_이긴다() {
+        User user = userWithDefault("grade2");
+        user.updateDefaults("builtin:MIDHIGH_TEXTBOOK", "every");
+
+        var r = resolver.resolve(user, "builtin:MIDHIGH_TEXTBOOK", null, null);
+
+        assertEquals("odd", r.layoutOptions().pageNumberLine(), "중·고 교과서 양식은 홀수");
+    }
+
+    @Test
+    void 보낸_페이지행이_가장_우선한다() {
+        User user = userWithDefault("grade2");
+        user.updateDefaults("builtin:MIDHIGH_TEXTBOOK", "every");
+
+        var r = resolver.resolve(user, null,
+                new LayoutOptions(null, null, "none", null, null, null, null, null, null, null, null, null), null);
+
+        assertEquals("none", r.layoutOptions().pageNumberLine());
     }
 }
