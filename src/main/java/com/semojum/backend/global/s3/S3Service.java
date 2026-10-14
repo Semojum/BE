@@ -102,13 +102,6 @@ public class S3Service {
         log.info("S3 프리픽스 삭제 완료: {}", prefix);
     }
 
-    // 같은 버킷 내 서버사이드 복사 (다운로드 없이) — 관리자 "마이페이지로 보내기" 사본용
-    public String copyObject(String sourceStoragePath, String destPath) {
-        s3Client.copyObject(b -> b.sourceBucket(bucketName).sourceKey(toKey(sourceStoragePath))
-                .destinationBucket(bucketName).destinationKey(destPath));
-        return "s3://" + bucketName + "/" + destPath;
-    }
-
     /** `s3://{버킷}/{key}` 또는 순수 key에서 객체 key만 뽑는다. */
     private String toKey(String storagePath) {
         if (storagePath.startsWith("s3://")) {
