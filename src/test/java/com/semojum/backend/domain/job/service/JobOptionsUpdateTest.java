@@ -247,4 +247,26 @@ class JobOptionsUpdateTest {
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
                 () -> jobService.updateJobOptions(userId, "job-1", patch(badEnum))).getErrorCode());
     }
+
+    /** 꼬리말 정렬 「왼쪽」 — 기획 변경(2026-10-14)으로 가운데·오른쪽에 더해졌다 */
+    @Test
+    void 꼬리말_정렬은_왼쪽도_받는다() {
+        job("COMPLETED", null, null);
+
+        JobResponseDto.Options result = jobService.updateJobOptions(userId, "job-1", patch(footerAlign("left")));
+
+        assertEquals("left", result.layoutOptions().footerAlign());
+    }
+
+    @Test
+    void 모르는_꼬리말_정렬은_COMMON4000이다() {
+        job("COMPLETED", null, null);
+
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
+                () -> jobService.updateJobOptions(userId, "job-1", patch(footerAlign("justify")))).getErrorCode());
+    }
+
+    private LayoutOptions footerAlign(String align) {
+        return new LayoutOptions(null, null, null, null, null, null, null, null, null, align, null, null);
+    }
 }

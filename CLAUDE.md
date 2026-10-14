@@ -59,7 +59,7 @@ com.semojum.backend
 │   ├── user      마이페이지 목록·페이지 조회
 │   ├── folder    폴더 CRUD·트리·contents (FolderTouch)
 │   ├── trash     휴지통 + TrashPurgeScheduler(04시)
-│   ├── job       Job 생성·다운로드·취소·SSE
+│   ├── job       Job 생성·설정·취소·SSE
 │   │   ├── scheduler   JobDispatcher(공정 큐), StaleJobScheduler
 │   │   └── worker      PageWorker
 │   ├── result    AI 결과 저장(ResultService), 페이지 일괄 저장
@@ -136,14 +136,12 @@ com.semojum.backend
 - **끝난 작업이면 즉시 종료** — 상태 Hash는 종료 시 TTL 1h로 사라진다. 그 뒤 붙은 연결은 "아직 기록 전"과 구분이 안 돼 3시간 매달렸다(하트비트로는 못 잡는다 — 전송이 정상 성공하므로). Hash가 비면 DB로 상태를 확인한다
 - 폴링 대체: `GET /api/jobs/{jobId}/status`
 
-## 다운로드 (`POST /api/jobs/{jobId}/download`)
+## 조판 · 다운로드 — 서버에 없다 (FE 이관, 2026-10-13)
 
-- mode a = `.txt`(요소 병합, 쪽 사이 `-`×40 구분선, 빈 블록·빈 쪽 스킵, `<!점역자주>` 마커 유지)
-- mode b·c = `.brf` — **조판 전체를 braille-assist에 위임**한다
-- **c는 body `format`으로 `.txt`/`.brf` 선택**(기본 `.brf`). a의 brf·b의 txt는 COMMON4000 — a엔 점자가 없고 b의 텍스트는 사용자가 올린 원문이다
-- ⚠️ **`com.semojum.brailleassist`는 원 레포(Semojum/braille-assist) 복사본 — 수정 금지.** 규칙 변경은 원 레포에서
-- ⚠️ **동기화할 때는 본체·테스트·벡터 3종을 함께** 갈아끼운다(`BrailleAssist.java` + `VectorsTest.java` + `vectors.json`). 본체만 바꾸면 `VectorsTest`가 깨진다. 단 `VectorsTest`의 벡터 로딩부는 **BE 로컬 적응**이라 원 레포를 그대로 덮으면 안 되고 클래스패스 리소스 방식을 유지한다
-- **꼬리말은 서버가 점역하지 않는다(proto V3.1, TranslateText 삭제)** — 새 작업의 `jobs.footer_braille`은 null이고 앱이 `footerText`로 점역한다. V3.0 이전 작업의 점역 값은 그대로 돌려준다. 판면 길이 검증(S-9)은 점역 값이 있는 예전 작업에서만 돈다. 저장 때 묵자가 바뀌면 예전 점자를 비운다(어긋난 꼬리말 방지)
+- **`.brf`/`.txt` 생성과 다운로드는 앱이 로컬에서 한다.** `POST /api/jobs/{jobId}/download`는 삭제됐다(01b1db3). 조판 옵션(`layout_options`)은 서버가 **보관만** 하고 해석하지 않는다 — 허용값 검증(`JobService.validateLayoutOptions`)이 전부다
+- ⚠️ **`com.semojum.brailleassist`는 BE에서 호출하지 않는다.** 원 레포(Semojum/braille-assist) 복사본으로 남아 있을 뿐이고(수정 금지) 조판 옵션 허용값을 이 라이브러리에 맞출 필요가 없다. 예: 꼬리말 정렬 `left`는 라이브러리엔 없지만 BE는 받는다
+- 동기화할 일이 생기면 본체·테스트·벡터 3종을 함께 갈아끼운다(`BrailleAssist.java` + `VectorsTest.java` + `vectors.json`). `VectorsTest`의 벡터 로딩부는 BE 로컬 적응(클래스패스 리소스)이라 원 레포로 덮으면 안 된다
+- **꼬리말은 서버가 점역하지 않는다(proto V3.1, TranslateText 삭제)** — 새 작업의 `jobs.footer_braille`은 null이고 앱이 `footerText`로 점역한다. V3.0 이전 작업의 점역 값은 그대로 돌려준다. 꼬리말이 판면에 들어가는지 보는 길이 검증은 점역 값이 있는 예전 작업에서만 돈다. 저장 때 묵자가 바뀌면 예전 점자를 비운다(어긋난 꼬리말 방지)
 - ⚠️ **꼬리말 길이 검증** — 점역 결과가 페이지행에 안 들어가면 COMMON4000. 라이브러리가 긴 꼬리말을 **말없이 뒤에서 자르기** 때문이다
 
 ## 원본 페이지 삭제 (`DELETE .../pages/{pageNo}` · 벌크 `?nos=5,6,7,8`)
