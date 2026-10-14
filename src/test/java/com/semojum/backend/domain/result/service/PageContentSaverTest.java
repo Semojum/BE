@@ -248,4 +248,75 @@ class PageContentSaverTest {
                 () -> saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null,
                         List.of(memo("ORIGINAL", "e1", 0, "x"))))).getErrorCode());
     }
+
+    // ── 텍스트 작업의 첫 저장 (V3.1) ─────────────────────────────────
+    // 텍스트 작업은 AI를 거치지 않아 생성 때 쪽이 없다. 첫 저장이 앱이 보낸 쪽 번호대로 만든다.
+
+    private JobRequestDto.SaveJobPage textPage(int pageNo) {
+        return new JobRequestDto.SaveJobPage(pageNo,
+                List.of(new JobRequestDto.SaveElement(null, List.of("<!2칸>사회는 변한다."), null)),
+                List.of(new JobRequestDto.SaveElement(null, List.of("⠇⠚⠉⠵"), null)),
+                null);
+    }
+
+    @Test
+    void 텍스트_작업은_없는_쪽을_첫_저장에서_만든다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        when(pageResultRepo.findByJobIdAndPageNumber(anyString(), anyInt())).thenReturn(Optional.empty());
+        when(pageRepo.findByJobAndPageNo(any(), anyInt())).thenReturn(Optional.empty());
+        when(pageRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(pageResultRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        saver.savePage(textJob, textPage(3));
+
+        ArgumentCaptor<Page> page = ArgumentCaptor.forClass(Page.class);
+        verify(pageRepo).save(page.capture());
+        assertEquals(3, page.getValue().getPageNo(), "앱이 보낸 쪽 번호 그대로");
+        assertEquals("COMPLETED", page.getValue().getStatus());
+
+        ArgumentCaptor<PageResult> result = ArgumentCaptor.forClass(PageResult.class);
+        verify(pageResultRepo).save(result.capture());
+        assertEquals(3, result.getValue().getPageNumber());
+        verify(textRepo).save(any(TextElement.class));
+        verify(brailleRepo).save(any(BrailleElement.class));
+    }
+
+    /**
+     * 운영 통계는 쪽 결과의 COMPLETED·NEEDS_REVIEW를 변환 쪽수로 센다.
+     * AI가 돌지 않은 쪽을 거기 넣으면 변환량·쪽당 원가가 조용히 틀어진다.
+     */
+    @Test
+    void 저장으로_생긴_쪽_결과는_변환_쪽수로_세지_않는_상태다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        when(pageResultRepo.findByJobIdAndPageNumber(anyString(), anyInt())).thenReturn(Optional.empty());
+        when(pageRepo.findByJobAndPageNo(any(), anyInt())).thenReturn(Optional.empty());
+        when(pageRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(pageResultRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        saver.savePage(textJob, textPage(1));
+
+        ArgumentCaptor<PageResult> result = ArgumentCaptor.forClass(PageResult.class);
+        verify(pageResultRepo).save(result.capture());
+        assertEquals(PageContentSaver.STATUS_SAVED, result.getValue().getStatus());
+        assertFalse(List.of("COMPLETED", "NEEDS_REVIEW").contains(result.getValue().getStatus()));
+    }
+
+    /** PDF 작업의 쪽은 변환이 만든다 — 없는 쪽 번호는 앱 버그라 그대로 드러낸다 */
+    @Test
+    void PDF_작업은_없는_쪽을_만들지_않고_JOB4001이다() {
+        when(pageResultRepo.findByJobIdAndPageNumber(anyString(), anyInt())).thenReturn(Optional.empty());
+
+        CustomException e = assertThrows(CustomException.class, () -> saver.savePage(job, textPage(9)));
+        assertEquals(ErrorCode.JOB_NOT_FOUND, e.getErrorCode());
+        verify(pageRepo, never()).save(any());
+    }
+
+    @Test
+    void 쪽_번호가_0이하면_400이다() {
+        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        when(pageResultRepo.findByJobIdAndPageNumber(anyString(), anyInt())).thenReturn(Optional.empty());
+
+        CustomException e = assertThrows(CustomException.class, () -> saver.savePage(textJob, textPage(0)));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+    }
 }

@@ -146,6 +146,8 @@ public class UserService {
     // 모드별 원본 구성. pdfPath(s3:// 전체경로)를 가공 없이 그대로 S3Service에 넘긴다.
     private JobResponseDto.OriginalContent buildOriginal(String mode, Page page) {
         if ("b".equals(mode)) {
+            // V3.1 텍스트 작업은 원본 파일을 받지 않는다(쪽도 첫 저장 때 생긴다) — 경로가 비면 원본이 없다
+            if (page.getPdfPath() == null || page.getPdfPath().isBlank()) return null;
             // mode b: S3의 .txt를 읽어 줄 단위 배열로. split("\n", -1)로 빈 줄 보존(trim/필터 금지).
             String text = new String(s3Service.downloadFile(page.getPdfPath()), StandardCharsets.UTF_8);
             List<String> lines = Arrays.asList(text.split("\n", -1));
