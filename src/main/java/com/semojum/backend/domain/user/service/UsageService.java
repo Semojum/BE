@@ -60,6 +60,83 @@ public class UsageService {
         return new UsageDto.Summary(ym.toString(), myCredits, orgAllocated, orgUsed, orgRemaining);
     }
 
+    /** 기간 선택 — 피그마 [이 달 · 지난 3달 · 올해] */
+    static final List<String> PERIODS = List.of("MONTH", "QUARTER", "YEAR");
+    static final List<String> SOURCES = List.of("PDF_HWP", "IMAGE", "TEXT");
+    private static final java.util.Set<String> IMAGE_EXTS = java.util.Set.of("jpg", "jpeg", "png");
+
+    /**
+     * 마이페이지 [사용량] — 일별 막대 · 입력 종류별 내역 · 상단 카드.
+     *
+     * <p>기간은 오늘 기준이다(2026-10-14 결정). 끝은 늘 오늘이라 앞으로 올 날은 막대에 없다.
+     * 날짜 경계는 KST. 운영자 「마이페이지로 보내기」 사본(admin_copy)의 차감은 빼고 센다.
+     */
+    @Transactional(readOnly = true)
+    public UsageDto.Daily getDaily(String userId, String period) {
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        String p = period == null || period.isBlank() ? "MONTH" : period;
+        if (!PERIODS.contains(p)) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+
+        LocalDate today = LocalDate.now(KST);
+        LocalDate from = periodStart(p, today);
+        List<Object[]> rows = creditTransactionRepository.findUsageRowsByUserBetween(user.getId(),
+                from.atStartOfDay(KST).toInstant(), today.plusDays(1).atStartOfDay(KST).toInstant());
+
+        Map<String, Job> jobs = new HashMap<>();
+        java.util.Set<String> jobIds = new java.util.HashSet<>();
+        for (Object[] r : rows) jobIds.add((String) r[2]);
+        if (!jobIds.isEmpty()) jobRepository.findAllById(jobIds).forEach(j -> jobs.put(j.getId(), j));
+
+        Map<LocalDate, Long> perDay = new java.util.TreeMap<>();
+        for (LocalDate d = from; !d.isAfter(today); d = d.plusDays(1)) perDay.put(d, 0L);
+        Map<String, Long> perSource = new java.util.LinkedHashMap<>();
+        SOURCES.forEach(src -> perSource.put(src, 0L));
+        long used = 0;
+        for (Object[] r : rows) {
+            Job job = jobs.get((String) r[2]);
+            if (job != null && job.isAdminCopy()) continue;
+            long amount = ((Number) r[1]).longValue();
+            LocalDate day = LocalDate.ofInstant((Instant) r[0], KST);
+            perDay.merge(day, amount, Long::sum);
+            perSource.merge(sourceOf(job), amount, Long::sum);
+            used += amount;
+        }
+
+        Long orgAllocated = null, orgRemaining = null;
+        Double usedPercent = null;
+        if (user.getOrganization() != null) {
+            orgAllocated = user.getOrganization().getCreditAllocated();
+            orgRemaining = orgAllocated - creditTransactionRepository.sumContractByOrganization(user.getOrganization().getId());
+            if (orgAllocated > 0) usedPercent = Math.round(used * 1000.0 / orgAllocated) / 10.0;
+        }
+        return new UsageDto.Daily(p, from, today, orgAllocated, orgRemaining, used, usedPercent,
+                perDay.entrySet().stream().map(e -> new UsageDto.DailyCredit(e.getKey(), e.getValue())).toList(),
+                perSource.entrySet().stream().map(e -> new UsageDto.SourceCredit(e.getKey(), e.getValue())).toList());
+    }
+
+    /** 오늘 기준 기간 시작일 — 이 달 1일 · 3개월 전 같은 날 · 1월 1일 */
+    public static LocalDate periodStart(String period, LocalDate today) {
+        return switch (period) {
+            case "QUARTER" -> today.minusMonths(3);
+            case "YEAR" -> today.withDayOfYear(1);
+            default -> today.withDayOfMonth(1);
+        };
+    }
+
+    /**
+     * 입력 종류 — 텍스트 작업(mode b)은 TEXT, 이미지로 만든 작업은 IMAGE(이름이 첫 장 파일명), 나머지는 PDF_HWP.
+     * 작업을 못 찾으면(지워진 작업 등) PDF_HWP로 센다 — 텍스트 작업은 차감이 없어 거의 해당되지 않는다.
+     */
+    static String sourceOf(Job job) {
+        if (job == null) return "PDF_HWP";
+        if ("b".equals(job.getMode())) return "TEXT";
+        String name = job.getOriginalFileName() == null ? "" : job.getOriginalFileName();
+        int dot = name.lastIndexOf('.');
+        String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase();
+        return IMAGE_EXTS.contains(ext) ? "IMAGE" : "PDF_HWP";
+    }
+
     @Transactional(readOnly = true)
     public UsageDto.Jobs getJobs(String userId, LocalDate from, LocalDate to) {
         User user = userRepository.findById(UUID.fromString(userId))
