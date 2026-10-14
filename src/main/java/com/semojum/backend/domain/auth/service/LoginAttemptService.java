@@ -66,7 +66,8 @@ public class LoginAttemptService {
         Long failures = redisTemplate.opsForValue().increment(failKey(loginId));
         int count = failures == null ? 1 : failures.intValue();
         if (count >= MAX_FAILURES) {
-            Instant unlockAt = Instant.now().plus(LOCK_DURATION);
+            // 초 단위로 자른다 — 잠근 순간과 잠긴 뒤 조회의 해제 시각이 같은 글자로 나가게
+            Instant unlockAt = Instant.now().plus(LOCK_DURATION).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
             redisTemplate.opsForValue().set(lockKey(loginId), String.valueOf(unlockAt.toEpochMilli()), LOCK_DURATION);
             redisTemplate.delete(failKey(loginId));
             log.warn("로그인 잠금: loginId={} ({}회 실패, {}분)", loginId, count, LOCK_DURATION.toMinutes());

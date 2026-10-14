@@ -95,6 +95,17 @@ class LoginLockTest {
         assertTrue(unlockAt.isBefore(LocalDateTime.now().plusMinutes(11)));
     }
 
+    /** 잠근 순간과 그 뒤 조회의 해제 시각이 같다 — 화면이 같은 시각을 찍는다 */
+    @Test
+    void 해제_시각은_초_단위로_늘_같다() {
+        for (int i = 0; i < 4; i++) login("testorg01", "wrong");
+        LocalDateTime first = ((LoginAttemptService.Locked) login("testorg01", "wrong").getResult()).unlockAt();
+        LocalDateTime again = ((LoginAttemptService.Locked) login("testorg01", "right").getResult()).unlockAt();
+
+        assertEquals(first, again);
+        assertEquals(0, first.getNano());
+    }
+
     /** 잠긴 동안은 비밀번호가 맞아도 못 들어간다 — 맞을 때까지 계속 시도하는 것을 막는 게 잠금이다 */
     @Test
     void 잠긴_동안은_맞는_비밀번호도_거절한다() {
