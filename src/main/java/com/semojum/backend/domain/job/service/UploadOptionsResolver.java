@@ -24,6 +24,9 @@ import java.util.UUID;
  *   ③ 개별 항목을 보냈으면 그 위에 덮는다
  * </pre>
  *
+ * <p>⚠️ 바탕은 <b>공장 기본값</b>이지 구 {@code insert_page_number} 환산값이 아니다. 한때 그걸 바탕으로
+ * 써서(2026-10-13) 앱이 {@code pageNumberLine}을 안 보내면 페이지행이 {@code none}으로 빠졌다.
+ *
  * <p><b>결과는 작업에 사본으로 저장된다.</b> 양식이나 계정 기본값을 나중에 고쳐도, 양식을 지워도
  * 이미 만든 작업의 설정은 그대로여야 한다 — 작업은 그때의 설정으로 점역된 결과물이기 때문이다.
  */
@@ -37,10 +40,9 @@ public class UploadOptionsResolver {
     public record Resolved(LayoutOptions layoutOptions, BrailleOptions brailleOptions) {}
 
     public Resolved resolve(User user, String formId,
-                            LayoutOptions requestedLayout, BrailleOptions requestedBraille,
-                            boolean insertPageNumber) {
+                            LayoutOptions requestedLayout, BrailleOptions requestedBraille) {
 
-        LayoutOptions baseLayout = LayoutOptions.legacy(insertPageNumber);
+        LayoutOptions baseLayout = LayoutOptions.defaults();
         BrailleOptions baseBraille = user.resolveBrailleOptions();
 
         if (formId != null && !formId.isBlank()) {

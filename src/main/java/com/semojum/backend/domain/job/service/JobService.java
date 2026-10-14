@@ -139,7 +139,7 @@ public class JobService {
         // 조판·점역 옵션 — 양식이 바탕, 개별 항목이 그 위에 덮인다(UploadOptionsResolver).
         // 빠진 값은 기본값으로 채워 항상 완전한 형태로 저장한다(읽는 쪽에 null 분기를 안 남긴다)
         UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
-                user, formId, requestedOptions, requestedBrailleOptions, insertPageNumber);
+                user, formId, requestedOptions, requestedBrailleOptions);
         LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
         BrailleOptions brailleOptions = resolved.brailleOptions();
 
@@ -385,7 +385,7 @@ public class JobService {
 
         // 업로드와 같은 규칙 — 양식이 바탕, 개별 항목이 그 위에 덮인다
         UploadOptionsResolver.Resolved resolved = uploadOptionsResolver.resolve(
-                user, request.formId(), request.layoutOptions(), request.brailleOptions(), insertPageNumber);
+                user, request.formId(), request.layoutOptions(), request.brailleOptions());
         LayoutOptions layoutOptions = validateLayoutOptions(resolved.layoutOptions());
 
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));

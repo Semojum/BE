@@ -56,7 +56,7 @@ class UploadOptionsResolverTest {
 
     @Test
     void 양식을_안_고르면_계정_기본값이_바탕이다() {
-        var r = resolver.resolve(userWithDefault("grade1"), null, null, null, false);
+        var r = resolver.resolve(userWithDefault("grade1"), null, null, null);
 
         assertEquals("grade1", r.brailleOptions().hangulGrade());
     }
@@ -67,7 +67,7 @@ class UploadOptionsResolverTest {
         User user = User.builder().loginId("semojum01").password("pw").build();
         ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
 
-        var r = resolver.resolve(user, null, null, null, false);
+        var r = resolver.resolve(user, null, null, null);
 
         assertEquals("grade2", r.brailleOptions().hangulGrade());
         assertEquals(32, r.layoutOptions().cellsPerLine());
@@ -78,7 +78,7 @@ class UploadOptionsResolverTest {
     /** 양식이 계정 기본값을 이긴다 — 고른 쪽이 더 구체적인 의사표시다 */
     @Test
     void 기본_양식을_고르면_양식_값이_바탕이다() {
-        var r = resolver.resolve(userWithDefault("grade1"), "builtin:MIDHIGH_TEXTBOOK", null, null, false);
+        var r = resolver.resolve(userWithDefault("grade1"), "builtin:MIDHIGH_TEXTBOOK", null, null);
 
         assertEquals("grade2", r.brailleOptions().hangulGrade());   // 계정 기본값 grade1이 아니라 양식 값
         assertEquals(26, r.layoutOptions().linesPerPage());
@@ -97,7 +97,7 @@ class UploadOptionsResolverTest {
         ReflectionTestUtils.setField(form, "id", formId);
         when(formRepository.findByIdAndUserId(any(UUID.class), any(UUID.class))).thenReturn(Optional.of(form));
 
-        var r = resolver.resolve(user, formId.toString(), null, null, false);
+        var r = resolver.resolve(user, formId.toString(), null, null);
 
         assertEquals(28, r.layoutOptions().linesPerPage());
         assertEquals("word", r.brailleOptions().lineBreakUnit());
@@ -110,8 +110,7 @@ class UploadOptionsResolverTest {
     void 개별_항목이_양식_위에_덮인다() {
         var r = resolver.resolve(userWithDefault("grade2"), "builtin:MIDHIGH_TEXTBOOK",
                 new LayoutOptions(40, null, null, null, null, null, null, null, null, null, null, null),
-                new BrailleOptions("grade1", null, null, null, null, null, null, null),
-                false);
+                new BrailleOptions("grade1", null, null, null, null, null, null, null));
 
         assertEquals(40, r.layoutOptions().cellsPerLine());      // 덮임
         assertEquals(26, r.layoutOptions().linesPerPage());      // 양식 값 유지
@@ -124,7 +123,7 @@ class UploadOptionsResolverTest {
     @Test
     void 없는_기본_양식은_400이다() {
         CustomException e = assertThrows(CustomException.class, () ->
-                resolver.resolve(userWithDefault("grade2"), "builtin:NOPE", null, null, false));
+                resolver.resolve(userWithDefault("grade2"), "builtin:NOPE", null, null));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 
@@ -133,7 +132,7 @@ class UploadOptionsResolverTest {
         when(formRepository.findByIdAndUserId(any(UUID.class), any(UUID.class))).thenReturn(Optional.empty());
 
         CustomException e = assertThrows(CustomException.class, () ->
-                resolver.resolve(userWithDefault("grade2"), UUID.randomUUID().toString(), null, null, false));
+                resolver.resolve(userWithDefault("grade2"), UUID.randomUUID().toString(), null, null));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 
@@ -141,7 +140,7 @@ class UploadOptionsResolverTest {
     @Test
     void 모양이_틀린_formId는_400이다() {
         CustomException e = assertThrows(CustomException.class, () ->
-                resolver.resolve(userWithDefault("grade2"), "중고교과서", null, null, false));
+                resolver.resolve(userWithDefault("grade2"), "중고교과서", null, null));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 
@@ -150,15 +149,27 @@ class UploadOptionsResolverTest {
     void 모르는_점역_옵션_값은_400이다() {
         CustomException e = assertThrows(CustomException.class, () ->
                 resolver.resolve(userWithDefault("grade2"), null, null,
-                        new BrailleOptions("grade9", null, null, null, null, null, null, null), false));
+                        new BrailleOptions("grade9", null, null, null, null, null, null, null)));
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
     }
 
     /** 빈 문자열 formId는 "안 골랐다"로 본다 — 폼 필드는 빈 값으로 오기 쉽다 */
     @Test
     void 빈_formId는_안_고른_것이다() {
-        var r = resolver.resolve(userWithDefault("grade1"), "", null, null, false);
+        var r = resolver.resolve(userWithDefault("grade1"), "", null, null);
 
         assertEquals("grade1", r.brailleOptions().hangulGrade());
+    }
+
+    /**
+     * 회귀: 바탕을 구 insert_page_number 환산값으로 잡아(2026-10-13), 앱이 pageNumberLine을 안 보내면
+     * 페이지행이 none으로 빠졌다. 바탕은 공장 기본값(홀수)이어야 한다.
+     */
+    @Test
+    void 아무것도_안_보내면_페이지행은_홀수다() {
+        var r = resolver.resolve(userWithDefault("grade2"), null,
+                new LayoutOptions(null, null, null, null, null, null, null, null, null, null, null, null), null);
+
+        assertEquals("odd", r.layoutOptions().pageNumberLine());
     }
 }
