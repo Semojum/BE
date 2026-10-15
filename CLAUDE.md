@@ -26,13 +26,18 @@ Spring Security + JWT(jjwt) · BCrypt · Docker Compose + Envoy · GitHub Action
 | 구성 | 상세 |
 |---|---|
 | EC2 | `semojum-backend` t3.medium, 고정 IP `43.200.184.56` |
-| RDS | `semojum-postgres` (PG18). **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 한다. DB 이름은 `postgres` |
+| RDS | `semojum-postgres` (PG18). **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 한다. DB 이름은 `postgres`. **공개 접근 꺼짐**(2026-10-15) — VPC 안에서만 닿는다 |
 | S3 | `semojum-bucket` (EC2 IAM Role 키리스) |
 | AI 서버 | `semojum-ai`(g5.2xlarge) — **같은 VPC라 반드시 사설 IP `172.31.47.101:50051`**. 공인 IP로 가면 AI 보안그룹의 "BE SG 허용" 규칙에 안 걸려 차단된다 |
 | 도메인 | `api.semojum.app` — **Cloudflare DNS only + EC2 직접 TLS**. 프록시 경유 시 무료 플랜이 미국 엣지로 라우팅해 요청당 +0.5~0.7s(실측) → **프록시(주황 구름) 재활성화 금지**. 인증서는 certbot 자동 갱신, **인증서 파일은 uid 101 소유 필수**(envoy가 envoy 유저로 강등 실행) |
 
 - 보안그룹: EC2 80/443 공개 · **22는 관리자 IP만**. **22번을 0.0.0.0/0으로 열지 말 것** — CI가 배포 동안만 러너 IP를 추가·회수한다(`if: always()`)
-- 관리자 IP가 바뀌면 `semojum-ec2-sg`(22)·`semojum-rds-sg`(5432) 두 곳 갱신
+- 관리자 IP가 바뀌면 `semojum-ec2-sg`(22) 한 곳만 갱신. `semojum-rds-sg`(5432)는 **BE 서버 보안그룹만** 허용한다(2026-10-15부터 IP 규칙 없음)
+- ⚠️ **로컬·DB 툴은 BE 서버를 거치는 SSH 터널로 붙는다** — RDS에 공인 IP가 없어 직접 접속이 안 된다
+  `ssh -f -N -L 5432:semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com:5432 semojum-aws` → 로컬 실행은 `DB_HOST=localhost`
+  (datasource url이 `${DB_HOST}:5432` 고정이라 로컬 포트도 5432여야 한다. 로컬 PostgreSQL이 5432를 쓰면 끄고 열 것). DB 툴만 쓸 땐 아무 포트나 된다
+  22번 허용 목록에 내 IP가 있어야 한다
+- 서브넷은 아직 기본 VPC의 public subnet 4개 그대로다 — private subnet 이동은 후속(공개 접근은 이미 꺼서 인터넷에서는 닿지 않는다)
 - 로컬 시크릿: `~/semojum/semojum-aws-secrets.txt`, SSH 키 `~/.ssh/semojum-key.pem`
 
 ## 배포 — 블루그린 무중단
