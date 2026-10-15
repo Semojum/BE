@@ -121,6 +121,7 @@ com.semojum.backend
 - **HWP는 업로드 시 PDF로 변환**(pyhwp→ODT→LibreOffice, Dockerfile 내장) 후 기존 PDF 파이프라인. 머리말·꼬리말은 변환기가 유실하므로 hwplib로 읽어 마커로 주입한다
   - **HWPX(.hwpx, 또는 내용물이 ZIP인 .hwp)** 는 LibreOffice가 못 연다(26.2 실측) → `HwpxToHtml`이 본문 XML을 HTML로 풀고 LibreOffice(Writer 필터)로 PDF. 확장자가 아니라 **내용물(ZIP 시그니처)로 가른다**. 표 테두리는 CSS가 아닌 `border` 속성이어야 LibreOffice가 그린다
 - ⚠️ 큐 적재(`JobDispatcher.enqueueJob`)는 **트랜잭션 커밋 후** 실행 — 커밋 전에 적재하면 워커가 not found로 재시도한다
+- ⚠️ **업로드 원본(PDF · HWP)을 힙(byte[])에 올리지 말 것**(2026-10-16) — 임시 파일로 옮겨 경로로 쪽을 나누고(`new PdfReader(path)`) 썸네일도 경로로 만든다(pdftoppm에 그대로). HWP 변환 결과는 `ConvertedPdf`(임시 폴더째)로 받아 다 쓰면 닫는다. 임시 파일은 `finally`에서 지운다. 상한 100MB · 힙 768MB라 `getBytes()`로 돌아가면 100MB 4건 동시에 OOM이 났다(실측). HWPX만 ZIP을 풀어야 해서 원본을 읽는다
 - ⚠️ **PDF 첫 장 렌더는 poppler `pdftoppm`(별도 프로세스) 우선, 실패 시 PDFBox 폴백** — PDFBox는 JPEG 2000 스캔본을 백지로 그리고, 순수 Java JPX 디코더는 768MB 힙에서도 OOM이다. **JVM 안에서 풀지 말 것**
 
 ## 스케줄링 · 워커

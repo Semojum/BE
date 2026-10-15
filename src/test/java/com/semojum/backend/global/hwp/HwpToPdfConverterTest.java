@@ -87,6 +87,57 @@ class HwpToPdfConverterTest {
         }
     }
 
+    // ── 경로 입력 (2026-10-16 — 원본을 힙에 올리지 않는다) ──
+
+    /** 깨진 HWP — 종전과 같은 에러(JOB4007)이고, 원본 파일은 호출부 소유라 지우지 않는다 */
+    @Test
+    void 깨진_HWP는_JOB4007이고_원본은_남는다() throws Exception {
+        Path src = Files.createTempFile("broken-", ".hwp");
+        try {
+            Files.write(src, "not a hwp".getBytes(StandardCharsets.UTF_8));
+            com.semojum.backend.global.exception.CustomException e = assertThrows(
+                    com.semojum.backend.global.exception.CustomException.class,
+                    () -> new HwpToPdfConverter().convert(src));
+            assertEquals(com.semojum.backend.global.exception.ErrorCode.JOB_HWP_PARSE_FAILED, e.getErrorCode());
+            assertTrue(Files.exists(src));
+        } finally {
+            Files.deleteIfExists(src);
+        }
+    }
+
+    /** 내용물이 ZIP이면 확장자와 무관하게 HWPX 경로로 간다 — HWPX가 아닌 ZIP(docx 등)은 JOB4007 */
+    @Test
+    void ZIP_시그니처는_앞_4바이트로_가른다() throws Exception {
+        Path src = Files.createTempFile("fake-", ".hwp");
+        try {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (ZipOutputStream zip = new ZipOutputStream(bos)) {
+                zip.putNextEntry(new ZipEntry("word/document.xml"));
+                zip.write("<w/>".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            Files.write(src, bos.toByteArray());
+            com.semojum.backend.global.exception.CustomException e = assertThrows(
+                    com.semojum.backend.global.exception.CustomException.class,
+                    () -> new HwpToPdfConverter().convert(src));
+            assertEquals(com.semojum.backend.global.exception.ErrorCode.JOB_HWP_PARSE_FAILED, e.getErrorCode());
+        } finally {
+            Files.deleteIfExists(src);
+        }
+    }
+
+    /** 결과 PDF 폴더는 close()로 지운다 — 업로드 처리가 try-with-resources로 쓴다 */
+    @Test
+    void 변환_결과는_닫으면_폴더째_지워진다() throws Exception {
+        Path dir = Files.createTempDirectory("hwp2pdf-close");
+        Path pdf = dir.resolve("in.pdf");
+        Files.write(pdf, new byte[]{'%', 'P', 'D', 'F'});
+        try (HwpToPdfConverter.ConvertedPdf converted = new HwpToPdfConverter.ConvertedPdf(pdf, dir)) {
+            assertTrue(Files.exists(converted.pdf()));
+        }
+        assertFalse(Files.exists(dir));
+    }
+
     // ── 로컬 실측 E2E (도구 경로를 env로 받아 실행 — CI에서는 건너뜀) ──
     // 실행: HWP2PDF_E2E_FILE=<hwp> HWP2PDF_PYTHON=<python> HWP2PDF_SCRIPT=<hwp2odt.py> ./gradlew test --tests HwpToPdfConverterTest
     @Test
@@ -99,8 +150,10 @@ class HwpToPdfConverterTest {
                 System.getenv().getOrDefault("HWP2PDF_SOFFICE", "soffice"));
         ReflectionTestUtils.setField(converter, "timeoutSeconds", 180L);
 
-        byte[] hwp = Files.readAllBytes(Path.of(System.getenv("HWP2PDF_E2E_FILE")));
-        byte[] pdf = converter.convert(hwp);
+        byte[] pdf;
+        try (HwpToPdfConverter.ConvertedPdf converted = converter.convert(Path.of(System.getenv("HWP2PDF_E2E_FILE")))) {
+            pdf = Files.readAllBytes(converted.pdf());
+        }
 
         assertTrue(pdf.length > 1000, "PDF 크기");
         assertEquals("%PDF", new String(pdf, 0, 4, StandardCharsets.US_ASCII));

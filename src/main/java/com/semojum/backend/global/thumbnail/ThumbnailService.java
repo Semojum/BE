@@ -56,18 +56,20 @@ public class ThumbnailService {
     }
 
     // PDF 첫 페이지를 PNG로 렌더링 — pdftoppm 우선, 실패 시 PDFBox 폴백
-    public byte[] generatePdfThumbnail(byte[] pdfBytes) throws IOException {
+    // 원본은 디스크 경로로 받는다 — 업로드 PDF(최대 100MB)를 힙에 올리지 않기 위해서다
+    public byte[] generatePdfThumbnail(java.nio.file.Path pdf) throws IOException {
         try {
-            return pdfPageRenderer.renderFirstPage(pdfBytes, PdfPageRenderer.Format.PNG, THUMBNAIL_DPI);
+            return pdfPageRenderer.renderFirstPage(pdf, PdfPageRenderer.Format.PNG, THUMBNAIL_DPI);
         } catch (IOException | InterruptedException e) {
             log.info("pdftoppm 썸네일 실패, PDFBox 폴백: {}", e.getMessage());
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         }
-        return renderFirstPageWithPdfBox(pdfBytes);
+        return renderFirstPageWithPdfBox(pdf);
     }
 
-    private byte[] renderFirstPageWithPdfBox(byte[] pdfBytes) throws IOException {
-        try (PDDocument document = PDDocument.load(pdfBytes)) {
+    private byte[] renderFirstPageWithPdfBox(java.nio.file.Path pdf) throws IOException {
+        // 파일에서 연다 — 바이트 배열로 열면 원본 전체가 힙에 올라간다
+        try (PDDocument document = PDDocument.load(pdf.toFile())) {
             PDFRenderer renderer = new PDFRenderer(document);
             BufferedImage image = renderer.renderImageWithDPI(0, 100);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
