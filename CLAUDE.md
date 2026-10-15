@@ -26,7 +26,7 @@ Spring Security + JWT(jjwt) · BCrypt · Docker Compose + Envoy · GitHub Action
 | 구성 | 상세 |
 |---|---|
 | EC2 | `semojum-backend` t3.medium, 고정 IP `43.200.184.56` |
-| RDS | `semojum-postgres` (PG18). **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 한다. DB 이름은 `postgres`. **공개 접근 꺼짐**(2026-10-15) — VPC 안에서만 닿는다 |
+| RDS | `semojum-postgres` (PG18). **로컬·개발·운영이 이 DB 하나를 공유** — 마이그레이션은 어느 환경에서 먼저 적용돼도 안전해야 한다. DB 이름은 `postgres`. **private subnet + 공개 접근 꺼짐**(2026-10-15) — VPC 안에서만 닿는다 |
 | S3 | `semojum-bucket` (EC2 IAM Role 키리스) |
 | AI 서버 | `semojum-ai`(g5.2xlarge) — **같은 VPC라 반드시 사설 IP `172.31.47.101:50051`**. 공인 IP로 가면 AI 보안그룹의 "BE SG 허용" 규칙에 안 걸려 차단된다 |
 | 도메인 | `api.semojum.app` — **Cloudflare DNS only + EC2 직접 TLS**. 프록시 경유 시 무료 플랜이 미국 엣지로 라우팅해 요청당 +0.5~0.7s(실측) → **프록시(주황 구름) 재활성화 금지**. 인증서는 certbot 자동 갱신, **인증서 파일은 uid 101 소유 필수**(envoy가 envoy 유저로 강등 실행) |
@@ -37,7 +37,11 @@ Spring Security + JWT(jjwt) · BCrypt · Docker Compose + Envoy · GitHub Action
   `ssh -f -N -L 5432:semojum-postgres.c3mk86a8cm0o.ap-northeast-2.rds.amazonaws.com:5432 semojum-aws` → 로컬 실행은 `DB_HOST=localhost`
   (datasource url이 `${DB_HOST}:5432` 고정이라 로컬 포트도 5432여야 한다. 로컬 PostgreSQL이 5432를 쓰면 끄고 열 것). DB 툴만 쓸 땐 아무 포트나 된다
   22번 허용 목록에 내 IP가 있어야 한다
-- 서브넷은 아직 기본 VPC의 public subnet 4개 그대로다 — private subnet 이동은 후속(공개 접근은 이미 꺼서 인터넷에서는 닿지 않는다)
+- 네트워크: 기본 VPC(`172.31.0.0/16`). EC2 3대는 public subnet(2c), **RDS는 private subnet**(2026-10-15)
+  - private subnet `semojum-private-2a`(172.31.64.0/20) · `semojum-private-2b`(172.31.80.0/20), 라우팅 테이블 `semojum-private-rt`(VPC 내부 경로만 — 인터넷 · NAT 없음)
+  - DB 서브넷 그룹 `semojum-db-subnet` = private 2개뿐. RDS는 단일 AZ(지금 2b)
+  - ⚠️ RDS는 밖으로 나갈 일이 없어 NAT가 필요 없다. 이 서브넷에 인터넷이 필요한 것(EC2 등)을 두지 말 것
+  - 옮긴 방법(같은 VPC): 서브넷 그룹에 private 추가 → Multi-AZ 켬(대기 DB가 private에) → 장애조치 재부팅 → Multi-AZ 끔 → 옛 public subnet 제거. 엔드포인트 불변, 중단은 장애조치 순간뿐
 - 로컬 시크릿: `~/semojum/semojum-aws-secrets.txt`, SSH 키 `~/.ssh/semojum-key.pem`
 
 ## 배포 — 블루그린 무중단
