@@ -15,6 +15,7 @@ import com.semojum.backend.domain.job.repository.JobRepository;
 import com.semojum.backend.domain.job.repository.PageRepository;
 import com.semojum.backend.global.exception.CustomException;
 import com.semojum.backend.global.exception.ErrorCode;
+import com.semojum.backend.global.hwp.HwpToPdfConverter;
 import com.semojum.backend.global.s3.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -182,88 +185,111 @@ public class JobService {
         } else {
             // 5. PDF 페이지별 분리 및 S3 업로드.
             // mode a의 HWP는 업로드 시점에 PDF로 변환(2026-08-24) — 이후는 PDF와 완전히 동일하게 처리
-            byte[] pdfBytes;
-            if (ext.equals("hwp") || ext.equals("hwpx")) {
-                long convertStart = System.currentTimeMillis();
-                pdfBytes = hwpToPdfConverter.convert(file.getBytes());
-                log.info("HWP→PDF 변환 완료: {}KB → {}KB ({}ms)",
-                        file.getSize() / 1024, pdfBytes.length / 1024,
-                        System.currentTimeMillis() - convertStart);
-            } else {
-                pdfBytes = file.getBytes();
-            }
-
-            try (PdfReader reader = new PdfReader(new java.io.ByteArrayInputStream(pdfBytes));
-                 PdfDocument pdfDoc = new PdfDocument(reader)) {
-
-                int totalPages = pdfDoc.getNumberOfPages();
-
-                // 6. Job 엔티티 생성 및 저장
-                Job job = Job.builder()
-                        .id(jobId)
-                        .user(user)
-                        .mode(mode)
-                        .totalPages(totalPages)
-                        .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
-                        .insertPageNumber(insertPageNumber)
-                        .footerText(footerText)
-                        .layoutOptions(layoutOptions)
-                        .brailleOptions(brailleOptions)
-                        .build();
-                // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
-                if (clientInfo != null) {
-                    job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
-                }
-                jobRepository.saveAndFlush(job);
-
-                try {
-                    byte[] thumbnailBytes = thumbnailService.generatePdfThumbnail(pdfBytes);
-                    String thumbnailKey = jobId + "/thumbnail.png";
-                    String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
-                    job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
-                    jobRepository.save(job);
-                } catch (Exception e) {
-                    log.warn("썸네일 생성 실패: jobId={}", jobId, e);
+            //
+            // ⚠️ 원본을 힙(byte[])에 올리지 않는다(2026-10-16). 업로드는 최대 100MB이고 운영 힙은 768MB라,
+            // 큰 파일 몇 건이 겹치면 원본 배열만으로 OOM이 났다(실측: 100MB 4건 동시 → 12건 중 6건 OOM).
+            // Spring이 이미 디스크에 받은 업로드를 임시 파일로 옮겨 경로로 읽고, 다 쓰면 finally에서 지운다
+            Path upload = Files.createTempFile("upload-", "." + ext);
+            HwpToPdfConverter.ConvertedPdf converted = null;
+            try {
+                file.transferTo(upload);
+                Path pdfPath;
+                if (ext.equals("hwp") || ext.equals("hwpx")) {
+                    long convertStart = System.currentTimeMillis();
+                    converted = hwpToPdfConverter.convert(upload);
+                    pdfPath = converted.pdf();
+                    log.info("HWP→PDF 변환 완료: {}KB → {}KB ({}ms)",
+                            file.getSize() / 1024, Files.size(pdfPath) / 1024,
+                            System.currentTimeMillis() - convertStart);
+                } else {
+                    pdfPath = upload;
                 }
 
-                // total_pages Redis에 저장
-                redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
+                // 파일 경로로 연다 — iText가 디스크에서 필요한 부분만 읽는다
+                try (PdfReader reader = new PdfReader(pdfPath.toString());
+                     PdfDocument pdfDoc = new PdfDocument(reader)) {
 
-                // 7. 페이지별 처리
-                for (int i = 1; i <= totalPages; i++) {
-                    // 페이지 PDF 추출
-                    ByteArrayOutputStream pageOut = new ByteArrayOutputStream();
-                    try (PdfDocument pageDoc = new PdfDocument(new PdfWriter(pageOut))) {
-                        pdfDoc.copyPagesTo(i, i, pageDoc);
+                    int totalPages = pdfDoc.getNumberOfPages();
+
+                    // 6. Job 엔티티 생성 및 저장
+                    Job job = Job.builder()
+                            .id(jobId)
+                            .user(user)
+                            .mode(mode)
+                            .totalPages(totalPages)
+                            .originalFileName(resolveFileName(user.getId(), file.getOriginalFilename()))
+                            .insertPageNumber(insertPageNumber)
+                            .footerText(footerText)
+                            .layoutOptions(layoutOptions)
+                            .brailleOptions(brailleOptions)
+                            .build();
+                    // 꼬리말은 점역하지 않는다(V3.1 — TranslateText 삭제, 앱이 엔진으로 점역). footer_braille은 null
+                    if (clientInfo != null) {
+                        job.recordClientInfo(clientInfo.ip(), clientInfo.os(), clientInfo.browser(), clientInfo.userAgent());
+                    }
+                    jobRepository.saveAndFlush(job);
+
+                    try {
+                        byte[] thumbnailBytes = thumbnailService.generatePdfThumbnail(pdfPath);
+                        String thumbnailKey = jobId + "/thumbnail.png";
+                        String thumbnailFullPath = s3Service.uploadFile(thumbnailKey, thumbnailBytes, "image/png");
+                        job.updateThumbnailUrl(s3Service.getPublicUrl(thumbnailFullPath));
+                        jobRepository.save(job);
+                    } catch (Exception e) {
+                        log.warn("썸네일 생성 실패: jobId={}", jobId, e);
                     }
 
-                    // S3 업로드
-                    String pageKey = jobId + "/pages/page-" + i + ".pdf";
-                    String fullPath = s3Service.uploadFile(pageKey, pageOut.toByteArray(), "application/pdf");
+                    // total_pages Redis에 저장
+                    redisTemplate.opsForHash().put("job:" + jobId + ":pages", "total_pages", String.valueOf(totalPages));
 
-                    // Page 엔티티 생성
-                    Page page = Page.builder()
-                            .job(job)
-                            .pageNo(i)
-                            .pdfPath(fullPath)
-                            .build();
-                    pages.add(page);
+                    // 7. 페이지별 처리
+                    for (int i = 1; i <= totalPages; i++) {
+                        // 페이지 PDF 추출
+                        ByteArrayOutputStream pageOut = new ByteArrayOutputStream();
+                        try (PdfDocument pageDoc = new PdfDocument(new PdfWriter(pageOut))) {
+                            pdfDoc.copyPagesTo(i, i, pageDoc);
+                        }
 
-                    // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
-                    tasks.add(taskJson(jobId, i, fullPath, mode, totalPages,
-                            user.getId(), layoutOptions.advancedAi(), brailleOptions));
+                        // S3 업로드
+                        String pageKey = jobId + "/pages/page-" + i + ".pdf";
+                        String fullPath = s3Service.uploadFile(pageKey, pageOut.toByteArray(), "application/pdf");
 
-                    // Redis 상태 초기화
-                    redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
+                        // Page 엔티티 생성
+                        Page page = Page.builder()
+                                .job(job)
+                                .pageNo(i)
+                                .pdfPath(fullPath)
+                                .build();
+                        pages.add(page);
+
+                        // 공정 스케줄러 태스크 (Job 저장 후 일괄 등록 — userId는 재시도 시 링 재등록용)
+                        tasks.add(taskJson(jobId, i, fullPath, mode, totalPages,
+                                user.getId(), layoutOptions.advancedAi(), brailleOptions));
+
+                        // Redis 상태 초기화
+                        redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + i, "PENDING");
+                    }
+
+                    // 8. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
+                    pageRepository.saveAll(pages);
+                    jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
+
+                    log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
+                    return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
                 }
-
-                // 8. Page 일괄 저장 후 스케줄러 등록 (DB에 Page가 있어야 워커가 결과를 저장할 수 있음)
-                pageRepository.saveAll(pages);
-                jobDispatcher.enqueueJob(user.getId().toString(), jobId, tasks);
-
-                log.info("Job 생성 완료: jobId={}, totalPages={} — 큐 적재됨", jobId, totalPages);
-                return new JobResponseDto.Create(jobId, mode, totalPages, "PENDING", insertPageNumber, footerText, layoutOptions);
+            } finally {
+                if (converted != null) converted.close();
+                deleteQuietly(upload);
             }
+        }
+    }
+
+    /** 업로드 임시 파일 정리 — 지우지 못해도 요청은 실패시키지 않는다(OS 임시 폴더 정리에 맡긴다) */
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (Exception e) {
+            log.warn("업로드 임시 파일 삭제 실패: {}", path);
         }
     }
 

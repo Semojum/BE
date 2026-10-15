@@ -60,24 +60,52 @@ public class HwpToPdfConverter {
     @Value("${hwp2pdf.timeout-seconds:120}")
     private long timeoutSeconds;
 
-    public byte[] convert(byte[] hwpBytes) {
+    /**
+     * 변환 결과 PDF — 임시 폴더째 들고 다닌다. 다 쓰면 {@link #close()}로 폴더를 지운다(try-with-resources).
+     *
+     * <p>결과를 byte[]로 읽어 돌려주지 않는 이유: 업로드는 최대 100MB라 원본과 결과를 둘 다 힙에 올리면
+     * -Xmx768m에서 몇 건만 겹쳐도 OOM이 난다. 호출부는 경로로 쪽을 나누고 썸네일을 만든다.
+     */
+    public static final class ConvertedPdf implements AutoCloseable {
+        private final Path pdf;
+        private final Path dir;
+
+        public ConvertedPdf(Path pdf, Path dir) {
+            this.pdf = pdf;
+            this.dir = dir;
+        }
+
+        public Path pdf() {
+            return pdf;
+        }
+
+        @Override
+        public void close() {
+            cleanup(dir);
+        }
+    }
+
+    /**
+     * 디스크의 HWP·HWPX를 PDF로 바꾼다. 원본 파일은 호출부 소유라 지우지 않는다.
+     * 실패하면 임시 폴더를 지우고 예외를 던진다(에러 계약은 종전과 같다 — JOB4007 · JOB4008 · JOB4013).
+     */
+    public ConvertedPdf convert(Path source) {
         // HWPX(ZIP)는 확장자와 무관하게 내용물로 가른다 — 최신 한글은 .hwp로도 HWPX를 저장한다
-        if (HwpxToHtml.isZip(hwpBytes)) {
-            return convertHwpx(hwpBytes);
+        if (HwpxToHtml.isZip(head(source))) {
+            return convertHwpx(source);
         }
         // 파싱 가능 여부·암호/배포용 검사 + 머리말·꼬리말 수집 (mode b와 동일한 에러 계약)
-        HWPFile hwp = readAndValidate(hwpBytes);
+        HWPFile hwp = readAndValidate(source);
         List<String> headers = collectNotes(hwp, true);
         List<String> footers = collectNotes(hwp, false);
 
         Path dir = null;
+        boolean ok = false;
         try {
             dir = Files.createTempDirectory("hwp2pdf");
-            Path hwpPath = dir.resolve("in.hwp");
             Path odtPath = dir.resolve("in.odt");
-            Files.write(hwpPath, hwpBytes);
 
-            run(dir, python, script, hwpPath.toString(), odtPath.toString());
+            run(dir, python, script, source.toAbsolutePath().toString(), odtPath.toString());
 
             if (!headers.isEmpty() || !footers.isEmpty()) {
                 byte[] injected = injectTexts(Files.readAllBytes(odtPath), headers, footers);
@@ -92,24 +120,33 @@ public class HwpToPdfConverter {
             if (!Files.exists(pdfPath) || Files.size(pdfPath) == 0) {
                 throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
             }
-            return Files.readAllBytes(pdfPath);
+            ok = true;
+            return new ConvertedPdf(pdfPath, dir);
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
             log.warn("HWP→PDF 변환 실패: {}", e.getMessage());
             throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
         } finally {
-            cleanup(dir);
+            if (!ok) cleanup(dir);
         }
     }
 
     /**
      * HWPX → HTML(HwpxToHtml) → PDF(LibreOffice) (2026-09-30).
      * HTML은 Writer 필터로 열어야 @page 용지 크기가 적용된다(기본인 Writer/Web은 쪽 개념이 없다).
+     * ⚠️ HWPX는 ZIP을 풀어야 해서 원본을 힙에 읽는다(HwpxToHtml이 byte[]를 받는다) — 결과 PDF만 경로로 돌려준다.
      */
-    private byte[] convertHwpx(byte[] hwpxBytes) {
-        HwpxToHtml.Result html = HwpxToHtml.convert(hwpxBytes);
+    private ConvertedPdf convertHwpx(Path source) {
+        HwpxToHtml.Result html;
+        try {
+            html = HwpxToHtml.convert(Files.readAllBytes(source));
+        } catch (IOException e) {
+            log.warn("HWPX 읽기 실패: {}", e.getMessage());
+            throw new CustomException(ErrorCode.JOB_HWP_PARSE_FAILED);
+        }
         Path dir = null;
+        boolean ok = false;
         try {
             dir = Files.createTempDirectory("hwpx2pdf");
             Path htmlPath = dir.resolve("in.html");
@@ -127,21 +164,31 @@ public class HwpToPdfConverter {
             if (!Files.exists(pdfPath) || Files.size(pdfPath) == 0) {
                 throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
             }
-            return Files.readAllBytes(pdfPath);
+            ok = true;
+            return new ConvertedPdf(pdfPath, dir);
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
             log.warn("HWPX→PDF 변환 실패: {}", e.getMessage());
             throw new CustomException(ErrorCode.JOB_HWP_CONVERT_FAILED);
         } finally {
-            cleanup(dir);
+            if (!ok) cleanup(dir);
         }
     }
 
-    private HWPFile readAndValidate(byte[] hwpBytes) {
+    /** 앞 4바이트 — ZIP 시그니처(HWPX) 판별용. 파일 전체를 읽지 않는다 */
+    private static byte[] head(Path source) {
+        try (var in = Files.newInputStream(source)) {
+            return in.readNBytes(4);
+        } catch (IOException e) {
+            throw new CustomException(ErrorCode.JOB_HWP_PARSE_FAILED);
+        }
+    }
+
+    private HWPFile readAndValidate(Path source) {
         HWPFile hwp;
         try {
-            hwp = HWPReader.fromInputStream(new ByteArrayInputStream(hwpBytes));
+            hwp = HWPReader.fromFile(source.toFile());
         } catch (Exception e) {
             log.warn("HWP 파싱 실패: {}", e.getMessage());
             throw new CustomException(ErrorCode.JOB_HWP_PARSE_FAILED);
@@ -259,7 +306,7 @@ public class HwpToPdfConverter {
         }
     }
 
-    private void cleanup(Path dir) {
+    private static void cleanup(Path dir) {
         if (dir == null) return;
         try (var walk = Files.walk(dir)) {
             walk.sorted(Comparator.reverseOrder()).forEach(p -> {

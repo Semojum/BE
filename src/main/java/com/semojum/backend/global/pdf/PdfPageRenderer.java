@@ -58,10 +58,24 @@ public class PdfPageRenderer {
      * @throws InterruptedException 프로세스 대기 중 인터럽트 (호출부가 인터럽트 상태를 복구할 것)
      */
     public byte[] renderFirstPage(byte[] pdfBytes, Format format, int dpi) throws IOException, InterruptedException {
-        Path dir = Files.createTempDirectory("pdfrender-");
+        Path dir = Files.createTempDirectory("pdfrender-in-");
         try {
             Path in = dir.resolve("in.pdf");
             Files.write(in, pdfBytes);
+            return renderFirstPage(in, format, dpi);
+        } finally {
+            cleanup(dir);
+        }
+    }
+
+    /**
+     * 디스크에 있는 PDF의 첫 쪽을 렌더한다 — pdftoppm에 경로를 그대로 넘겨 JVM 힙에 원본을 올리지 않는다.
+     * 업로드 썸네일처럼 큰 원본(최대 100MB)을 다룰 때 쓴다. 파일은 호출부 소유라 지우지 않는다.
+     */
+    public byte[] renderFirstPage(Path pdf, Format format, int dpi) throws IOException, InterruptedException {
+        Path dir = Files.createTempDirectory("pdfrender-");
+        try {
+            Path in = pdf.toAbsolutePath();
 
             List<String> command = new ArrayList<>(List.of(
                     pdftoppm, "-f", "1", "-l", "1", "-r", String.valueOf(dpi),
