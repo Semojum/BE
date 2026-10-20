@@ -36,6 +36,7 @@ public class PageContentSaver {
     private final TextElementRepository textElementRepository;
     private final BrailleElementRepository brailleElementRepository;
     private final PageMemoRepository pageMemoRepository;
+    private final com.semojum.backend.domain.result.repository.PageMemoReplyRepository memoReplyRepository;
 
     /**
      * 한 쪽을 저장한다. 예외는 호출자가 받아 그 쪽만 실패로 기록한다.
@@ -209,13 +210,17 @@ public class PageContentSaver {
         List<PageMemo> existing = pageMemoRepository.findByPageIdOrderByElementIdAscLineIndexAsc(pageId);
         if (existing.isEmpty() && memos.isEmpty()) return false;
 
+        // 답글을 먼저 지운다 — 메모를 지우면 답글이 가리킬 곳이 사라진다(FK는 두지 않았다)
+        if (!existing.isEmpty()) {
+            memoReplyRepository.deleteByMemoIdIn(existing.stream().map(PageMemo::getId).toList());
+        }
         pageMemoRepository.deleteByPageId(pageId);
         for (JobRequestDto.SaveMemo m : memos) {
             String panel = m.panel() == null ? PageMemo.PANEL_TEXT : m.panel().toUpperCase();
             if (!PageMemo.PANEL_TEXT.equals(panel) && !PageMemo.PANEL_BRAILLE.equals(panel)) {
                 throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
             }
-            pageMemoRepository.save(PageMemo.builder()
+            PageMemo saved = pageMemoRepository.save(PageMemo.builder()
                     .pageId(pageId)
                     .panel(panel)
                     .elementId(m.elementId())
@@ -223,8 +228,31 @@ public class PageContentSaver {
                     .lineText(m.lineText())
                     .body(m.body())
                     .createdAt(m.createdAt())
+                    .author(validAuthor(m.author()))
+                    .resolved(Boolean.TRUE.equals(m.resolved()))
+                    .resolvedAt(m.resolvedAt())
                     .build());
+            if (m.replies() == null) continue;
+            for (JobRequestDto.SaveMemoReply r : m.replies()) {
+                if (r == null || r.body() == null || r.body().isBlank()) {
+                    throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+                }
+                memoReplyRepository.save(PageMemoReply.builder()
+                        .memoId(saved.getId())
+                        .author(validAuthor(r.author()))
+                        .body(r.body())
+                        .createdAt(r.createdAt())
+                        .build());
+            }
         }
         return true;
+    }
+
+    /** 작성자 이름 — 앱이 보낸 값 그대로. 빈 값은 null, 상한(100자)을 넘으면 400 */
+    private static String validAuthor(String author) {
+        if (author == null || author.isBlank()) return null;
+        String a = author.trim();
+        if (a.length() > PageMemo.AUTHOR_MAX) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        return a;
     }
 }

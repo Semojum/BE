@@ -34,6 +34,7 @@ public class UserService {
     private final com.semojum.backend.domain.result.service.PageResultSerializer pageResultSerializer;
     private final com.semojum.backend.domain.job.service.FooterBrailleService footerBrailleService;
     private final com.semojum.backend.domain.result.repository.PageMemoRepository pageMemoRepository;
+    private final com.semojum.backend.domain.result.repository.PageMemoReplyRepository memoReplyRepository;
 
     /** 진행 중 작업의 완료 페이지 비율(0~100). 그 외에는 null. */
     private Integer progressOf(Job job) {
@@ -112,10 +113,22 @@ public class UserService {
 
     /** 그 쪽의 줄 메모. 없으면 빈 배열 — FE가 null 검사 없이 순회하도록 */
     private List<JobResponseDto.Memo> memosOf(UUID pageId) {
-        return pageMemoRepository.findByPageIdOrderByElementIdAscLineIndexAsc(pageId).stream()
+        var memos = pageMemoRepository.findByPageIdOrderByElementIdAscLineIndexAsc(pageId);
+        // 답글은 쪽 단위로 한 번에 모은다 — 메모마다 조회하면 N+1
+        java.util.Map<Long, List<JobResponseDto.MemoReply>> replies = new java.util.HashMap<>();
+        if (!memos.isEmpty()) {
+            for (var r : memoReplyRepository.findByMemoIdInOrderByIdAsc(
+                    memos.stream().map(com.semojum.backend.domain.result.entity.PageMemo::getId).toList())) {
+                replies.computeIfAbsent(r.getMemoId(), k -> new java.util.ArrayList<>())
+                        .add(new JobResponseDto.MemoReply(r.getId(), r.getAuthor(), r.getBody(), r.getCreatedAt()));
+            }
+        }
+        return memos.stream()
                 .map(m -> new JobResponseDto.Memo(
                         m.getId(), m.getPanel(), m.getElementId(), m.getLineIndex(),
-                        m.getLineText(), m.getBody(), m.getCreatedAt()))
+                        m.getLineText(), m.getBody(), m.getCreatedAt(),
+                        m.getAuthor(), m.isResolved(), m.getResolvedAt(),
+                        replies.getOrDefault(m.getId(), List.of())))
                 .toList();
     }
 

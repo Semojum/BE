@@ -34,6 +34,7 @@ class PageContentSaverTest {
     TextElementRepository textRepo;
     BrailleElementRepository brailleRepo;
     PageMemoRepository memoRepo;
+    com.semojum.backend.domain.result.repository.PageMemoReplyRepository replyRepo;
     PageContentSaver saver;
 
     Job job;
@@ -47,7 +48,13 @@ class PageContentSaverTest {
         textRepo = Mockito.mock(TextElementRepository.class);
         brailleRepo = Mockito.mock(BrailleElementRepository.class);
         memoRepo = Mockito.mock(PageMemoRepository.class);
-        saver = new PageContentSaver(pageRepo, pageResultRepo, textRepo, brailleRepo, memoRepo);
+        replyRepo = Mockito.mock(com.semojum.backend.domain.result.repository.PageMemoReplyRepository.class);
+        saver = new PageContentSaver(pageRepo, pageResultRepo, textRepo, brailleRepo, memoRepo, replyRepo);
+        when(memoRepo.save(any())).thenAnswer(i -> {
+            PageMemo m = i.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(m, "id", 501L);
+            return m;
+        });
 
         job = Job.builder().id("job1").mode("c").totalPages(1).originalFileName("f").build();
         pageResult = PageResult.builder().pageNumber(1).mode("c").status("COMPLETED").build();
@@ -216,7 +223,8 @@ class PageContentSaverTest {
     // ── 줄 메모 ─────────────────────────────────────────────────────
 
     private JobRequestDto.SaveMemo memo(String panel, String elementId, int line, String body) {
-        return new JobRequestDto.SaveMemo(null, panel, elementId, line, "이 시기 도시 인구는", body, null);
+        return new JobRequestDto.SaveMemo(null, panel, elementId, line, "이 시기 도시 인구는", body, null,
+                null, null, null, null);
     }
 
     @Test
@@ -247,6 +255,86 @@ class PageContentSaverTest {
         assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
                 () -> saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null,
                         List.of(memo("ORIGINAL", "e1", 0, "x"))))).getErrorCode());
+    }
+
+    // ── 메모 작성자 · 해결 · 답글 (V42) ──────────────────────────────
+    // 협업은 .smj 파일 전달이다 — 받은 사람이 단 답글이 원래 주인의 저장에 함께 올라온다
+
+    private JobRequestDto.SaveMemo threaded(String author, Boolean resolved, java.time.LocalDateTime resolvedAt,
+                                            List<JobRequestDto.SaveMemoReply> replies) {
+        return new JobRequestDto.SaveMemo(null, "TEXT", "e1", 2, "이 시기 도시 인구는", "원문이 「작다」인데",
+                null, author, resolved, resolvedAt, replies);
+    }
+
+    /** 작성자는 앱이 보낸 이름 그대로 — 저장하는 사람으로 덮어쓰면 남의 답글이 내 것이 된다 */
+    @Test
+    void 작성자와_답글을_받은_그대로_저장한다() {
+        java.time.LocalDateTime at = java.time.LocalDateTime.of(2026, 10, 20, 9, 30);
+        saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null, List.of(threaded("김점역", false, null, List.of(
+                new JobRequestDto.SaveMemoReply("이교정", "확인했습니다. 출판사에 알려 두겠습니다.", at),
+                new JobRequestDto.SaveMemoReply(null, "다음 판에서 고칩니다.", null))))));
+
+        ArgumentCaptor<PageMemo> memo = ArgumentCaptor.forClass(PageMemo.class);
+        verify(memoRepo).save(memo.capture());
+        assertEquals("김점역", memo.getValue().getAuthor());
+        assertFalse(memo.getValue().isResolved());
+        assertNull(memo.getValue().getResolvedAt(), "미해결이면 해결 시각이 없다");
+
+        ArgumentCaptor<com.semojum.backend.domain.result.entity.PageMemoReply> reply =
+                ArgumentCaptor.forClass(com.semojum.backend.domain.result.entity.PageMemoReply.class);
+        verify(replyRepo, times(2)).save(reply.capture());
+        var first = reply.getAllValues().get(0);
+        assertEquals(501L, first.getMemoId(), "답글은 방금 저장한 메모에 붙는다");
+        assertEquals("이교정", first.getAuthor());
+        assertEquals(at, first.getCreatedAt(), "파일에 든 작성 시각 보존");
+        assertNull(reply.getAllValues().get(1).getAuthor(), "작성자가 없으면 비워 둔다");
+    }
+
+    @Test
+    void 해결로_오면_시각을_남기고_없으면_지금으로_채운다() {
+        java.time.LocalDateTime at = java.time.LocalDateTime.of(2026, 10, 21, 11, 0);
+        saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null, List.of(
+                threaded("김점역", true, at, null), threaded("김점역", true, null, null))));
+
+        ArgumentCaptor<PageMemo> memo = ArgumentCaptor.forClass(PageMemo.class);
+        verify(memoRepo, times(2)).save(memo.capture());
+        assertTrue(memo.getAllValues().get(0).isResolved());
+        assertEquals(at, memo.getAllValues().get(0).getResolvedAt());
+        assertNotNull(memo.getAllValues().get(1).getResolvedAt());
+    }
+
+    /** 미해결로 돌리면 예전 해결 시각이 남지 않는다 */
+    @Test
+    void 미해결이면_보낸_해결_시각을_버린다() {
+        saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null, List.of(
+                threaded("김점역", false, java.time.LocalDateTime.of(2026, 10, 21, 11, 0), null))));
+
+        ArgumentCaptor<PageMemo> memo = ArgumentCaptor.forClass(PageMemo.class);
+        verify(memoRepo).save(memo.capture());
+        assertNull(memo.getValue().getResolvedAt());
+    }
+
+    /** 통째 교체라 기존 메모의 답글도 지운다 — 남기면 가리킬 메모가 없는 답글이 쌓인다 */
+    @Test
+    void 메모를_갈아끼울_때_기존_답글도_지운다() {
+        PageMemo old = PageMemo.builder().pageId(pageId).panel("TEXT").elementId("e1").lineIndex(0).body("옛 메모").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(old, "id", 77L);
+        when(memoRepo.findByPageIdOrderByElementIdAscLineIndexAsc(any())).thenReturn(List.of(old));
+
+        saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null, List.of()));
+
+        verify(replyRepo).deleteByMemoIdIn(List.of(77L));
+        verify(memoRepo).deleteByPageId(any());
+    }
+
+    @Test
+    void 빈_답글이나_너무_긴_작성자는_400() {
+        for (JobRequestDto.SaveMemo bad : List.of(
+                threaded("김점역", false, null, List.of(new JobRequestDto.SaveMemoReply("이교정", " ", null))),
+                threaded("가".repeat(101), false, null, null))) {
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
+                    () -> saver.savePage(job, new JobRequestDto.SaveJobPage(1, null, null, List.of(bad)))).getErrorCode());
+        }
     }
 
     // ── 텍스트 작업의 첫 저장 (V3.1) ─────────────────────────────────

@@ -26,7 +26,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 쪽 조회가 줄 메모를 함께 준다.
@@ -40,6 +40,7 @@ class PageMemoReadTest {
     PageRepository pageRepo;
     PageResultRepository pageResultRepo;
     PageMemoRepository memoRepo;
+    com.semojum.backend.domain.result.repository.PageMemoReplyRepository replyRepo;
     UserService service;
 
     final String USER_ID = UUID.randomUUID().toString();
@@ -55,7 +56,8 @@ class PageMemoReadTest {
         service = new UserService(jobRepo, pageRepo, Mockito.mock(RedisTemplate.class),
                 Mockito.mock(S3Service.class), pageResultRepo,
                 Mockito.mock(PageResultSerializer.class),
-                Mockito.mock(FooterBrailleService.class), memoRepo);
+                Mockito.mock(FooterBrailleService.class), memoRepo,
+                replyRepo = Mockito.mock(com.semojum.backend.domain.result.repository.PageMemoReplyRepository.class));
 
         job = Job.builder().id("job1").mode("c").totalPages(1).originalFileName("교재.pdf").build();
         when(jobRepo.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(job));
@@ -112,5 +114,56 @@ class PageMemoReadTest {
         assertEquals(2, memos.size());
         assertEquals(List.of("TEXT", "BRAILLE"), memos.stream().map(JobResponseDto.Memo::panel).toList(),
                 "같은 블록 id라도 패널로 갈린다");
+    }
+
+    // ── 작성자 · 해결 · 답글 (V42) ──────────────────────────────────
+
+    private PageMemo threaded(long id, String author, boolean resolved) {
+        PageMemo m = PageMemo.builder().pageId(PAGE_ID).panel("TEXT").elementId("t7").lineIndex(2)
+                .lineText("원문 줄").body("원문이 「작다」인데").author(author).resolved(resolved)
+                .resolvedAt(resolved ? LocalDateTime.of(2026, 10, 21, 11, 0) : null)
+                .createdAt(LocalDateTime.of(2026, 10, 20, 9, 0)).build();
+        try {
+            var f = PageMemo.class.getDeclaredField("id"); f.setAccessible(true); f.set(m, id);
+        } catch (Exception e) { throw new IllegalStateException(e); }
+        return m;
+    }
+
+    private com.semojum.backend.domain.result.entity.PageMemoReply reply(long memoId, String author, String body) {
+        return com.semojum.backend.domain.result.entity.PageMemoReply.builder()
+                .memoId(memoId).author(author).body(body).createdAt(LocalDateTime.of(2026, 10, 20, 10, 0)).build();
+    }
+
+    @Test
+    void 메모마다_작성자_해결_답글이_붙는다() {
+        when(memoRepo.findByPageIdOrderByElementIdAscLineIndexAsc(PAGE_ID)).thenReturn(List.of(
+                threaded(1L, "김점역", true), threaded(2L, null, false)));
+        when(replyRepo.findByMemoIdInOrderByIdAsc(any())).thenReturn(List.of(
+                reply(1L, "이교정", "확인했습니다."), reply(1L, "김점역", "고마워요")));
+
+        List<JobResponseDto.Memo> memos = service.getJobPage(USER_ID, "job1", 1).memos();
+
+        JobResponseDto.Memo first = memos.get(0);
+        assertEquals("김점역", first.author());
+        assertTrue(first.resolved());
+        assertEquals(LocalDateTime.of(2026, 10, 21, 11, 0), first.resolvedAt());
+        assertEquals(List.of("이교정", "김점역"), first.replies().stream().map(JobResponseDto.MemoReply::author).toList());
+
+        JobResponseDto.Memo second = memos.get(1);
+        assertNull(second.author(), "예전 메모는 작성자가 없다");
+        assertFalse(second.resolved());
+        assertEquals(List.of(), second.replies(), "답글이 없으면 빈 배열");
+    }
+
+    /** 답글은 쪽 단위로 한 번에 모은다 — 메모마다 조회하면 N+1 */
+    @Test
+    void 답글은_한_번에_조회한다() {
+        when(memoRepo.findByPageIdOrderByElementIdAscLineIndexAsc(PAGE_ID)).thenReturn(List.of(
+                threaded(1L, "a", false), threaded(2L, "b", false), threaded(3L, "c", false)));
+        when(replyRepo.findByMemoIdInOrderByIdAsc(any())).thenReturn(List.of());
+
+        service.getJobPage(USER_ID, "job1", 1);
+
+        verify(replyRepo, times(1)).findByMemoIdInOrderByIdAsc(List.of(1L, 2L, 3L));
     }
 }

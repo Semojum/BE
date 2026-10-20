@@ -90,6 +90,17 @@ public class JobRequestDto {
             int lineIndex,
             String lineText,
             @NotNull String body,
+            java.time.LocalDateTime createdAt,
+            String author,                         // 작성자 표시 이름 — 앱이 보낸 값 그대로 저장(V42)
+            Boolean resolved,                      // 해결 여부. 안 보내면 미해결
+            java.time.LocalDateTime resolvedAt,    // 해결 시각. 해결인데 없으면 서버 시각
+            List<SaveMemoReply> replies            // 답글 — 이 메모의 최종 상태 전체. 없으면 답글 없음
+    ) {}
+
+    /** 메모 답글 (V42) — .smj를 받은 사람이 단다. 작성자 · 작성 시각은 파일에 든 값을 그대로 보낸다 */
+    public record SaveMemoReply(
+            String author,
+            @NotNull String body,
             java.time.LocalDateTime createdAt
     ) {}
 
