@@ -162,8 +162,11 @@ public class PageContentSaver {
             }
         }
         for (TextElement el : live) {
-            if (!seen.contains(el.getElementId())) { el.markDeleted(); changed = true; }
+            // 차단 블록(AI가 처리하지 못한 블록)은 배열에서 빠져도 지우지 않는다 — 앱이 편집 대상이 아닌
+            // 차단 블록을 빼고 보내면, 정상 블록만 고쳤는데 차단 블록이 사라졌다(FE 점검 B-03)
+            if (!seen.contains(el.getElementId()) && !el.isBlocked()) { el.markDeleted(); changed = true; }
         }
+        keepOmittedBlocked(live, finalOrder, seen, TextElement::getElementId, TextElement::isBlocked);
         changed |= renumberText(live, finalOrder, seen);
         return changed;
     }
@@ -217,10 +220,32 @@ public class PageContentSaver {
             }
         }
         for (BrailleElement el : live) {
-            if (!seen.contains(el.getElementId())) { el.markDeleted(); changed = true; }
+            // 차단 블록(AI가 처리하지 못한 블록)은 배열에서 빠져도 지우지 않는다 — 앱이 편집 대상이 아닌
+            // 차단 블록을 빼고 보내면, 정상 블록만 고쳤는데 차단 블록이 사라졌다(FE 점검 B-03)
+            if (!seen.contains(el.getElementId()) && !el.isBlocked()) { el.markDeleted(); changed = true; }
         }
+        keepOmittedBlocked(live, finalOrder, seen, BrailleElement::getElementId, BrailleElement::isBlocked);
         changed |= renumberBraille(live, finalOrder, seen);
         return changed;
+    }
+
+    /**
+     * 배열에서 빠진 차단 블록을 원래 자리에 남긴다 — 원래 순서에서 바로 앞에 있던 블록(최종 배열에 남은 것) 뒤에 둔다.
+     * 그래야 재번호해도 차단 블록의 읽기 순서가 정상 블록과 겹치지 않는다.
+     */
+    private static <E> void keepOmittedBlocked(List<E> live, List<E> finalOrder, Set<String> seen,
+                                               java.util.function.Function<E, String> id,
+                                               java.util.function.Predicate<E> blocked) {
+        for (int i = 0; i < live.size(); i++) {
+            E el = live.get(i);
+            if (seen.contains(id.apply(el)) || !blocked.test(el)) continue;
+            int pos = 0;
+            for (int j = i - 1; j >= 0; j--) {
+                int k = finalOrder.indexOf(live.get(j));
+                if (k >= 0) { pos = k + 1; break; }
+            }
+            finalOrder.add(pos, el);
+        }
     }
 
     /** 중복 id는 화면 상태가 깨진 것 — 저장하면 블록이 합쳐지므로 거절한다 */
