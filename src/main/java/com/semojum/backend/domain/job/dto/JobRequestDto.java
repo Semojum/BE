@@ -68,7 +68,10 @@ public class JobRequestDto {
             String footerText,
             LayoutOptions layoutOptions,
             BrailleOptions brailleOptions,
-            @NotNull List<SaveJobPage> pages
+            @NotNull List<SaveJobPage> pages,
+            // 텍스트 작업(TXT · 새 문서)의 전체 쪽 수 — 보내면 그 뒤 쪽을 지운다(쪽 줄이기). 안 보내면 쪽 수를
+            // 줄이지 않는다(실패한 쪽 때문에 쪽 수가 줄던 문제, FE 점검 B-02). PDF · 이미지 작업은 보내면 400
+            Integer totalPages
     ) {}
 
     /** 한 쪽의 최종 상태. 그 모드에 없는 패널은 null(TXT·새 문서엔 텍스트만) */

@@ -1,5 +1,7 @@
 package com.semojum.backend.domain.result.repository;
 
+import java.util.Collection;
+import org.springframework.data.jpa.repository.Modifying;
 import com.semojum.backend.domain.result.entity.BrailleElement;
 import com.semojum.backend.domain.result.entity.PageResult;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +20,11 @@ public interface BrailleElementRepository extends JpaRepository<BrailleElement, 
     // AI 초안 — AI가 준 블록 전부(사용자가 지운 것 포함, 사용자 추가 블록 제외). 수정 이력의 AI 초안 칸용
 
     Optional<BrailleElement> findByPageResultAndElementId(PageResult pageResult, String elementId);
+
+    @Query("SELECT b.id FROM BrailleElement b WHERE b.pageResult.id IN :pageResultIds")
+    List<UUID> findIdsByPageResultIdIn(@Param("pageResultIds") Collection<UUID> pageResultIds);
+
+    @Modifying
+    @Query("DELETE FROM BrailleElement b WHERE b.pageResult.id IN :pageResultIds")
+    int deleteByPageResultIdIn(@Param("pageResultIds") Collection<UUID> pageResultIds);
 }

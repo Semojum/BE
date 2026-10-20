@@ -33,6 +33,8 @@ class JobSaveServiceTest {
     JobService jobService;
     PageContentSaver pageContentSaver;
     JobCopyService jobCopyService;
+    com.semojum.backend.domain.result.service.TextPageTrimmer trimmer;
+    com.semojum.backend.domain.job.repository.PageRepository pageRepository;
     com.semojum.backend.domain.auth.repository.UserRepository userRepository;
     JobSaveService service;
 
@@ -46,7 +48,10 @@ class JobSaveServiceTest {
         pageContentSaver = Mockito.mock(PageContentSaver.class);
         jobCopyService = Mockito.mock(JobCopyService.class);
         userRepository = Mockito.mock(com.semojum.backend.domain.auth.repository.UserRepository.class);
-        service = new JobSaveService(jobRepository, jobService, pageContentSaver, jobCopyService, userRepository);
+        trimmer = Mockito.mock(com.semojum.backend.domain.result.service.TextPageTrimmer.class);
+        pageRepository = Mockito.mock(com.semojum.backend.domain.job.repository.PageRepository.class);
+        service = new JobSaveService(jobRepository, jobService, pageContentSaver, jobCopyService, trimmer,
+                pageRepository, userRepository);
 
         me = user(USER_ID, "testorg01", com.semojum.backend.domain.auth.enums.Role.ROLE_USER);
         job = Job.builder().id("job1").user(me).mode("c").totalPages(3).originalFileName("교재.pdf").build();
@@ -72,7 +77,7 @@ class JobSaveServiceTest {
     private JobRequestDto.SaveJob request(int... pageNos) {
         List<JobRequestDto.SaveJobPage> pages = new java.util.ArrayList<>();
         for (int no : pageNos) pages.add(page(no));
-        return new JobRequestDto.SaveJob(true, "수특 사회문화 2", null, null, pages);
+        return new JobRequestDto.SaveJob(true, "수특 사회문화 2", null, null, pages, null);
     }
 
     @Test
@@ -148,41 +153,97 @@ class JobSaveServiceTest {
     // ── 텍스트 작업의 쪽 수 (V3.1) ──────────────────────────────────
     // 텍스트 작업은 쪽 나누기를 앱이 정한다. 생성 땐 0이고 저장된 마지막 쪽 번호가 쪽 수가 된다.
 
+    private Job textJob(int totalPages) {
+        Job t = Job.builder().id("job-t").user(me).mode("b").totalPages(totalPages).originalFileName("무제").build();
+        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(t));
+        when(jobRepository.findById("job-t")).thenReturn(Optional.of(t));
+        return t;
+    }
+
+    private JobRequestDto.SaveJob withTotal(Integer total, int... pageNos) {
+        JobRequestDto.SaveJob r = request(pageNos);
+        return new JobRequestDto.SaveJob(r.insertPageNumber(), r.footerText(), null, null, r.pages(), total);
+    }
+
+    /** 쪽 수 = 남아 있는 마지막 쪽 번호 — 새 문서의 첫 저장이 쪽을 만든다 */
     @Test
-    void 텍스트_작업은_저장된_마지막_쪽이_쪽_수가_된다() {
-        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(0).originalFileName("무제").build();
-        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
-        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
+    void 텍스트_작업은_남아_있는_마지막_쪽이_쪽_수가_된다() {
+        Job t = textJob(0);
+        when(pageRepository.findMaxPageNo("job-t")).thenReturn(3);
 
         service.save(USER_ID, "job-t", request(1, 2, 3));
 
-        assertEquals(3, textJob.getTotalPages());
+        assertEquals(3, t.getTotalPages());
     }
 
-    /** 본문이 최종 상태라 앱이 쪽을 줄였으면 쪽 수도 준다 */
+    /** FE 점검 B-02 — 3쪽 문서의 2 · 3쪽 저장이 실패해도 쪽 수는 그대로다(종전엔 1이 됐다) */
     @Test
-    void 텍스트_작업에서_쪽이_줄면_쪽_수도_준다() {
-        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(5).originalFileName("무제").build();
-        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
-        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
+    void 일부_쪽이_실패해도_쪽_수가_줄지_않는다() {
+        Job t = textJob(3);
+        when(pageRepository.findMaxPageNo("job-t")).thenReturn(3);
+        doThrow(new RuntimeException("실패")).when(pageContentSaver)
+                .savePage(any(), argThat(pg -> pg != null && pg.pageNo() >= 2));
+
+        JobResponseDto.SaveResult result = service.save(USER_ID, "job-t", request(1, 2, 3));
+
+        assertEquals(List.of(2, 3), result.failedPages());
+        assertEquals(3, t.getTotalPages());
+        verify(trimmer, never()).deletePagesAfter(any(), anyInt());
+    }
+
+    /** 쪽을 빼고 보내도 totalPages를 안 보내면 줄이지 않는다 — 실패 쪽만 다시 보낸 요청일 수 있다 */
+    @Test
+    void totalPages를_안_보내면_쪽을_줄이지_않는다() {
+        Job t = textJob(5);
+        when(pageRepository.findMaxPageNo("job-t")).thenReturn(5);
 
         service.save(USER_ID, "job-t", request(1, 2));
 
-        assertEquals(2, textJob.getTotalPages());
+        assertEquals(5, t.getTotalPages());
+        verify(trimmer, never()).deletePagesAfter(any(), anyInt());
     }
 
-    /** 실패한 쪽은 쪽 수에 넣지 않는다 — 없는 쪽을 가리키게 되면 조회가 404다 */
+    /** 앱이 쪽을 줄였으면 totalPages로 명시한다 — 그 뒤 쪽을 지운 뒤 쪽 수가 준다 */
     @Test
-    void 텍스트_작업의_실패한_마지막_쪽은_쪽_수에_넣지_않는다() {
-        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(0).originalFileName("무제").build();
-        when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
-        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
+    void totalPages를_보내면_그_뒤_쪽을_지우고_줄인다() {
+        Job t = textJob(5);
+        when(pageRepository.findMaxPageNo("job-t")).thenReturn(2);
+
+        service.save(USER_ID, "job-t", withTotal(2, 1, 2));
+
+        verify(trimmer).deletePagesAfter(t, 2);
+        assertEquals(2, t.getTotalPages());
+    }
+
+    /** 새 문서에서 마지막 쪽 생성이 실패하면 그 쪽은 없다 — 없는 쪽을 가리키면 조회가 404다 */
+    @Test
+    void 새_쪽_생성이_실패하면_쪽_수에_넣지_않는다() {
+        Job t = textJob(0);
+        when(pageRepository.findMaxPageNo("job-t")).thenReturn(2);
         doThrow(new RuntimeException("쪽 3 실패")).when(pageContentSaver)
                 .savePage(any(), argThat(pg -> pg != null && pg.pageNo() == 3));
 
         service.save(USER_ID, "job-t", request(1, 2, 3));
 
-        assertEquals(2, textJob.getTotalPages());
+        assertEquals(2, t.getTotalPages());
+    }
+
+    /** PDF · 이미지의 쪽은 원본 쪽이다 — totalPages를 보내면 아무것도 쓰기 전에 400 */
+    @Test
+    void PDF_작업에_totalPages를_보내면_400이다() {
+        CustomException e = assertThrows(CustomException.class, () -> service.save(USER_ID, "job1", withTotal(1, 1)));
+        assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+        verify(jobService, never()).updateJobOptions(any(), any(), any());
+    }
+
+    @Test
+    void totalPages보다_뒤_쪽을_보내면_400이다() {
+        textJob(3);
+        for (JobRequestDto.SaveJob bad : List.of(withTotal(2, 1, 3), withTotal(0, 1))) {
+            CustomException e = assertThrows(CustomException.class, () -> service.save(USER_ID, "job-t", bad));
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+        }
+        verify(pageContentSaver, never()).savePage(any(), any());
     }
 
     /** PDF 작업의 쪽 수는 변환이 정한다 — 저장이 건드리지 않는다 */
