@@ -100,6 +100,11 @@ public class TextElement {
         this.isDeleted = true;
     }
 
+    // 삭제한 블록 복원 — 앱이 지운 뒤 되돌리기로 같은 id를 다시 보낼 때 (2026-10-21)
+    public void restore() {
+        this.isDeleted = false;
+    }
+
     // 사용자가 직접 추가한 블록: AI 원본 없음(original=null). current는 사용자가 입력한 값 유지.
     public void markUserAuthored() {
         this.originalContents = null;
