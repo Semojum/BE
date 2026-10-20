@@ -1,0 +1,12 @@
+// 업로드 분리 실측 전용 init 스크립트 — 테스트 JVM을 운영과 같은 -Xmx768m로 띄운다(UploadSplitBenchTest).
+// 실행: BENCH_DIR=/tmp/upload-bench BENCH_OUT=/tmp/bench.md ./gradlew test --tests '*UploadSplitBenchTest' --init-script scripts/upload-bench.gradle
+allprojects {
+    tasks.withType(Test).configureEach {
+        maxHeapSize = '768m'
+        systemProperty 'upload.bench', 'true'
+        systemProperty 'upload.bench.dir', System.getenv('BENCH_DIR') ?: '/tmp/upload-bench'
+        if (System.getenv('BENCH_OUT')) systemProperty 'upload.bench.out', System.getenv('BENCH_OUT')
+        testLogging { showStandardStreams = true }
+        outputs.upToDateWhen { false }
+    }
+}

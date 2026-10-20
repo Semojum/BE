@@ -48,7 +48,7 @@ class PageImageServiceTest {
 
     @Test
     void 렌더에_성공하면_이미지_경로가_남는다() throws Exception {
-        when(renderer.renderFirstPage(any(), eq(PdfPageRenderer.Format.JPEG), anyInt()))
+        when(renderer.renderFirstPage(any(byte[].class), eq(PdfPageRenderer.Format.JPEG), anyInt()))
                 .thenReturn(new byte[]{1, 2, 3});
         when(s3Service.uploadFile(eq("job-1/pages/page-1.jpg"), any(), eq("image/jpeg")))
                 .thenReturn("s3://b/job-1/pages/page-1.jpg");
@@ -61,7 +61,7 @@ class PageImageServiceTest {
     /** 렌더가 실패해도 예외가 밖으로 나가면 안 된다 — 워커의 변환 흐름이 끊긴다 */
     @Test
     void 렌더에_실패해도_예외를_던지지_않고_경로는_비워둔다() throws Exception {
-        when(renderer.renderFirstPage(any(), any(), anyInt()))
+        when(renderer.renderFirstPage(any(byte[].class), any(), anyInt()))
                 .thenThrow(new IOException("pdftoppm exit=1"));
 
         service.generateAndStore("job-1", 1, new byte[]{9});
@@ -77,7 +77,7 @@ class PageImageServiceTest {
 
         service.generateAndStore("job-1", 1, new byte[]{9});
 
-        verify(renderer, never()).renderFirstPage(any(), any(), anyInt());
+        verify(renderer, never()).renderFirstPage(any(byte[].class), any(), anyInt());
         assertNull(page.getImagePath());
     }
 }
