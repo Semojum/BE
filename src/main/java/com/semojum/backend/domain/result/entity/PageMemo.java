@@ -29,6 +29,9 @@ public class PageMemo {
     public static final String PANEL_TEXT = "TEXT";
     public static final String PANEL_BRAILLE = "BRAILLE";
 
+    /** 작성자 이름 상한 — 별칭(50자) · 로그인 ID를 넉넉히 담는다 */
+    public static final int AUTHOR_MAX = 100;
+
     /** line_text 상한 — 넘으면 자른다. 재탐색 단서라 앞부분만 있으면 된다 */
     public static final int LINE_TEXT_MAX = 80;
 
@@ -58,6 +61,17 @@ public class PageMemo {
     @Column(nullable = false, columnDefinition = "text")
     private String body;
 
+    /** 작성자 표시 이름 (V42) — 앱이 보낸 값 그대로(별칭, 없으면 로그인 ID). 예전 메모는 null */
+    @Column(length = AUTHOR_MAX)
+    private String author;
+
+    /** 해결 여부 (V42) — 메모 하나(답글 포함)에 하나. 해결한 사람은 남기지 않는다 */
+    @Column(nullable = false)
+    private boolean resolved;
+
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -66,7 +80,12 @@ public class PageMemo {
 
     @Builder
     public PageMemo(UUID pageId, String panel, String elementId, int lineIndex,
-                    String lineText, String body, LocalDateTime createdAt) {
+                    String lineText, String body, LocalDateTime createdAt,
+                    String author, boolean resolved, LocalDateTime resolvedAt) {
+        this.author = author;
+        this.resolved = resolved;
+        // 해결로 왔는데 시각이 없으면 지금. 미해결이면 시각을 남기지 않는다
+        this.resolvedAt = resolved ? (resolvedAt == null ? LocalDateTime.now() : resolvedAt) : null;
         this.pageId = pageId;
         this.panel = panel;
         this.elementId = elementId;

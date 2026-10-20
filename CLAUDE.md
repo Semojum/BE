@@ -174,7 +174,10 @@ com.semojum.backend
 - **쪽 단위 트랜잭션**(`JobSaveService` → `PageContentSaver`, `REQUIRES_NEW`) — 한 쪽이 실패해도 나머지는 저장하고 실패한 쪽 번호만 돌려준다. 둘을 나눈 건 같은 클래스 호출은 프록시를 안 타 트랜잭션이 안 걸려서다
 - 설정(조판 · 점역 옵션 · 꼬리말)은 보낸 항목만 덮어쓴다. 변환 중이면 저장 자체가 JOB4010
 - 대체 초안은 `selectedIdx`로 무엇을 골랐는지만 기록한다(본문은 앱이 이미 그 초안으로 채워 보낸다)
-- 줄 메모(`page_memos`, V34)는 쪽 단위 전체 교체
+- 줄 메모(`page_memos`, V34)는 쪽 단위 전체 교체. **V42: 작성자 · 해결 여부 · 해결 시각 + 답글(`page_memo_replies`)**
+  - 협업은 서버 공유가 아니라 **.smj 파일 전달**이다(USB 등). 받은 사람이 메모를 보고 답글을 달고 해결 표시를 한다. 모아보기 · 해결/미해결 필터는 앱이 파일 안에서 한다 — 서버 조회 API 없음
+  - ⚠️ **작성자는 앱이 보낸 이름 그대로 저장한다** — 남이 단 답글이 원래 주인의 저장에 함께 올라오므로 「지금 저장하는 사람」으로 덮어쓰면 안 된다. 앱은 로그인 응답의 `alias`(없으면 loginId)를 작성자로 쓴다
+  - 해결한 사람은 남기지 않는다(기획 결정). 메모를 지울 때 답글을 먼저 지운다(FK 없음)
 - **수정 이력은 남기지 않는다**(2026-10-12 기획 결정) — 쓰던 `page_edit_histories` · `page_edit_logs`는 코드(#181)와 테이블(V41) 모두 지웠다
 - 텍스트 작업(mode b)은 저장이 쪽을 만든다 — 「Job 생성」 참조
 
@@ -242,7 +245,7 @@ com.semojum.backend
 
 users / organizations / user_sessions / jobs / pages / page_results / text_elements /
 braille_elements / bounding_boxes / rule_trails / quality_critical_errors / quality_review_flags /
-board_posts / board_attachments / board_answers / board_notifications / page_memos / braille_forms / pricing_configs / credit_transactions / coupons / notices /
+board_posts / board_attachments / board_answers / board_notifications / page_memos / page_memo_replies / braille_forms / pricing_configs / credit_transactions / coupons / notices /
 inquiries / inquiry_attachments / orders / app_versions
 
 - V41(2026-10-14)에서 `folders` · `page_edit_histories` · `page_edit_logs` 테이블과 `jobs.folder_id` · `is_favorite` 칼럼을 지웠다(백업 없음)

@@ -92,8 +92,14 @@ public class JobResponseDto {
             int lineIndex,
             String lineText,
             String body,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            String author,             // 작성자 표시 이름 (V42). 예전 메모는 null
+            boolean resolved,          // 해결 여부
+            LocalDateTime resolvedAt,  // 해결 시각. 미해결이면 null
+            List<MemoReply> replies    // 답글 — 없으면 빈 배열
     ) {}
+
+    public record MemoReply(Long replyId, String author, String body, LocalDateTime createdAt) {}
 
     // 페이지별 원본. URL은 하나이고 무엇인지는 type이 알려준다 (2026-08-31 단일화).
     //   type="image" : a·c 정상 — 서버가 미리 렌더한 JPEG. FE는 <img>로 바로 그린다
