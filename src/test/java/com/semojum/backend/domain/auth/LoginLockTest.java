@@ -39,6 +39,7 @@ class LoginLockTest {
     UserRepository userRepository;
     PasswordEncoder passwordEncoder;
     AuthService authService;
+    JwtProvider jwt;
     User user;
 
     @BeforeEach
@@ -58,7 +59,8 @@ class LoginLockTest {
 
         userRepository = mock(UserRepository.class);
         passwordEncoder = mock(PasswordEncoder.class);
-        authService = new AuthService(userRepository, mock(UserSessionRepository.class), mock(JwtProvider.class),
+        jwt = mock(JwtProvider.class);
+        authService = new AuthService(userRepository, mock(UserSessionRepository.class), jwt,
                 passwordEncoder, mock(ConsoleOrigins.class), attempts);
 
         user = User.builder().loginId("testorg01").password("hash").build();
@@ -135,6 +137,21 @@ class LoginLockTest {
         assertEquals(4, remaining(login("ghost", "x")));
         for (int i = 0; i < 3; i++) login("ghost", "x");
         assertEquals(ErrorCode.AUTH_LOGIN_LOCKED, login("ghost", "x").getErrorCode());
+    }
+
+    /** 메모 작성자 표시용 — 앱이 로컬에서 메모를 만들 때 쓴다 (V3.1) */
+    @Test
+    void 로그인_응답에_별칭이_실린다() {
+        user.changeAlias("김점역");
+        when(jwt.generateAccessToken(anyString())).thenReturn("a");
+        when(jwt.generateRefreshToken(anyString())).thenReturn("r");
+        when(jwt.hashToken(anyString())).thenReturn("h");
+
+        assertEquals("김점역", authService.login(new AuthRequestDto.Login("testorg01", "right"), null).alias());
+
+        user.changeAlias(null);
+        assertNull(authService.login(new AuthRequestDto.Login("testorg01", "right"), null).alias(),
+                "별칭이 없으면 null — 앱이 로그인 ID로 표시한다");
     }
 
     @Test

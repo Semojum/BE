@@ -93,7 +93,7 @@ public class AuthService {
 
         log.info("로그인 성공: loginId={}", request.loginId());
         return new AuthResponseDto.Login(accessToken, refreshToken, user.getRole().name(),
-                user.getRole() == Role.ROLE_ADMIN ? user.getAdminScope() : null);
+                user.getRole() == Role.ROLE_ADMIN ? user.getAdminScope() : null, user.getAlias());
     }
 
     @Transactional
