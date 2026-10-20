@@ -102,6 +102,21 @@ public class PageContentSaver {
 
     // ── 패널별 diff ──────────────────────────────────────────────────
     // 배열 순서가 곧 읽기 순서. 배열에서 빠진 기존 블록은 삭제, id가 null인 항목은 새 블록이다.
+    //
+    // 블록 id는 앱이 만든다(2026-10-21, FE 점검 B-01). 텍스트 · 점자 두 패널은 같은 id로 짝을 이루는데,
+    // 서버가 패널마다 id를 발급하면 짝이 깨지고, V3.1 작업은 점자 블록이 없어(AI가 점자를 안 준다)
+    // 첫 점자 저장이 전부 「없는 id」로 실패했다. 그래서:
+    //   · 그 쪽에 없는 id → 그 id 그대로 새 블록(첫 점자 · 두 패널 공통 새 블록)
+    //   · 그 쪽에서 지운 블록의 id → 삭제 표시를 풀어 복원(되돌리기)
+    //   · 같은 id를 다시 보내면 이미 있으니 갱신 — 응답 유실 뒤 재전송해도 중복이 생기지 않는다
+    // 찾는 범위가 그 쪽 결과라 다른 작업 · 다른 쪽 블록은 건드리지 못한다. id: null은 종전대로 서버가 발급한다
+
+    /** 앱이 만든 블록 id 형식 — UUID 등 영문 · 숫자 · 하이픈 · 밑줄, 64자 이하 */
+    private static final java.util.regex.Pattern CLIENT_ID = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{1,64}");
+
+    private static void validateClientId(String id) {
+        if (!CLIENT_ID.matcher(id).matches()) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+    }
 
     private boolean saveText(PageResult pageResult, List<JobRequestDto.SaveElement> requested) {
         List<TextElement> live = textElementRepository.findByPageResult(pageResult);
@@ -121,7 +136,20 @@ public class PageContentSaver {
                 changed = true;
             } else {
                 TextElement el = byId.get(item.id());
-                if (el == null) throw new CustomException(ErrorCode.ELEMENT_NOT_FOUND);
+                if (el == null) {
+                    validateClientId(item.id());
+                    el = textElementRepository.findByPageResultAndElementId(pageResult, item.id()).orElse(null);
+                    if (el != null) {
+                        el.restore();                      // 지웠던 블록 — 되돌리기
+                    } else {
+                        el = TextElement.builder()          // 앱이 만든 새 블록
+                                .pageResult(pageResult).elementId(item.id())
+                                .type("text").contents(item.contents()).isBlocked(false).build();
+                        el.markUserAuthored();
+                        el = textElementRepository.save(el);
+                    }
+                    changed = true;
+                }
                 if (!item.contents().equals(el.getCurrentContents())) {
                     el.updateCurrentContents(item.contents());
                     changed = true;
@@ -158,7 +186,25 @@ public class PageContentSaver {
                 changed = true;
             } else {
                 BrailleElement el = byId.get(item.id());
-                if (el == null) throw new CustomException(ErrorCode.ELEMENT_NOT_FOUND);
+                if (el == null) {
+                    validateClientId(item.id());
+                    el = brailleElementRepository.findByPageResultAndElementId(pageResult, item.id()).orElse(null);
+                    if (el != null) {
+                        el.restore();                      // 지웠던 블록 — 되돌리기
+                    } else {
+                        // 첫 점자 또는 앱이 만든 새 블록. 짝 텍스트 블록이 있으면 유형 · 제목 단계를 따른다
+                        TextElement pair = textElementRepository.findByPageResultAndElementId(pageResult, item.id())
+                                .orElse(null);
+                        el = BrailleElement.builder()
+                                .pageResult(pageResult).elementId(item.id())
+                                .type(pair == null ? "text" : pair.getType())
+                                .headingLevel(pair == null ? null : pair.getHeadingLevel())
+                                .content(item.contents()).isBlocked(false).build();
+                        el.markUserAuthored();             // 점자는 AI 원본이 없다(V3.1) — 앱 엔진이 만든 값
+                        el = brailleElementRepository.save(el);
+                    }
+                    changed = true;
+                }
                 if (!item.contents().equals(el.getCurrentContent())) {
                     el.updateCurrentContent(item.contents());
                     changed = true;

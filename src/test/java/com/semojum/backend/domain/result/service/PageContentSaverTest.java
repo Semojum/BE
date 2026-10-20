@@ -142,15 +142,82 @@ class PageContentSaverTest {
                 "카드 날짜를 건드리지 않게 하려면 변경 여부를 알려줘야 한다");
     }
 
+    /** 앱이 만든 id는 영문 · 숫자 · 하이픈 · 밑줄 64자까지 — 형식이 틀리면 400 */
     @Test
-    void 모르는_id는_404_중복_id는_400() {
+    void id_형식이_틀리면_400_중복_id도_400() {
         when(textRepo.findByPageResult(any())).thenReturn(List.of(textEl("e1", 1, "가")));
 
-        assertEquals(ErrorCode.ELEMENT_NOT_FOUND, assertThrows(CustomException.class,
-                () -> saver.savePage(job, page(List.of(item("없는id", "x")), null))).getErrorCode());
+        for (String bad : List.of("없는id", "a b", "x".repeat(65))) {
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, assertThrows(CustomException.class,
+                    () -> saver.savePage(job, page(List.of(item(bad, "x")), null))).getErrorCode(), bad);
+        }
 
         assertEquals(ErrorCode.ELEMENT_LIST_MISMATCH, assertThrows(CustomException.class,
                 () -> saver.savePage(job, page(List.of(item("e1", "가"), item("e1", "가")), null))).getErrorCode());
+    }
+
+    // ── 앱이 만든 블록 id (FE 점검 B-01) ───────────────────────────────
+
+    /** V3.1 작업은 점자 블록이 없다 — 텍스트 id로 첫 점자를 보내면 그 id로 만든다(종전엔 404로 쪽 저장 실패) */
+    @Test
+    void 첫_점자는_텍스트와_같은_id로_만든다() {
+        TextElement t1 = TextElement.builder().pageResult(pageResult).elementId("t1").type("heading")
+                .headingLevel(2).readingOrder(1).contents(List.of("1. 사회 변동")).isBlocked(false).build();
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(t1));
+        when(textRepo.findByPageResultAndElementId(any(), eq("t1"))).thenReturn(Optional.of(t1));
+        when(brailleRepo.findByPageResultAndElementId(any(), eq("t1"))).thenReturn(Optional.empty());
+
+        assertTrue(saver.savePage(job, page(null, List.of(item("t1", "⠼⠁⠲")))));
+
+        ArgumentCaptor<BrailleElement> captor = ArgumentCaptor.forClass(BrailleElement.class);
+        verify(brailleRepo).save(captor.capture());
+        assertEquals("t1", captor.getValue().getElementId(), "텍스트와 같은 id — 짝이 맞는다");
+        assertEquals("heading", captor.getValue().getType(), "짝 텍스트의 유형을 따른다");
+        assertEquals(2, captor.getValue().getHeadingLevel());
+        assertEquals(List.of("⠼⠁⠲"), captor.getValue().getCurrentContent());
+    }
+
+    /** 새 블록을 두 패널에 같은 id로 보내면 두 패널 모두 그 id다 — 서버가 따로 발급하면 짝이 깨진다 */
+    @Test
+    void 앱이_만든_새_id는_두_패널에_그대로_쓴다() {
+        String id = "3f1c2a9e-7b1d-4c5e-9a2b-1c2d3e4f5a6b";
+        when(textRepo.findByPageResultAndElementId(any(), eq(id))).thenReturn(Optional.empty());
+        when(brailleRepo.findByPageResultAndElementId(any(), eq(id))).thenReturn(Optional.empty());
+
+        saver.savePage(job, page(List.of(item(id, "새 문단")), List.of(item(id, "⠠⠗"))));
+
+        ArgumentCaptor<TextElement> text = ArgumentCaptor.forClass(TextElement.class);
+        verify(textRepo).save(text.capture());
+        ArgumentCaptor<BrailleElement> braille = ArgumentCaptor.forClass(BrailleElement.class);
+        verify(brailleRepo).save(braille.capture());
+        assertEquals(id, text.getValue().getElementId());
+        assertEquals(id, braille.getValue().getElementId());
+        assertNull(text.getValue().getOriginalContents(), "사용자가 만든 블록 — AI 원본 없음");
+    }
+
+    /** 지운 뒤 되돌리기 — 같은 쪽에서 지운 id를 다시 보내면 새로 만들지 않고 복원한다 */
+    @Test
+    void 지운_블록의_id를_다시_보내면_복원한다() {
+        TextElement gone = textEl("e9", 3, "지웠던 문단");
+        gone.markDeleted();
+        when(textRepo.findByPageResultAndElementId(any(), eq("e9"))).thenReturn(Optional.of(gone));
+
+        assertTrue(saver.savePage(job, page(List.of(item("e9", "지웠던 문단")), null)));
+
+        assertFalse(gone.isDeleted());
+        verify(textRepo, never()).save(any());
+    }
+
+    /** 응답이 유실돼 같은 요청을 다시 보내도 블록이 두 번 생기지 않는다 — 두 번째는 이미 있는 블록 갱신이다 */
+    @Test
+    void 같은_새_id를_다시_보내도_중복으로_만들지_않는다() {
+        String id = "c0ffee00-1111-2222-3333-444455556666";
+        TextElement created = textEl(id, 1, "새 문단");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(created));
+
+        saver.savePage(job, page(List.of(item(id, "새 문단")), null));
+
+        verify(textRepo, never()).save(any());
     }
 
     /** FE가 두 패널을 완성해 보낸다 — 텍스트를 고쳐도 점자가 따라 바뀌지 않는다 */
