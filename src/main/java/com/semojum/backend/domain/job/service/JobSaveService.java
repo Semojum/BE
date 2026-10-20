@@ -40,14 +40,23 @@ public class JobSaveService {
     private final JobService jobService;
     private final PageContentSaver pageContentSaver;
     private final JobCopyService jobCopyService;
+    private final com.semojum.backend.domain.result.service.TextPageTrimmer textPageTrimmer;
+    private final com.semojum.backend.domain.job.repository.PageRepository pageRepository;
     private final com.semojum.backend.domain.auth.repository.UserRepository userRepository;
 
     public JobResponseDto.SaveResult save(String userId, String jobId, JobRequestDto.SaveJob request) {
+        // 요청 모양 검증 — 아무것도 쓰기 전에 거절한다
+        validateTotalPages(request);
+
         // 0. 받은 .smj 파일이면 내 계정에 사본을 만들고 거기에 저장한다 (2026-10-21).
         //    메모 협업은 파일 전달이라, 받은 사람의 저장은 남의 작업을 가리킨다. 파일이 있는 누구나 된다
         String copiedFrom = null;
         Job target = jobRepository.findById(jobId)
                 .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        // 쪽 줄이기는 텍스트 작업만 — PDF · 이미지의 쪽은 원본 쪽이라 앱이 바꾸지 않는다
+        if (request.totalPages() != null && !"b".equals(target.getMode())) {
+            throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
         if (!target.getUser().getId().equals(UUID.fromString(userId))) {
             User me = userRepository.findById(UUID.fromString(userId))
                     .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
@@ -69,22 +78,23 @@ public class JobSaveService {
         // 2. 쪽마다 독립 트랜잭션 — 실패한 쪽만 걷어낸다
         List<Integer> failed = new ArrayList<>();
         int saved = 0;
-        int lastSavedPage = 0;
         for (JobRequestDto.SaveJobPage page : request.pages()) {
             try {
                 pageContentSaver.savePage(job, page);
                 saved++;
-                lastSavedPage = Math.max(lastSavedPage, page.pageNo());
             } catch (Exception e) {
                 failed.add(page.pageNo());
                 log.warn("쪽 저장 실패: jobId={}, pageNo={}, error={}", jobId, page.pageNo(), e.toString());
             }
         }
 
-        // 3. 텍스트 작업(TXT · 새 문서)은 쪽 나누기를 앱이 정한다 — 쪽 수를 저장된 마지막 쪽 번호로 맞춘다.
-        //    본문이 최종 상태라 앱이 쪽을 줄였으면 쪽 수도 준다. PDF 작업은 변환이 정한 쪽 수 그대로
-        if ("b".equals(job.getMode()) && lastSavedPage > 0) {
-            job.updateTotalPages(lastSavedPage);
+        // 3. 텍스트 작업(TXT · 새 문서)은 쪽 나누기를 앱이 정한다.
+        //    쪽 수 = 남아 있는 마지막 쪽 번호. 실패한 쪽은 기존 행이 그대로라 쪽 수가 줄지 않는다(B-02).
+        //    줄이는 건 totalPages를 명시했을 때만 — 그 뒤 쪽을 통째로 지운다. PDF 작업은 변환이 정한 쪽 수 그대로
+        if ("b".equals(job.getMode())) {
+            if (request.totalPages() != null) textPageTrimmer.deletePagesAfter(job, request.totalPages());
+            Integer last = pageRepository.findMaxPageNo(job.getId());
+            if (last != null) job.updateTotalPages(last);
         }
 
         // 4. 내용이 바뀌었으면 카드 날짜·복구 지점은 쪽 저장이 이미 갱신했다. 여기선 확정만.
@@ -94,5 +104,15 @@ public class JobSaveService {
                 failed.isEmpty() ? "" : " " + failed);
 
         return new JobResponseDto.SaveResult(jobId, saved, failed, LocalDateTime.now(), copiedFrom);
+    }
+
+    /** totalPages — 1 이상이고, 보낸 쪽 번호가 그 안이어야 한다. PDF · 이미지 작업은 받지 않는다(원본 쪽이다) */
+    private void validateTotalPages(JobRequestDto.SaveJob request) {
+        Integer total = request.totalPages();
+        if (total == null) return;
+        if (total < 1) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        for (JobRequestDto.SaveJobPage p : request.pages()) {
+            if (p.pageNo() > total) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
     }
 }

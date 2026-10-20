@@ -156,6 +156,39 @@ class PageContentSaverTest {
                 () -> saver.savePage(job, page(List.of(item("e1", "가"), item("e1", "가")), null))).getErrorCode());
     }
 
+    // ── 차단 블록 보호 (FE 점검 B-03) ──────────────────────────────────
+
+    private TextElement blockedEl(String id, int order) {
+        return TextElement.builder().pageResult(pageResult).elementId(id)
+                .type("figure").readingOrder(order).contents(List.of("")).isBlocked(true).build();
+    }
+
+    /** 앱이 차단 블록을 빼고 보내도 지우지 않는다 — 정상 블록만 고쳤는데 차단 블록이 사라지던 문제 */
+    @Test
+    void 배열에서_빠진_차단_블록은_지우지_않고_제자리에_둔다() {
+        TextElement e1 = textEl("e1", 1, "앞 문단");
+        TextElement blocked = blockedEl("x2", 2);
+        TextElement e3 = textEl("e3", 3, "뒤 문단");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(e1, blocked, e3));
+
+        saver.savePage(job, page(List.of(item("e1", "앞 문단 고침"), item("e3", "뒤 문단")), null));
+
+        assertFalse(blocked.isDeleted(), "차단 블록은 남는다");
+        assertEquals(List.of(1, 2, 3), List.of(e1.getReadingOrder(), blocked.getReadingOrder(), e3.getReadingOrder()),
+                "원래 자리(앞 블록 뒤) — 정상 블록과 읽기 순서가 겹치지 않는다");
+    }
+
+    @Test
+    void 정상_블록은_빠지면_종전대로_지운다() {
+        TextElement e1 = textEl("e1", 1, "남김");
+        TextElement e2 = textEl("e2", 2, "지움");
+        when(textRepo.findByPageResult(any())).thenReturn(List.of(e1, e2, blockedEl("x3", 3)));
+
+        saver.savePage(job, page(List.of(item("e1", "남김")), null));
+
+        assertTrue(e2.isDeleted());
+    }
+
     // ── 앱이 만든 블록 id (FE 점검 B-01) ───────────────────────────────
 
     /** V3.1 작업은 점자 블록이 없다 — 텍스트 id로 첫 점자를 보내면 그 id로 만든다(종전엔 404로 쪽 저장 실패) */

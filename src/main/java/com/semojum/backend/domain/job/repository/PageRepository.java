@@ -1,5 +1,7 @@
 package com.semojum.backend.domain.job.repository;
 
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Query;
 import com.semojum.backend.domain.job.entity.Job;
 import com.semojum.backend.domain.job.entity.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +20,8 @@ public interface PageRepository extends JpaRepository<Page, UUID> {
     List<Page> findByJobAndStatus(Job job, String status);
 
     List<Page> findByJob(Job job);
+
+    // 텍스트 작업의 쪽 수 = 남아 있는 마지막 쪽 번호 (2026-10-21)
+    @Query("SELECT MAX(p.pageNo) FROM Page p WHERE p.job.id = :jobId")
+    Integer findMaxPageNo(@Param("jobId") String jobId);
 }
