@@ -68,7 +68,8 @@ public class JobRequestDto {
             String footerText,
             LayoutOptions layoutOptions,
             BrailleOptions brailleOptions,
-            @NotNull List<SaveJobPage> pages,
+            // 중첩 검증(@Valid) — 쪽 · 블록 · 메모 · 답글의 필수값까지 쓰기 전에 거절한다(FE 점검 B-07)
+            @NotNull List<@NotNull @jakarta.validation.Valid SaveJobPage> pages,
             // 텍스트 작업(TXT · 새 문서)의 전체 쪽 수 — 보내면 그 뒤 쪽을 지운다(쪽 줄이기). 안 보내면 쪽 수를
             // 줄이지 않는다(실패한 쪽 때문에 쪽 수가 줄던 문제, FE 점검 B-02). PDF · 이미지 작업은 보내면 400
             Integer totalPages
@@ -77,9 +78,9 @@ public class JobRequestDto {
     /** 한 쪽의 최종 상태. 그 모드에 없는 패널은 null(TXT·새 문서엔 텍스트만) */
     public record SaveJobPage(
             int pageNo,
-            List<SaveElement> text,
-            List<SaveElement> braille,
-            List<SaveMemo> memos
+            List<@NotNull @jakarta.validation.Valid SaveElement> text,
+            List<@NotNull @jakarta.validation.Valid SaveElement> braille,
+            List<@NotNull @jakarta.validation.Valid SaveMemo> memos
     ) {}
 
     /**
@@ -97,7 +98,7 @@ public class JobRequestDto {
             String author,                         // 작성자 표시 이름 — 앱이 보낸 값 그대로 저장(V42)
             Boolean resolved,                      // 해결 여부. 안 보내면 미해결
             java.time.LocalDateTime resolvedAt,    // 해결 시각. 해결인데 없으면 서버 시각
-            List<SaveMemoReply> replies            // 답글 — 이 메모의 최종 상태 전체. 없으면 답글 없음
+            List<@NotNull @jakarta.validation.Valid SaveMemoReply> replies   // 답글 — 이 메모의 최종 상태 전체. 없으면 답글 없음
     ) {}
 
     /** 메모 답글 (V42) — .smj를 받은 사람이 단다. 작성자 · 작성 시각은 파일에 든 값을 그대로 보낸다 */

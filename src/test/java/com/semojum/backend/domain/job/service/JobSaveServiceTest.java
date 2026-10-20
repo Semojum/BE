@@ -300,4 +300,56 @@ class JobSaveServiceTest {
         CustomException e = assertThrows(CustomException.class, () -> service.save(USER_ID, "ghost", request(1)));
         assertEquals(ErrorCode.JOB_NOT_FOUND, e.getErrorCode());
     }
+
+    // ── 요청 검증 · 쪽별 실패 사유 (FE 점검 B-07) ─────────────────────
+
+    /** 같은 쪽이 두 번 오면 뒤가 앞을 덮어 앞 내용이 조용히 사라진다 — 쓰기 전에 거절 */
+    @Test
+    void 같은_쪽이_두_번_오거나_0쪽이면_아무것도_쓰지_않고_400이다() {
+        for (JobRequestDto.SaveJob bad : List.of(request(1, 1), request(0))) {
+            CustomException e = assertThrows(CustomException.class, () -> service.save(USER_ID, "job1", bad));
+            assertEquals(ErrorCode.COMMON_BAD_REQUEST, e.getErrorCode());
+        }
+        verify(jobService, never()).updateJobOptions(any(), any(), any());
+        verify(pageContentSaver, never()).savePage(any(), any());
+    }
+
+    /** 실패한 쪽의 사유를 공개 에러 코드로 — 잘못된 데이터(4xx)와 일시 장애(5000)를 앱이 가른다 */
+    @Test
+    void 쪽마다_결과와_실패_사유를_준다() {
+        doThrow(new CustomException(ErrorCode.ELEMENT_LIST_MISMATCH))
+                .when(pageContentSaver).savePage(any(), argThat(p -> p != null && p.pageNo() == 2));
+        doThrow(new RuntimeException("DB 연결 끊김 — 원문은 앱에 보내지 않는다"))
+                .when(pageContentSaver).savePage(any(), argThat(p -> p != null && p.pageNo() == 3));
+
+        JobResponseDto.SaveResult result = service.save(USER_ID, "job1", request(1, 2, 3));
+
+        assertEquals(List.of(
+                new JobResponseDto.PageSaveResult(1, "SAVED", null),
+                new JobResponseDto.PageSaveResult(2, "FAILED", "JOB4006"),
+                new JobResponseDto.PageSaveResult(3, "FAILED", "COMMON5000")), result.pageResults());
+        assertEquals(List.of(2, 3), result.failedPages(), "기존 failedPages는 그대로");
+    }
+
+    /** 쪽 · 블록 · 메모 · 답글까지 필수값을 검증한다 — 종전엔 컨트롤러 검증이 쪽 안으로 내려가지 않아 쪽 실패로 묻혔다 */
+    @Test
+    void 중첩된_항목의_필수값도_검증한다() {
+        var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        java.util.function.Function<JobRequestDto.SaveJobPage, JobRequestDto.SaveJob> wrap =
+                pg -> new JobRequestDto.SaveJob(null, null, null, null, List.of(pg), null);
+        java.util.List<JobRequestDto.SaveElement> withNull = new java.util.ArrayList<>();
+        withNull.add(null);
+
+        for (JobRequestDto.SaveJobPage bad : List.of(
+                new JobRequestDto.SaveJobPage(1, List.of(new JobRequestDto.SaveElement("e1", null, null)), null, null),
+                new JobRequestDto.SaveJobPage(1, withNull, null, null),
+                new JobRequestDto.SaveJobPage(1, null, null, List.of(new JobRequestDto.SaveMemo(
+                        null, "TEXT", "e1", 0, null, null, null, null, null, null, null))),
+                new JobRequestDto.SaveJobPage(1, null, null, List.of(new JobRequestDto.SaveMemo(
+                        null, "TEXT", "e1", 0, null, "메모", null, null, null, null,
+                        List.of(new JobRequestDto.SaveMemoReply("이교정", null, null))))))) {
+            assertFalse(validator.validate(wrap.apply(bad)).isEmpty(), bad.toString());
+        }
+        assertTrue(validator.validate(wrap.apply(page(1))).isEmpty(), "정상 요청은 통과");
+    }
 }

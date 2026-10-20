@@ -46,6 +46,7 @@ public class JobSaveService {
 
     public JobResponseDto.SaveResult save(String userId, String jobId, JobRequestDto.SaveJob request) {
         // 요청 모양 검증 — 아무것도 쓰기 전에 거절한다
+        validatePageNos(request);
         validateTotalPages(request);
 
         // 0. 받은 .smj 파일이면 내 계정에 사본을 만들고 거기에 저장한다 (2026-10-21).
@@ -77,14 +78,20 @@ public class JobSaveService {
 
         // 2. 쪽마다 독립 트랜잭션 — 실패한 쪽만 걷어낸다
         List<Integer> failed = new ArrayList<>();
+        List<JobResponseDto.PageSaveResult> pageResults = new ArrayList<>();
         int saved = 0;
         for (JobRequestDto.SaveJobPage page : request.pages()) {
             try {
                 pageContentSaver.savePage(job, page);
                 saved++;
+                pageResults.add(new JobResponseDto.PageSaveResult(page.pageNo(), "SAVED", null));
             } catch (Exception e) {
                 failed.add(page.pageNo());
-                log.warn("쪽 저장 실패: jobId={}, pageNo={}, error={}", jobId, page.pageNo(), e.toString());
+                // 공개 에러 코드만 — DB 예외 원문을 앱에 보내지 않는다
+                String code = e instanceof CustomException ce ? ce.getErrorCode().getCode()
+                        : ErrorCode.COMMON_INTERNAL_ERROR.getCode();
+                pageResults.add(new JobResponseDto.PageSaveResult(page.pageNo(), "FAILED", code));
+                log.warn("쪽 저장 실패: jobId={}, pageNo={}, code={}, error={}", jobId, page.pageNo(), code, e.toString());
             }
         }
 
@@ -103,7 +110,18 @@ public class JobSaveService {
         log.info("작업 저장: jobId={}, 저장 {}쪽, 실패 {}쪽{}", jobId, saved, failed.size(),
                 failed.isEmpty() ? "" : " " + failed);
 
-        return new JobResponseDto.SaveResult(jobId, saved, failed, LocalDateTime.now(), copiedFrom);
+        return new JobResponseDto.SaveResult(jobId, saved, failed, LocalDateTime.now(), copiedFrom, pageResults);
+    }
+
+    /**
+     * 쪽 번호 — 1 이상, 한 요청에 같은 쪽은 한 번만(FE 점검 B-07). 같은 쪽이 두 번 오면 뒤의 것이 앞의 것을
+     * 덮어 앞 내용이 조용히 사라진다.
+     */
+    private void validatePageNos(JobRequestDto.SaveJob request) {
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (JobRequestDto.SaveJobPage p : request.pages()) {
+            if (p.pageNo() < 1 || !seen.add(p.pageNo())) throw new CustomException(ErrorCode.COMMON_BAD_REQUEST);
+        }
     }
 
     /** totalPages — 1 이상이고, 보낸 쪽 번호가 그 안이어야 한다. PDF · 이미지 작업은 받지 않는다(원본 쪽이다) */
