@@ -1,5 +1,7 @@
 package com.semojum.backend.domain.job.service;
 
+import com.semojum.backend.domain.auth.entity.User;
+import com.semojum.backend.domain.auth.enums.Role;
 import com.semojum.backend.domain.job.dto.JobRequestDto;
 import com.semojum.backend.domain.job.dto.JobResponseDto;
 import com.semojum.backend.domain.job.entity.Job;
@@ -37,9 +39,26 @@ public class JobSaveService {
     private final JobRepository jobRepository;
     private final JobService jobService;
     private final PageContentSaver pageContentSaver;
+    private final JobCopyService jobCopyService;
+    private final com.semojum.backend.domain.auth.repository.UserRepository userRepository;
 
     public JobResponseDto.SaveResult save(String userId, String jobId, JobRequestDto.SaveJob request) {
-        // 1. 설정 먼저 — 소유자·변환 중 검증이 여기서 끝난다(타인 작업 403, 변환 중 JOB4010)
+        // 0. 받은 .smj 파일이면 내 계정에 사본을 만들고 거기에 저장한다 (2026-10-21).
+        //    메모 협업은 파일 전달이라, 받은 사람의 저장은 남의 작업을 가리킨다. 파일이 있는 누구나 된다
+        String copiedFrom = null;
+        Job target = jobRepository.findById(jobId)
+                .orElseThrow(() -> new CustomException(ErrorCode.JOB_NOT_FOUND));
+        if (!target.getUser().getId().equals(UUID.fromString(userId))) {
+            User me = userRepository.findById(UUID.fromString(userId))
+                    .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+            // 기관 관리자는 에디터를 쓰지 않는다(작업 생성과 같은 규칙)
+            if (me.getRole() == Role.ROLE_ORG_ADMIN) throw new CustomException(ErrorCode.COMMON_FORBIDDEN);
+            copiedFrom = jobId;
+            jobId = jobCopyService.copyFor(me, target).getId();
+            log.info("받은 파일 저장 → 사본: source={}, copy={}, user={}", copiedFrom, jobId, me.getLoginId());
+        }
+
+        // 1. 설정 먼저 — 소유자·변환 중 검증이 여기서 끝난다(변환 중 JOB4010)
         jobService.updateJobOptions(userId, jobId, new JobRequestDto.UpdateOptions(
                 request.insertPageNumber(), request.footerText(),
                 request.layoutOptions(), request.brailleOptions()));
@@ -74,6 +93,6 @@ public class JobSaveService {
         log.info("작업 저장: jobId={}, 저장 {}쪽, 실패 {}쪽{}", jobId, saved, failed.size(),
                 failed.isEmpty() ? "" : " " + failed);
 
-        return new JobResponseDto.SaveResult(jobId, saved, failed, LocalDateTime.now());
+        return new JobResponseDto.SaveResult(jobId, saved, failed, LocalDateTime.now(), copiedFrom);
     }
 }

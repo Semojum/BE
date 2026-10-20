@@ -32,6 +32,8 @@ class JobSaveServiceTest {
     JobRepository jobRepository;
     JobService jobService;
     PageContentSaver pageContentSaver;
+    JobCopyService jobCopyService;
+    com.semojum.backend.domain.auth.repository.UserRepository userRepository;
     JobSaveService service;
 
     final String USER_ID = UUID.randomUUID().toString();
@@ -42,10 +44,25 @@ class JobSaveServiceTest {
         jobRepository = Mockito.mock(JobRepository.class);
         jobService = Mockito.mock(JobService.class);
         pageContentSaver = Mockito.mock(PageContentSaver.class);
-        service = new JobSaveService(jobRepository, jobService, pageContentSaver);
+        jobCopyService = Mockito.mock(JobCopyService.class);
+        userRepository = Mockito.mock(com.semojum.backend.domain.auth.repository.UserRepository.class);
+        service = new JobSaveService(jobRepository, jobService, pageContentSaver, jobCopyService, userRepository);
 
-        job = Job.builder().id("job1").mode("c").totalPages(3).originalFileName("교재.pdf").build();
+        me = user(USER_ID, "testorg01", com.semojum.backend.domain.auth.enums.Role.ROLE_USER);
+        job = Job.builder().id("job1").user(me).mode("c").totalPages(3).originalFileName("교재.pdf").build();
+        when(jobRepository.findById("job1")).thenReturn(Optional.of(job));
         when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(job));
+    }
+
+    com.semojum.backend.domain.auth.entity.User me;
+
+    private com.semojum.backend.domain.auth.entity.User user(String id, String loginId,
+                                                             com.semojum.backend.domain.auth.enums.Role role) {
+        var u = com.semojum.backend.domain.auth.entity.User.builder().loginId(loginId).password("pw").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(u, "id", UUID.fromString(id));
+        u.changeRole(role);
+        when(userRepository.findById(UUID.fromString(id))).thenReturn(Optional.of(u));
+        return u;
     }
 
     private JobRequestDto.SaveJobPage page(int no) {
@@ -133,8 +150,9 @@ class JobSaveServiceTest {
 
     @Test
     void 텍스트_작업은_저장된_마지막_쪽이_쪽_수가_된다() {
-        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(0).originalFileName("무제").build();
         when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
 
         service.save(USER_ID, "job-t", request(1, 2, 3));
 
@@ -144,8 +162,9 @@ class JobSaveServiceTest {
     /** 본문이 최종 상태라 앱이 쪽을 줄였으면 쪽 수도 준다 */
     @Test
     void 텍스트_작업에서_쪽이_줄면_쪽_수도_준다() {
-        Job textJob = Job.builder().id("job-t").mode("b").totalPages(5).originalFileName("무제").build();
+        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(5).originalFileName("무제").build();
         when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
 
         service.save(USER_ID, "job-t", request(1, 2));
 
@@ -155,8 +174,9 @@ class JobSaveServiceTest {
     /** 실패한 쪽은 쪽 수에 넣지 않는다 — 없는 쪽을 가리키게 되면 조회가 404다 */
     @Test
     void 텍스트_작업의_실패한_마지막_쪽은_쪽_수에_넣지_않는다() {
-        Job textJob = Job.builder().id("job-t").mode("b").totalPages(0).originalFileName("무제").build();
+        Job textJob = Job.builder().id("job-t").user(me).mode("b").totalPages(0).originalFileName("무제").build();
         when(jobRepository.findByIdAndUserId(anyString(), any())).thenReturn(Optional.of(textJob));
+        when(jobRepository.findById("job-t")).thenReturn(Optional.of(textJob));
         doThrow(new RuntimeException("쪽 3 실패")).when(pageContentSaver)
                 .savePage(any(), argThat(pg -> pg != null && pg.pageNo() == 3));
 
@@ -171,5 +191,52 @@ class JobSaveServiceTest {
         service.save(USER_ID, "job1", request(1));
 
         assertEquals(3, job.getTotalPages());
+    }
+
+    // ── 받은 .smj 파일 저장 → 내 계정에 사본 (2026-10-21) ──────────────
+
+    /** 남의 작업을 가리키는 저장 — 사본을 만들어 거기에 저장하고, 앱이 바꿀 수 있게 새 jobId를 준다 */
+    @Test
+    void 받은_파일을_저장하면_내_사본에_저장한다() {
+        String otherId = UUID.randomUUID().toString();
+        var receiver = user(otherId, "testorg02", com.semojum.backend.domain.auth.enums.Role.ROLE_USER);
+        Job copy = Job.builder().id("job_copy").user(receiver).mode("c").totalPages(3).originalFileName("교재.pdf").build();
+        when(jobCopyService.copyFor(receiver, job)).thenReturn(copy);
+        when(jobRepository.findByIdAndUserId(eq("job_copy"), any())).thenReturn(Optional.of(copy));
+
+        JobResponseDto.SaveResult result = service.save(otherId, "job1", request(1, 2));
+
+        assertEquals("job_copy", result.jobId(), "이후 저장은 사본으로 — 앱이 파일의 작업 ID를 바꾼다");
+        assertEquals("job1", result.copiedFromJobId());
+        verify(jobService).updateJobOptions(eq(otherId), eq("job_copy"), any());
+        verify(pageContentSaver, times(2)).savePage(eq(copy), any());
+        verify(pageContentSaver, never()).savePage(eq(job), any());
+    }
+
+    @Test
+    void 내_작업이면_사본을_만들지_않는다() {
+        JobResponseDto.SaveResult result = service.save(USER_ID, "job1", request(1));
+
+        assertNull(result.copiedFromJobId());
+        verify(jobCopyService, never()).copyFor(any(), any());
+    }
+
+    /** 기관 관리자는 에디터를 쓰지 않는다 — 받은 파일로도 사본을 만들 수 없다 */
+    @Test
+    void 기관_관리자는_사본을_만들_수_없다() {
+        String adminId = UUID.randomUUID().toString();
+        user(adminId, "orgadmin", com.semojum.backend.domain.auth.enums.Role.ROLE_ORG_ADMIN);
+
+        CustomException e = assertThrows(CustomException.class, () -> service.save(adminId, "job1", request(1)));
+        assertEquals(ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+        verify(jobCopyService, never()).copyFor(any(), any());
+    }
+
+    @Test
+    void 없는_작업은_JOB4001이다() {
+        when(jobRepository.findById("ghost")).thenReturn(Optional.empty());
+
+        CustomException e = assertThrows(CustomException.class, () -> service.save(USER_ID, "ghost", request(1)));
+        assertEquals(ErrorCode.JOB_NOT_FOUND, e.getErrorCode());
     }
 }
