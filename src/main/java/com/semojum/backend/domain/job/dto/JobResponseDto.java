@@ -127,6 +127,9 @@ public class JobResponseDto {
             String jobId,
             int savedPages,
             List<Integer> failedPages,
-            java.time.LocalDateTime savedAt
+            java.time.LocalDateTime savedAt,
+            // 받은 .smj 파일이라 사본을 만들어 저장했으면 원래 작업 ID. 그때 jobId는 새 사본이다 —
+            // 앱은 파일의 작업 ID를 jobId로 바꿔 이후 저장을 사본으로 보낸다. 내 작업이면 null
+            String copiedFromJobId
     ) {}
 }
