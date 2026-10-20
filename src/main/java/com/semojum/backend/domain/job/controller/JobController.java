@@ -136,9 +136,10 @@ public class JobController {
 
     @GetMapping("/{jobId}/status")
     public ApiResponse<JobResponseDto.Status> getJobStatus(
-            @PathVariable String jobId
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ApiResponse.success(jobService.getJobStatus(jobId));
+        return ApiResponse.success(jobService.getJobStatus(userDetails.getUsername(), jobId));
     }
 
     // 변환 취소 — 완료된 페이지까지만 남기고 중단. AI에 이미 들어간 페이지는 마무리 후 저장(취소는 수렴).

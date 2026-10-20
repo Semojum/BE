@@ -614,7 +614,12 @@ public class JobService {
 
 
     // job 상태 조회 (Redis Hash에서 페이지별 상태 조회)
-    public JobResponseDto.Status getJobStatus(String jobId) {
+    public JobResponseDto.Status getJobStatus(String userId, String jobId) {
+        // 내 작업인지 먼저 — 남의 작업이면 상태도 주지 않고 스케줄러 우선순위(FG 리스)도 올리지 않는다.
+        // SSE · 설정 조회와 같은 규칙이다(2026-10-21, FE 점검 B-04)
+        jobRepository.findByIdAndUserId(jobId, UUID.fromString(userId))
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_FORBIDDEN));
+
         Map<Object, Object> redisData = redisTemplate.opsForHash().entries("job:" + jobId + ":pages");
 
         if (redisData.isEmpty()) {

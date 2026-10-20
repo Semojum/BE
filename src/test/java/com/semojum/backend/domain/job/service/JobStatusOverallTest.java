@@ -14,6 +14,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,7 +39,31 @@ class JobStatusOverallTest {
 
         jobService = Mockito.mock(JobService.class, Mockito.CALLS_REAL_METHODS);
         ReflectionTestUtils.setField(jobService, "redisTemplate", redisTemplate);
-        ReflectionTestUtils.setField(jobService, "jobDispatcher", Mockito.mock(JobDispatcher.class));
+        dispatcher = Mockito.mock(JobDispatcher.class);
+        ReflectionTestUtils.setField(jobService, "jobDispatcher", dispatcher);
+        jobRepository = Mockito.mock(com.semojum.backend.domain.job.repository.JobRepository.class);
+        ReflectionTestUtils.setField(jobService, "jobRepository", jobRepository);
+        when(jobRepository.findByIdAndUserId(eq("job-1"), eq(java.util.UUID.fromString(OWNER))))
+                .thenReturn(java.util.Optional.of(com.semojum.backend.domain.job.entity.Job.builder()
+                        .id("job-1").mode("c").totalPages(3).originalFileName("a.pdf").build()));
+    }
+
+    static final String OWNER = java.util.UUID.randomUUID().toString();
+    JobDispatcher dispatcher;
+    com.semojum.backend.domain.job.repository.JobRepository jobRepository;
+
+    /** 남의 작업 — 상태도 주지 않고 FG 리스도 올리지 않는다 (FE 점검 B-04) */
+    @Test
+    void 남의_작업_상태는_403이고_우선순위도_올리지_않는다() {
+        String stranger = java.util.UUID.randomUUID().toString();
+
+        com.semojum.backend.global.exception.CustomException e = org.junit.jupiter.api.Assertions.assertThrows(
+                com.semojum.backend.global.exception.CustomException.class,
+                () -> jobService.getJobStatus(stranger, "job-1"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.semojum.backend.global.exception.ErrorCode.COMMON_FORBIDDEN, e.getErrorCode());
+        Mockito.verify(dispatcher, Mockito.never()).touchForeground(anyString());
+        Mockito.verify(hashOps, Mockito.never()).entries(anyString());
     }
 
     /** Redis Hash 흉내 — total_pages + page:N 상태들 */
@@ -47,7 +72,7 @@ class JobStatusOverallTest {
         data.put("total_pages", String.valueOf(pageStates.length));
         for (int i = 0; i < pageStates.length; i++) data.put("page:" + (i + 1), pageStates[i]);
         when(hashOps.entries(anyString())).thenReturn(data);
-        return jobService.getJobStatus("job-1");
+        return jobService.getJobStatus(OWNER, "job-1");
     }
 
     /**
