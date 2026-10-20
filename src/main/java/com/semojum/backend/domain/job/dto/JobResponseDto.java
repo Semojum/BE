@@ -130,6 +130,15 @@ public class JobResponseDto {
             java.time.LocalDateTime savedAt,
             // 받은 .smj 파일이라 사본을 만들어 저장했으면 원래 작업 ID. 그때 jobId는 새 사본이다 —
             // 앱은 파일의 작업 ID를 jobId로 바꿔 이후 저장을 사본으로 보낸다. 내 작업이면 null
-            String copiedFromJobId
+            String copiedFromJobId,
+            // 쪽별 결과 (FE 점검 B-07) — 실패한 쪽이 왜 실패했는지. 보낸 쪽 순서대로
+            List<PageSaveResult> pageResults
     ) {}
+
+    /**
+     * @param status    SAVED | FAILED
+     * @param errorCode 실패 사유 — 공개 에러 코드(예: COMMON4000 형식 · JOB4006 블록 id 중복). 알 수 없는 오류는
+     *                  COMMON5000(일시 장애일 수 있어 다시 보내 볼 만하다). 성공이면 null
+     */
+    public record PageSaveResult(int pageNo, String status, String errorCode) {}
 }
