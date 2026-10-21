@@ -40,6 +40,13 @@ public class Page {
     @Column(nullable = false)
     private String status;
 
+    // 차단(BLOCKED) 사유 (V43) — null = 사유 없음(AI 오류 재시도 초과 · 취소). 지금은 크레딧 부족 하나
+    @Column(name = "blocked_reason", length = 40)
+    private String blockedReason;
+
+    /** 기관 잔여 크레딧이 0 이하라 AI에 보내지 않고 막은 쪽 */
+    public static final String BLOCKED_CREDIT_EXHAUSTED = "CREDIT_EXHAUSTED";
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -54,6 +61,11 @@ public class Page {
 
     public void updateStatus(String status) {
         this.status = status;
+    }
+
+    public void block(String reason) {
+        this.status = "BLOCKED";
+        this.blockedReason = reason;
     }
 
     public void updateImagePath(String imagePath) {

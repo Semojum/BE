@@ -39,7 +39,8 @@ class CreditDeductionServiceTest {
     void setUp() throws Exception {
         couponRepository = Mockito.mock(CouponRepository.class);
         txRepository = Mockito.mock(CreditTransactionRepository.class);
-        service = new CreditDeductionService(couponRepository, txRepository);
+        service = new CreditDeductionService(couponRepository, txRepository,
+                org.mockito.Mockito.mock(com.semojum.backend.domain.billing.service.CreditBalanceService.class));
 
         Organization org = Organization.builder().name("기관A").code("orga").build();
         setId(org, UUID.randomUUID());

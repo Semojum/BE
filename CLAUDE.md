@@ -130,6 +130,11 @@ com.semojum.backend
 - 링·큐는 전부 Redis → BE 재시작에도 복구. 선택 연산은 `synchronized poll()` (**BE 단일 인스턴스 전제**)
 - ⚠️ **워커 수 = AI 서버 총 슬롯 수**(`grpc.ai.servers` 슬롯 합). 워커 하나가 슬롯 하나를 점유해 블로킹 gRPC
 - 오류 시 큐 **머리** 재삽입(순서 유지) + 2초 대기, 최대 3회 → `markPageBlocked`(DB BLOCKED 후 **Redis put은 항상 실행** — SSE 종료 감지 보장)
+- **잔여 크레딧 관문(`CreditGate`, 2026-10-21 회의 결정)** — 잔여 = 계약 배정 − 계약 사용 + 유효 쿠폰 남은 양(`CreditBalanceService`, 2초 캐시 · 차감 커밋 후 비움). 화면 잔여 게이지(계약분만)와 다를 수 있다
+  - **10 미만이면 기관 전체에서 한 쪽씩** — 그 기관 쪽이 AI에 있으면 스케줄러가 그 기관 작업을 건너뛴다. 크레딧은 결과를 받은 뒤 빠져서 동시에 보낸 쪽은 모두 같은 잔액을 보고 통과한다. **사람 단위로 바꾸지 말 것** — 같은 기관 사람 수만큼 더 넘친다
+  - **1 이상이면 보낸다**(그 쪽이 잔여보다 많이 써도 처리 → 마이너스 가능), **0 이하면 워커가 AI에 보내지 않고 BLOCKED + `pages.blocked_reason='CREDIT_EXHAUSTED'`**(V43). 성공 쪽이 있으면 작업은 COMPLETED(종전 규칙). 앱에는 SSE `page_done.blocked_reason` · `job_done.credit_exhausted` · status `creditExhausted`로 알린다
+  - 무소속 계정은 제한 없음. AI에 들어간 쪽 수는 메모리에 센다(단일 인스턴스 전제). ⚠️ 10 이상에선 종전처럼 슬롯 수만큼 동시에 보내므로 10 언저리에서 한 쪽보다 더 넘칠 수 있다(회의 규칙 그대로)
+  - ⚠️ **배정 0인 기관은 변환이 막힌다** — 테스트 기관도 운영자 콘솔에서 크레딧을 배정해야 변환된다
 
 ## ResultService / Job 상태
 

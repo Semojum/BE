@@ -218,20 +218,26 @@ public class ResultService {
     // self-invocation 무력화를 피하기 위해 PageWorker가 이 빈의 public 메서드를 직접 호출한다.
     @Transactional
     public void markPageBlocked(String jobId, int pageNo) {
+        markPageBlocked(jobId, pageNo, null);
+    }
+
+    /** @param reason 차단 사유({@link Page#BLOCKED_CREDIT_EXHAUSTED} 등). null = 사유 없음 */
+    @Transactional
+    public void markPageBlocked(String jobId, int pageNo, String reason) {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new RuntimeException("Job not found: " + jobId));
         Page page = pageRepository.findByJobAndPageNo(job, pageNo)
                 .orElseThrow(() -> new RuntimeException("Page not found: " + jobId + ", pageNo=" + pageNo));
 
         // DB Page 행을 BLOCKED로 저장
-        page.updateStatus("BLOCKED");
+        page.block(reason);
         pageRepository.save(page);
 
         // updated_at 갱신 + 종료 판정 (성공 경로와 동일)
         jobRepository.touchJob(jobId);
         evaluateJobTermination(job, jobId);
 
-        log.info("Page BLOCKED 처리: jobId={}, pageNo={}", jobId, pageNo);
+        log.info("Page BLOCKED 처리: jobId={}, pageNo={}, reason={}", jobId, pageNo, reason);
     }
 
     // 성공 경로와 BLOCKED 경로가 공유하는 Job 종료 판정.

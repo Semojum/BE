@@ -96,4 +96,8 @@ public interface JobRepository extends JpaRepository<Job, String> {
             WHERE status = 'PENDING' AND updated_at < :cutoff
             """, nativeQuery = true)
     int failStalePending(@Param("cutoff") Instant cutoff);
+
+    /** 작업 주인의 기관 — 무소속이거나 없는 작업이면 null (크레딧 관문용) */
+    @Query("SELECT o.id FROM Job j JOIN j.user u LEFT JOIN u.organization o WHERE j.id = :jobId")
+    UUID findOrganizationIdById(@Param("jobId") String jobId);
 }

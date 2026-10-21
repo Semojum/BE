@@ -20,4 +20,9 @@ public interface CouponRepository extends JpaRepository<Coupon, UUID> {
     List<Coupon> findActiveForUpdate(@Param("orgId") UUID orgId, @Param("today") LocalDate today);
 
     List<Coupon> findByOrganizationIdOrderByCreatedAtDesc(UUID organizationId);
+
+    // 잔여 크레딧 계산용 — 오늘 유효한 쿠폰의 발급량 합 (잠그지 않는다: 읽기만)
+    @Query("SELECT COALESCE(SUM(c.creditAmount), 0) FROM Coupon c WHERE c.organizationId = :orgId " +
+            "AND c.startsOn <= :today AND c.endsOn >= :today")
+    long sumActiveAmount(@Param("orgId") UUID orgId, @Param("today") LocalDate today);
 }

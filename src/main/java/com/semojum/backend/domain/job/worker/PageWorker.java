@@ -39,6 +39,7 @@ public class PageWorker {
     private final JobDispatcher jobDispatcher;
     private final JobCancelService jobCancelService;
     private final PageImageService pageImageService;
+    private final com.semojum.backend.domain.job.scheduler.CreditGate creditGate;
 
     // 워커 실행 여부 플래그 (volatile: 멀티스레드 환경에서 즉시 반영)
     private volatile boolean running = true;
@@ -157,6 +158,13 @@ public class PageWorker {
                 if (jobCancelService.isCanceled(jobId)) {
                     jobCancelService.cancelPage(jobId, pageNo);
                     log.info("Worker-{} 취소된 작업 태스크 폐기: jobId={}, pageNo={}", workerId, jobId, pageNo);
+                    continue;
+                }
+
+                // 기관 잔여 크레딧이 0 이하면 AI에 보내지 않고 「크레딧 부족」으로 막는다.
+                // 직전 쪽이 잔여보다 많이 써서 마이너스가 됐어도 그 쪽은 이미 처리됐다(거기까지는 해 준다)
+                if (creditGate.exhausted(jobId)) {
+                    blockForCredit(workerId, jobId, pageNo);
                     continue;
                 }
 
@@ -283,11 +291,28 @@ public class PageWorker {
                     } catch (InterruptedException ignored) {}
                 }
             } finally {
+                // AI에 들어가 있던 쪽에서 뺀다 — 결과 저장(차감)이 끝난 뒤라 다음 쪽은 새 잔액을 본다
+                creditGate.release(task);
                 // 다음 태스크의 로그에 이전 작업 키가 섞이지 않도록 해제
                 org.slf4j.MDC.remove("ctx");
             }
         }
         log.info("Worker-{} 종료", workerId);
+    }
+
+    /**
+     * 크레딧 부족으로 쪽을 막는다. DB 반영이 실패해도 Redis는 BLOCKED로 둔다 — SSE가 종료를 알아채야 한다
+     * (최대 재시도 초과 경로와 같은 규칙).
+     */
+    private void blockForCredit(int workerId, String jobId, int pageNo) {
+        try {
+            resultService.markPageBlocked(jobId, pageNo, com.semojum.backend.domain.job.entity.Page.BLOCKED_CREDIT_EXHAUSTED);
+        } catch (Exception e) {
+            log.error("Worker-{} 크레딧 부족 차단의 DB 반영 실패(Redis는 BLOCKED): jobId={}, pageNo={}, error={}",
+                    workerId, jobId, pageNo, e.getMessage(), e);
+        }
+        redisTemplate.opsForHash().put("job:" + jobId + ":pages", "page:" + pageNo, "BLOCKED");
+        log.info("Worker-{} 크레딧 부족으로 차단: jobId={}, pageNo={}", workerId, jobId, pageNo);
     }
 
     // AI 서버가 동시 수용량 초과로 즉시 거부한 경우(진짜 실패가 아니라 잠깐 물러날 신호)

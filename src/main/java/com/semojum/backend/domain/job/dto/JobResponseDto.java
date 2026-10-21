@@ -42,7 +42,9 @@ public class JobResponseDto {
             int pendingPages,
             int runningPages,
             String overallStatus,
-            Map<String, String> pages
+            Map<String, String> pages,
+            // 기관 잔여 크레딧이 떨어져 AI에 보내지 않고 막은 쪽이 있는가 (2026-10-21) — 앱이 「크레딧 부족」을 알린다
+            boolean creditExhausted
     ) {}
 
     /**
