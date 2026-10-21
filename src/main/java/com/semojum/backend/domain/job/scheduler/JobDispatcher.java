@@ -37,6 +37,7 @@ public class JobDispatcher {
     private final RedisTemplate<String, String> redisTemplate;
     private final JobRepository jobRepository;
     private final ObjectMapper objectMapper;
+    private final CreditGate creditGate;
 
     static final String USER_RING = "sched:ring:users";
     static final String LEGACY_TASK_QUEUE = "task_queue";
@@ -158,7 +159,13 @@ public class JobDispatcher {
             boolean isForeground = Boolean.TRUE.equals(redisTemplate.hasKey(fgLeaseKey(jobId)));
             if (isForeground != wantForeground) continue;
 
-            return redisTemplate.opsForList().leftPop(jobQueueKey(jobId));
+            // 잔여 크레딧 10 미만인 기관은 한 쪽씩 — 그 기관 쪽이 AI에 있으면 이 작업은 건너뛴다(CreditGate).
+            // 링에서 빼지 않으므로 다음 poll에서 다시 본다. 다른 기관 작업은 그대로 꺼낸다
+            if (!creditGate.mayDispatch(jobId)) continue;
+
+            String task = redisTemplate.opsForList().leftPop(jobQueueKey(jobId));
+            if (task != null) creditGate.acquire(task, jobId);
+            return task;
         }
         return null;
     }

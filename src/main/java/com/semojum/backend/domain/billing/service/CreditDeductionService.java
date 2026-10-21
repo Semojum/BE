@@ -30,6 +30,7 @@ public class CreditDeductionService {
 
     private final CouponRepository couponRepository;
     private final CreditTransactionRepository creditTransactionRepository;
+    private final CreditBalanceService creditBalanceService;
 
     public void deduct(User user, String jobId, int pageNo, String layoutType, int credit) {
         UUID orgId = user.getOrganization() != null ? user.getOrganization().getId() : null;
@@ -57,6 +58,8 @@ public class CreditDeductionService {
                 .source(source)
                 .couponId(couponId)
                 .build());
+        // 스케줄러가 기억해 둔 잔여 크레딧을 커밋 뒤에 버린다 — 다음 쪽을 보낼지 새 값으로 정하게
+        creditBalanceService.evict(orgId);
         if (couponId != null) {
             log.info("쿠폰 차감: jobId={}, pageNo={}, couponId={}, amount={}", jobId, pageNo, couponId, credit);
         }

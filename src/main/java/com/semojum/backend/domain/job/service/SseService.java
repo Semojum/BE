@@ -101,6 +101,7 @@ public class SseService {
                     // 구분할 수 없어 종전엔 끝난 작업에 붙어도 이벤트 없이 3시간 매달렸다(하트비트는
                     // 전송이 정상 성공하므로 이 경우를 못 잡는다). 작업 상태는 DB에 남아 있으므로 확인한다.
                     Map<String, Object> jobDoneEvent = terminalJobDonePayload(jobId);
+                    if (jobDoneEvent != null) addCreditExhausted(jobDoneEvent, jobId);
                     if (jobDoneEvent != null) {
                         emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
                         emitter.complete();
@@ -163,6 +164,7 @@ public class SseService {
                     int[] failedPages = job != null && job.getFailedPages() != null ? job.getFailedPages() : new int[]{};
 
                     Map<String, Object> jobDoneEvent = buildJobDonePayload(jobId, totalPages, failedPages);
+                    addCreditExhausted(jobDoneEvent, jobId);
                     emitter.send(SseEmitter.event().name("job_done").data(objectMapper.writeValueAsString(jobDoneEvent)));
                     emitter.complete();
                     running.set(false);
@@ -254,6 +256,7 @@ public class SseService {
             // 그려 왔는데, 스캔본은 그 렌더가 쪽당 1.8~2.9초다(2026-08-31 실측). 이 URL을 쓰면 ~10ms.
             addOriginal(event, jobId, pageNo);
             addFooterBraille(event, jobId);
+            if ("BLOCKED".equals(status)) addBlockedReason(event, jobId, pageNo);
 
             String payload = objectMapper.writeValueAsString(event);
             emitter.send(SseEmitter.event().name("page_done").data(payload));
@@ -294,6 +297,32 @@ public class SseService {
         } catch (Exception e) {
             log.warn("SSE 꼬리말 점역 조회 실패(계속): jobId={}, error={}", jobId, e.getMessage());
         }
+    }
+
+    /**
+     * 막힌 쪽의 사유 — 크레딧 부족이면 {@code blocked_reason: "CREDIT_EXHAUSTED"} (2026-10-21).
+     * 사유가 없으면(AI 오류 · 취소) 키를 넣지 않는다. 실패해도 이벤트 전송을 막지 않는다.
+     */
+    void addBlockedReason(Map<String, Object> event, String jobId, int pageNo) {
+        try {
+            pageRepository.findByJob_IdAndPageNo(jobId, pageNo)
+                    .map(com.semojum.backend.domain.job.entity.Page::getBlockedReason)
+                    .ifPresent(reason -> event.put("blocked_reason", reason));
+        } catch (Exception e) {
+            log.warn("SSE 차단 사유 조회 실패(계속): jobId={}, pageNo={}, error={}", jobId, pageNo, e.getMessage());
+        }
+    }
+
+    /** job_done에 크레딧 부족으로 막힌 쪽이 있었는지 — 앱이 「크레딧 부족」을 알린다. 키는 항상 싣는다 */
+    void addCreditExhausted(Map<String, Object> event, String jobId) {
+        boolean exhausted = false;
+        try {
+            exhausted = pageRepository.existsByJob_IdAndBlockedReason(jobId,
+                    com.semojum.backend.domain.job.entity.Page.BLOCKED_CREDIT_EXHAUSTED);
+        } catch (Exception e) {
+            log.warn("SSE 크레딧 부족 조회 실패(계속): jobId={}, error={}", jobId, e.getMessage());
+        }
+        event.put("credit_exhausted", exhausted);
     }
 
     void addOriginal(Map<String, Object> event, String jobId, int pageNo) {

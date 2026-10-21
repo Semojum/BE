@@ -43,6 +43,8 @@ class JobStatusOverallTest {
         ReflectionTestUtils.setField(jobService, "jobDispatcher", dispatcher);
         jobRepository = Mockito.mock(com.semojum.backend.domain.job.repository.JobRepository.class);
         ReflectionTestUtils.setField(jobService, "jobRepository", jobRepository);
+        pageRepository = Mockito.mock(com.semojum.backend.domain.job.repository.PageRepository.class);
+        ReflectionTestUtils.setField(jobService, "pageRepository", pageRepository);
         when(jobRepository.findByIdAndUserId(eq("job-1"), eq(java.util.UUID.fromString(OWNER))))
                 .thenReturn(java.util.Optional.of(com.semojum.backend.domain.job.entity.Job.builder()
                         .id("job-1").mode("c").totalPages(3).originalFileName("a.pdf").build()));
@@ -51,6 +53,7 @@ class JobStatusOverallTest {
     static final String OWNER = java.util.UUID.randomUUID().toString();
     JobDispatcher dispatcher;
     com.semojum.backend.domain.job.repository.JobRepository jobRepository;
+    com.semojum.backend.domain.job.repository.PageRepository pageRepository;
 
     /** 남의 작업 — 상태도 주지 않고 FG 리스도 올리지 않는다 (FE 점검 B-04) */
     @Test
@@ -120,5 +123,21 @@ class JobStatusOverallTest {
         assertEquals("IN_PROGRESS", statusOf("COMPLETED", "RUNNING", "PENDING").overallStatus());
         assertEquals("IN_PROGRESS", statusOf("BLOCKED", "PENDING").overallStatus(), "실패 쪽이 생겨도 남았으면 진행 중");
         assertEquals("PENDING", statusOf("PENDING", "PENDING").overallStatus());
+    }
+
+    /** 크레딧 부족으로 막힌 쪽이 있으면 앱이 「크레딧 부족」을 알리도록 표시한다 (2026-10-21) */
+    @Test
+    void 크레딧_부족으로_막힌_쪽이_있으면_표시한다() {
+        Map<Object, Object> hash = new LinkedHashMap<>();
+        hash.put("total_pages", "2");
+        hash.put("page:1", "COMPLETED");
+        hash.put("page:2", "BLOCKED");
+        when(hashOps.entries(anyString())).thenReturn(hash);
+        when(pageRepository.existsByJob_IdAndBlockedReason("job-1",
+                com.semojum.backend.domain.job.entity.Page.BLOCKED_CREDIT_EXHAUSTED)).thenReturn(true);
+
+        JobResponseDto.Status s = jobService.getJobStatus(OWNER, "job-1");
+        org.junit.jupiter.api.Assertions.assertTrue(s.creditExhausted());
+        assertEquals("COMPLETED", s.overallStatus());
     }
 }

@@ -669,7 +669,9 @@ public class JobService {
             overallStatus = "PENDING";
         }
 
-        return new JobResponseDto.Status(jobId, totalPages, completedPages, pendingPages, runningPages, overallStatus, pages);
+        boolean creditExhausted = pageRepository.existsByJob_IdAndBlockedReason(jobId, Page.BLOCKED_CREDIT_EXHAUSTED);
+        return new JobResponseDto.Status(jobId, totalPages, completedPages, pendingPages, runningPages, overallStatus, pages,
+                creditExhausted);
     }
 
     // V3: 파일 이름은 하나만 사용. 활성 목록에 같은 이름이 있으면 "(2)", "(3)"… 자동 부여

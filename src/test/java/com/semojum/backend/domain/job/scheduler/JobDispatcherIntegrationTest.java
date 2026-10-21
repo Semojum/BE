@@ -33,6 +33,7 @@ class JobDispatcherIntegrationTest {
 
     JobRepository jobRepository;
     JobDispatcher dispatcher;
+    CreditGate creditGate;
 
     @BeforeAll
     static void startRedis() {
@@ -53,7 +54,9 @@ class JobDispatcherIntegrationTest {
     void setUp() {
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
         jobRepository = Mockito.mock(JobRepository.class);
-        dispatcher = new JobDispatcher(redisTemplate, jobRepository, new ObjectMapper());
+        creditGate = Mockito.mock(CreditGate.class);
+        when(creditGate.mayDispatch(Mockito.anyString())).thenReturn(true);
+        dispatcher = new JobDispatcher(redisTemplate, jobRepository, new ObjectMapper(), creditGate);
     }
 
     private static String task(String jobId, int pageNo) {
@@ -167,5 +170,41 @@ class JobDispatcherIntegrationTest {
 
         assertEquals(0, redisTemplate.opsForList().size(JobDispatcher.LEGACY_TASK_QUEUE));
         assertEquals("oldJob", polledJobId(), "이관된 태스크가 새 구조에서 나와야 함");
+    }
+
+    /**
+     * 잔여 크레딧 10 미만인 기관은 기관 전체에서 한 쪽씩 — 같은 기관 두 사람이 동시에 변환해도
+     * AI에 들어가는 건 한 쪽뿐이고, 다른 기관은 그 사이 계속 나간다 (2026-10-21).
+     */
+    @Test
+    void 잔여_크레딧이_적은_기관은_기관_전체에서_한_쪽씩_나간다() {
+        UUID low = UUID.randomUUID(), rich = UUID.randomUUID();
+        var balance = Mockito.mock(com.semojum.backend.domain.billing.service.CreditBalanceService.class);
+        when(balance.remaining(low)).thenReturn(5L);
+        when(balance.remaining(rich)).thenReturn(1000L);
+        when(jobRepository.findOrganizationIdById("a1")).thenReturn(low);
+        when(jobRepository.findOrganizationIdById("a2")).thenReturn(low);
+        when(jobRepository.findOrganizationIdById("r1")).thenReturn(rich);
+        CreditGate gate = new CreditGate(balance, jobRepository);
+        dispatcher = new JobDispatcher(redisTemplate, jobRepository, new ObjectMapper(), gate);
+
+        dispatcher.enqueueJob("userA", "a1", tasks("a1", 3));
+        dispatcher.enqueueJob("userB", "a2", tasks("a2", 3));   // 같은 기관 다른 사람
+        dispatcher.enqueueJob("userR", "r1", tasks("r1", 3));
+
+        List<String> first = new ArrayList<>();
+        String t;
+        while ((t = dispatcher.poll()) != null) first.add(t);
+
+        long lowOut = first.stream().filter(x -> x.contains("\"a1\"") || x.contains("\"a2\"")).count();
+        long richOut = first.stream().filter(x -> x.contains("\"r1\"")).count();
+        assertEquals(1, lowOut, "잔여 5인 기관은 한 쪽만 나간다");
+        assertEquals(3, richOut, "다른 기관은 막히지 않는다");
+
+        // AI에 있던 쪽이 끝나면 다음 한 쪽
+        first.stream().filter(x -> !x.contains("\"r1\"")).forEach(gate::release);
+        String next = dispatcher.poll();
+        assertNotNull(next);
+        assertNull(dispatcher.poll(), "다시 한 쪽이 들어가 있으니 그다음은 기다린다");
     }
 }

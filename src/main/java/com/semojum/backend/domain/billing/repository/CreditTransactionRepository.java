@@ -30,6 +30,12 @@ public interface CreditTransactionRepository extends JpaRepository<CreditTransac
     long sumContractByOrganization(@Param("orgId") UUID orgId);
 
     // 쿠폰 사용량 (잔량 = coupon.credit_amount − 이 값)
+    // 잔여 크레딧 계산용 — 오늘 유효한 쿠폰에서 이미 쓴 양
+    @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t, Coupon c " +
+            "WHERE t.couponId = c.id AND c.organizationId = :orgId " +
+            "AND c.startsOn <= :today AND c.endsOn >= :today")
+    long sumUsedOnActiveCoupons(@Param("orgId") UUID orgId, @Param("today") java.time.LocalDate today);
+
     @Query("SELECT COALESCE(SUM(t.amount), 0) FROM CreditTransaction t WHERE t.couponId = :couponId")
     long sumByCoupon(@Param("couponId") UUID couponId);
 
